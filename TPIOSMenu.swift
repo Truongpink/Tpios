@@ -38,7 +38,6 @@ final class TPIOSMenu: UIView,
     private var quotaScanner: TPIOSQuotaScanner?
     private var adBlocker: TPIOSAdBlock?
 
-    private var viTriMoveGesture: UIPanGestureRecognizer?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -725,79 +724,7 @@ final class TPIOSMenu: UIView,
 
         viTriView = viTri
 
-        setupViTriMove(viTri)
-
         isHidden = true
-    }
-
-    private func setupViTriMove(
-        _ viTri: TPIOSViTri
-    ) {
-
-        let pan = UIPanGestureRecognizer(
-            target: self,
-            action: #selector(moveViTri(_:))
-        )
-
-        pan.delegate = self
-        pan.cancelsTouchesInView = false
-
-        viTri.addGestureRecognizer(pan)
-
-        viTriMoveGesture = pan
-    }
-
-    @objc private func moveViTri(
-        _ gesture: UIPanGestureRecognizer
-    ) {
-
-        guard let viTri = viTriView,
-              let parent = viTri.superview else {
-            return
-        }
-
-        guard gesture.state == .began ||
-              gesture.state == .changed else {
-            return
-        }
-
-        let delta =
-            gesture.translation(in: parent)
-
-        var newFrame = viTri.frame
-
-        newFrame.origin.x += delta.x
-        newFrame.origin.y += delta.y
-
-        clamp(
-            &newFrame,
-            in: parent
-        )
-
-        viTri.frame = newFrame
-
-        gesture.setTranslation(
-            .zero,
-            in: parent
-        )
-    }
-
-    private func closeViTri() {
-
-        if let gesture = viTriMoveGesture,
-           let viTri = viTriView {
-
-            viTri.removeGestureRecognizer(
-                gesture
-            )
-        }
-
-        viTriMoveGesture = nil
-
-        viTriView?.removeFromSuperview()
-        viTriView = nil
-
-        isHidden = false
     }
 
     // MARK: Quota Scanner
