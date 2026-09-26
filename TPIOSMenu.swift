@@ -708,12 +708,12 @@ final class TPIOSMenu: UIView,
         )
 
         viTri.onBack = { [weak self] in
-            self?.closeBypass()
+            self?.closeViTri()
         }
 
         viTri.onClose = { [weak self] in
 
-            self?.closeBypass()
+            self?.closeViTri()
 
             NotificationCenter.default.post(
                 name: .tpiosCloseMenu,
@@ -785,17 +785,17 @@ final class TPIOSMenu: UIView,
     private func closeViTri() {
 
         if let gesture = viTriMoveGesture,
-           let bypass = bypassView {
+           let viTri = viTriView {
 
             viTri.removeGestureRecognizer(
                 gesture
             )
         }
 
-        bypassMoveGesture = nil
+        viTriMoveGesture = nil
 
-        bypassView?.removeFromSuperview()
-        bypassView = nil
+        viTriView?.removeFromSuperview()
+        viTriView = nil
 
         isHidden = false
     }
@@ -804,7 +804,7 @@ final class TPIOSMenu: UIView,
 
     @objc private func quotaTapped() {
 
-        guard bypassView == nil,
+        guard viTriView == nil,
               quotaScanner == nil,
               let parent = superview else {
             return
@@ -882,7 +882,7 @@ final class TPIOSMenu: UIView,
         shouldReceive touch: UITouch
     ) -> Bool {
 
-        guard gestureRecognizer === bypassMoveGesture else {
+        guard gestureRecognizer === viTriMoveGesture else {
             return true
         }
 
