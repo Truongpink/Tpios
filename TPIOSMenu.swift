@@ -20,7 +20,7 @@ final class TPIOSMenu: UIView,
     private let statusDot = UIView()
     private let closeButton = UIButton(type: .system)
 
-    private let bypassButton = UIButton(type: .system)
+    private let viTriButton = UIButton(type: .system)
     private let quotaButton = UIButton(type: .system)
     private let logButton = UIButton(type: .system)
     private let adBlockButton = UIButton(type: .system)
@@ -34,11 +34,11 @@ final class TPIOSMenu: UIView,
     private var resizeStartFrame = CGRect.zero
     private var resizeStartPoint = CGPoint.zero
 
-    private var bypassView: TPIOSBypass?
+    private var viTriView: TPIOSViTri?
     private var quotaScanner: TPIOSQuotaScanner?
     private var adBlocker: TPIOSAdBlock?
 
-    private var bypassMoveGesture: UIPanGestureRecognizer?
+    private var viTriMoveGesture: UIPanGestureRecognizer?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -150,16 +150,18 @@ final class TPIOSMenu: UIView,
     private func setupButtons() {
 
         configureButton(
-            bypassButton,
-            title: "Vượt Rào",
-            icon: "lock.open.fill",
-            action: #selector(bypassTapped)
+            viTriButton,
+            title: "Vị trí",
+            icon: "location.fill",
+            palette: [.systemBlue, .systemGreen, .systemOrange],
+            action: #selector(viTriTapped)
         )
 
         configureButton(
             quotaButton,
             title: "Quét",
             icon: "magnifyingglass",
+            palette: [.systemBlue, .systemPurple],
             action: #selector(quotaTapped)
         )
 
@@ -167,6 +169,7 @@ final class TPIOSMenu: UIView,
             logButton,
             title: "Xem log",
             icon: "doc.text.magnifyingglass",
+            palette: [.systemOrange, .systemYellow],
             action: #selector(logTapped)
         )
 
@@ -174,6 +177,7 @@ final class TPIOSMenu: UIView,
             adBlockButton,
             title: "Tắt QC",
             icon: "shield.fill",
+            palette: [.systemRed, .systemPink, .systemOrange],
             action: #selector(adBlockTapped)
         )
 
@@ -181,6 +185,7 @@ final class TPIOSMenu: UIView,
             clockButton,
             title: "Đồng hồ",
             icon: "clock.fill",
+            palette: [.systemBlue, .systemCyan, .systemPurple],
             action: #selector(clockTapped)
         )
 
@@ -188,6 +193,7 @@ final class TPIOSMenu: UIView,
             reloadButton,
             title: "Tải lại trang",
             icon: "arrow.clockwise",
+            palette: [.systemGreen, .systemBlue],
             action: #selector(reloadTapped)
         )
 
@@ -198,7 +204,7 @@ final class TPIOSMenu: UIView,
             alpha: 0.92
         )
 
-        addSubview(bypassButton)
+        addSubview(viTriButton)
         addSubview(quotaButton)
         addSubview(logButton)
         addSubview(adBlockButton)
@@ -210,16 +216,22 @@ final class TPIOSMenu: UIView,
         _ button: UIButton,
         title: String,
         icon: String,
+        palette: [UIColor],
         action: Selector
     ) {
 
         button.setTitle(title, for: .normal)
         button.setTitleColor(.white, for: .normal)
 
-        button.setImage(
-            UIImage(systemName: icon),
-            for: .normal
-        )
+        let symbol = UIImage(systemName: icon)
+        button.setImage(symbol, for: .normal)
+
+        if #available(iOS 15.0, *) {
+            button.setPreferredSymbolConfiguration(
+                UIImage.SymbolConfiguration(paletteColors: palette),
+                forImageIn: .normal
+            )
+        }
 
         button.tintColor = UIColor.white.withAlphaComponent(0.92)
 
@@ -480,7 +492,7 @@ final class TPIOSMenu: UIView,
 
         let buttonHeight: CGFloat = 58
 
-        bypassButton.frame = CGRect(
+        viTriButton.frame = CGRect(
             x: side,
             y: contentTop,
             width: buttonWidth,
@@ -541,7 +553,7 @@ final class TPIOSMenu: UIView,
 
     @objc private func closeTapped() {
 
-        closeBypass()
+        closeViTri()
         closeScanner()
         closeAdBlock()
 
@@ -634,7 +646,7 @@ final class TPIOSMenu: UIView,
 
     @objc private func adBlockTapped() {
 
-        guard bypassView == nil,
+        guard viTriView == nil,
               quotaScanner == nil,
               let parent = superview else {
             return
@@ -664,9 +676,9 @@ final class TPIOSMenu: UIView,
 
     // MARK: Vượt Rào
 
-    @objc private func bypassTapped() {
+    @objc private func viTriTapped() {
 
-        guard bypassView == nil,
+        guard viTriView == nil,
               quotaScanner == nil,
               let parent = superview else {
             return
@@ -680,7 +692,7 @@ final class TPIOSMenu: UIView,
 
         let height =
             min(
-                360,
+                400,
                 parent.bounds.height
             )
 
@@ -691,15 +703,15 @@ final class TPIOSMenu: UIView,
             height: height
         )
 
-        let bypass = TPIOSBypass(
+        let viTri = TPIOSViTri(
             frame: childFrame
         )
 
-        bypass.onBack = { [weak self] in
+        viTri.onBack = { [weak self] in
             self?.closeBypass()
         }
 
-        bypass.onClose = { [weak self] in
+        viTri.onClose = { [weak self] in
 
             self?.closeBypass()
 
@@ -709,38 +721,38 @@ final class TPIOSMenu: UIView,
             )
         }
 
-        parent.addSubview(bypass)
+        parent.addSubview(viTri)
 
-        bypassView = bypass
+        viTriView = viTri
 
-        setupBypassMove(bypass)
+        setupViTriMove(viTri)
 
         isHidden = true
     }
 
-    private func setupBypassMove(
-        _ bypass: TPIOSBypass
+    private func setupViTriMove(
+        _ viTri: TPIOSViTri
     ) {
 
         let pan = UIPanGestureRecognizer(
             target: self,
-            action: #selector(moveBypass(_:))
+            action: #selector(moveViTri(_:))
         )
 
         pan.delegate = self
         pan.cancelsTouchesInView = false
 
-        bypass.addGestureRecognizer(pan)
+        viTri.addGestureRecognizer(pan)
 
-        bypassMoveGesture = pan
+        viTriMoveGesture = pan
     }
 
-    @objc private func moveBypass(
+    @objc private func moveViTri(
         _ gesture: UIPanGestureRecognizer
     ) {
 
-        guard let bypass = bypassView,
-              let parent = bypass.superview else {
+        guard let viTri = viTriView,
+              let parent = viTri.superview else {
             return
         }
 
@@ -752,7 +764,7 @@ final class TPIOSMenu: UIView,
         let delta =
             gesture.translation(in: parent)
 
-        var newFrame = bypass.frame
+        var newFrame = viTri.frame
 
         newFrame.origin.x += delta.x
         newFrame.origin.y += delta.y
@@ -762,7 +774,7 @@ final class TPIOSMenu: UIView,
             in: parent
         )
 
-        bypass.frame = newFrame
+        viTri.frame = newFrame
 
         gesture.setTranslation(
             .zero,
@@ -770,12 +782,12 @@ final class TPIOSMenu: UIView,
         )
     }
 
-    private func closeBypass() {
+    private func closeViTri() {
 
-        if let gesture = bypassMoveGesture,
+        if let gesture = viTriMoveGesture,
            let bypass = bypassView {
 
-            bypass.removeGestureRecognizer(
+            viTri.removeGestureRecognizer(
                 gesture
             )
         }
