@@ -446,10 +446,6 @@ final class TPIOSViTri: UIView {
     }
 
     private func reloadSavedList() {
-        guard scrollView != nil else {
-            return
-        }
-
         scrollView.subviews
             .filter { $0 !== emptyLabel }
             .forEach { $0.removeFromSuperview() }
