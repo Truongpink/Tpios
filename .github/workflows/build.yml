@@ -69,13 +69,21 @@ jobs:
             build/TPIOSModelFilter.o \
             build/TPIOSGADPresentationBlocker.o
 
+      - name: Set build version
+        id: version
+        run: |
+          VERSION=$(printf "%02d" "$GITHUB_RUN_NUMBER")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "TPIOS version: $VERSION"
+
       - name: Package dylib
         run: |
+          VERSION="${{ steps.version.outputs.version }}"
           mkdir -p package
-          cp build/TPIOS.dylib package/TPIOS.dylib
+          cp build/TPIOS.dylib "package/tpios${VERSION}.dylib"
 
       - name: Upload dylib
         uses: actions/upload-artifact@v4
         with:
-          name: TPIOS-dylib
-          path: package/TPIOS.dylib
+          name: "TPIOS-${{ steps.version.outputs.version }}"
+          path: "package/tpios${{ steps.version.outputs.version }}.dylib"
