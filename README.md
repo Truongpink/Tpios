@@ -11,7 +11,7 @@ Project đang trong quá trình phát triển. Các chức năng UI cơ bản đ
 - Tap → mở/đóng menu.
 - Giữ + kéo → di chuyển Floating Button, không mở menu.
 - Menu có thể di chuyển và resize.
-- Vượt Rào.
+- Quản lý vị trí.
 - Quét runtime.
 - Xem log.
 - Tắt quảng cáo.
@@ -43,7 +43,7 @@ Các chức năng nên được tách thành file riêng khi có thể.
 Ví dụ:
 - `TPIOSController.swift` → UI chính/Floating Button.
 - `TPIOSMenu.swift` → Menu chính.
-- `TPIOSBypass.swift` → Vượt Rào.
+- `TPIOSViTri.swift` → Quản lý nhiều vị trí.
 - `TPIOSQuotaScanner.swift` → Quét.
 - `TPIOSLog.swift` → Log.
 - `TPIOSAdBlock.swift` → Tắt quảng cáo.
@@ -105,3 +105,13 @@ Luôn đọc README này và code hiện tại trước khi sửa.
 
 **Nguyên tắc quan trọng nhất:**
 > Sửa đúng nguyên nhân, thay đổi ít nhất có thể, không phá chức năng đang hoạt động.
+
+## Phiên bản build
+
+Mỗi lần GitHub Actions chạy build sẽ tạo tên dylib theo số lần chạy, ví dụ:
+
+- `tpios01.dylib`
+- `tpios02.dylib`
+- `tpios03.dylib`
+
+Số phiên bản được lấy từ `GITHUB_RUN_NUMBER`.
