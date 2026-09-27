@@ -34,10 +34,10 @@ final class TPIOSMenu: UIView,
     private var resizeStartFrame = CGRect.zero
     private var resizeStartPoint = CGPoint.zero
 
-    private var viTriView: TPIOSViTri?
+    private var locationView: TPIOSLocation?
     private var quotaScanner: TPIOSQuotaScanner?
     private var adBlocker: TPIOSAdBlock?
-    private var viTriMoveGesture: UIPanGestureRecognizer?
+    private var locationMoveGesture: UIPanGestureRecognizer?
 
 
     override init(frame: CGRect) {
@@ -154,7 +154,7 @@ final class TPIOSMenu: UIView,
             title: "Vị trí",
             icon: "location.fill",
             palette: [.systemBlue, .systemGreen, .systemOrange],
-            action: #selector(viTriTapped)
+            action: #selector(locationTapped)
         )
 
         configureButton(
@@ -553,7 +553,7 @@ final class TPIOSMenu: UIView,
 
     @objc private func closeTapped() {
 
-        closeViTri()
+        closeLocation()
         closeScanner()
         closeAdBlock()
 
@@ -646,7 +646,7 @@ final class TPIOSMenu: UIView,
 
     @objc private func adBlockTapped() {
 
-        guard viTriView == nil,
+        guard locationView == nil,
               quotaScanner == nil,
               let parent = superview else {
             return
@@ -676,9 +676,9 @@ final class TPIOSMenu: UIView,
 
     // MARK: Vượt Rào
 
-    @objc private func viTriTapped() {
+    @objc private func locationTapped() {
 
-        guard viTriView == nil,
+        guard locationView == nil,
               quotaScanner == nil,
               let parent = superview else {
             return
@@ -703,17 +703,17 @@ final class TPIOSMenu: UIView,
             height: height
         )
 
-        let viTri = TPIOSViTri(
+        let viTri = TPIOSLocation(
             frame: childFrame
         )
 
         viTri.onBack = { [weak self] in
-            self?.closeViTri()
+            self?.closeLocation()
         }
 
         viTri.onClose = { [weak self] in
 
-            self?.closeViTri()
+            self?.closeLocation()
 
             NotificationCenter.default.post(
                 name: .tpiosCloseMenu,
@@ -723,8 +723,8 @@ final class TPIOSMenu: UIView,
 
         parent.addSubview(viTri)
 
-        viTriView = viTri
-        setupViTriMove(viTri)
+        locationView = viTri
+        setupLocationMove(viTri)
 
         isHidden = true
     }
@@ -733,7 +733,7 @@ final class TPIOSMenu: UIView,
 
     @objc private func quotaTapped() {
 
-        guard viTriView == nil,
+        guard locationView == nil,
               quotaScanner == nil,
               let parent = superview else {
             return
@@ -764,23 +764,23 @@ final class TPIOSMenu: UIView,
         isHidden = true
     }
 
-    private func setupViTriMove(_ viTri: TPIOSViTri) {
+    private func setupLocationMove(_ viTri: TPIOSLocation) {
 
         let pan = UIPanGestureRecognizer(
             target: self,
-            action: #selector(moveViTri(_:))
+            action: #selector(moveLocation(_:))
         )
 
         pan.delegate = self
         pan.cancelsTouchesInView = false
 
         viTri.addGestureRecognizer(pan)
-        viTriMoveGesture = pan
+        locationMoveGesture = pan
     }
 
-    @objc private func moveViTri(_ gesture: UIPanGestureRecognizer) {
+    @objc private func moveLocation(_ gesture: UIPanGestureRecognizer) {
 
-        guard let viTri = viTriView,
+        guard let viTri = locationView,
               let parent = viTri.superview else {
             return
         }
@@ -802,16 +802,16 @@ final class TPIOSMenu: UIView,
         gesture.setTranslation(.zero, in: parent)
     }
 
-    private func closeViTri() {
+    private func closeLocation() {
 
-        if let gesture = viTriMoveGesture,
-           let viTri = viTriView {
+        if let gesture = locationMoveGesture,
+           let viTri = locationView {
             viTri.removeGestureRecognizer(gesture)
         }
 
-        viTriMoveGesture = nil
-        viTriView?.removeFromSuperview()
-        viTriView = nil
+        locationMoveGesture = nil
+        locationView?.removeFromSuperview()
+        locationView = nil
         isHidden = false
     }
 
@@ -862,7 +862,7 @@ final class TPIOSMenu: UIView,
         shouldReceive touch: UITouch
     ) -> Bool {
 
-        guard gestureRecognizer === viTriMoveGesture else {
+        guard gestureRecognizer === locationMoveGesture else {
             return true
         }
 
