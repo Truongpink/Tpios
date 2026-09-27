@@ -1,0 +1,88 @@
+name: Backup TPIOS Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify successful build for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          RUNS=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows/build.yml/runs?head_sha=${GITHUB_SHA}&status=success&per_page=1")
+
+          COUNT=$(printf '%s' "$RUNS" | jq '.total_count')
+
+          if [ "$COUNT" -lt 1 ]; then
+            echo "No successful Build TPIOS dylib run found for commit ${GITHUB_SHA}."
+            echo "Backup stopped: only a verified build state can be released."
+            exit 1
+          fi
+
+          echo "Verified successful build for ${GITHUB_SHA}."
+
+      - name: Create complete repository ZIP
+        id: package
+        run: |
+          set -euo pipefail
+
+          export TZ=Asia/Ho_Chi_Minh
+          DATE=$(date +%Y-%m-%d)
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          NAME="TPIOS-BACKUP-${DATE}-${SHORT_SHA}"
+          ZIP="${NAME}.zip"
+          INFO="${NAME}-INFO.txt"
+
+          {
+            echo "TPIOS Repository Backup"
+            echo "Date: ${DATE}"
+            echo "Commit: ${GITHUB_SHA}"
+            echo "Short commit: ${SHORT_SHA}"
+            echo "Repository: ${GITHUB_REPOSITORY}"
+            echo "Branch: ${GITHUB_REF_NAME}"
+            echo "Build: verified successful for this commit"
+          } > "$INFO"
+
+          git archive --format=zip --output="$ZIP" HEAD
+
+          mkdir -p backup-content
+          cp "$INFO" backup-content/
+          unzip -q "$ZIP" -d backup-content/repository
+          rm "$ZIP"
+
+          (
+            cd backup-content
+            zip -qr "../$ZIP" .
+          )
+
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NAME: ${{ steps.package.outputs.name }}
+          ZIP_FILE: ${{ steps.package.outputs.zip }}
+        run: |
+          set -euo pipefail
+
+          gh release create "backup-${RELEASE_NAME#TPIOS-BACKUP-}" "$ZIP_FILE" \
+            --title "$RELEASE_NAME" \
+            --generate-notes \
+            --notes "Complete TPIOS repository backup for commit ${GITHUB_SHA}. Build was verified successful before this release was created."
