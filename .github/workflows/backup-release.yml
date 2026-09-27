@@ -58,9 +58,9 @@ jobs:
           NAME="TPIOS-BACKUP-${DATE}-${SHORT_SHA}"
           ZIP="${NAME}.zip"
 
-          mkdir -p backup-content/repository
+          mkdir -p backup-content
 
-          tar --exclude='./.git' --exclude='./backup-content' -cf - . | tar -xf - -C backup-content/repository
+          tar --exclude='./.git' --exclude='./backup-content' -cf - . | tar -xf - -C backup-content
 
           {
             echo "TPIOS Repository Backup"
@@ -76,8 +76,8 @@ jobs:
           )
 
           # Mandatory validation before any Release is created.
-          unzip -Z1 "$ZIP" | grep -Fxq "repository/.github/workflows/build.yml"
-          unzip -Z1 "$ZIP" | grep -Fxq "repository/.github/workflows/backup-release.yml"
+          unzip -Z1 "$ZIP" | grep -Fxq ".github/workflows/build.yml"
+          unzip -Z1 "$ZIP" | grep -Fxq ".github/workflows/backup-release.yml"
 
           echo "Validated .github/workflows/build.yml in ZIP."
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
