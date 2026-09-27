@@ -59,8 +59,8 @@ jobs:
           ZIP="${NAME}.zip"
 
           mkdir -p backup-content/repository
-          cp -a . backup-content/repository/
-          rm -rf backup-content/repository/.git
+
+          tar --exclude='./.git' --exclude='./backup-content' -cf - . | tar -xf - -C backup-content/repository
 
           {
             echo "TPIOS Repository Backup"
