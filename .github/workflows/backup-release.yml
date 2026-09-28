@@ -100,6 +100,24 @@ jobs:
             "$ZIP_FILE" \
             .github/workflows/build.yml \
             .github/workflows/backup-release.yml \
+            --target "$GITHUB_SHA" \
             --title "$RELEASE_NAME" \
             --generate-notes \
             --notes "Complete repository backup. ZIP was validated to contain .github/workflows/build.yml."
+
+      - name: Push verified backup to GitLab
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          RELEASE_NAME: ${{ steps.package.outputs.name }}
+        run: |
+          set -euo pipefail
+
+          TAG="${GITHUB_REPOSITORY#*/}-backup-${RELEASE_NAME#TPIOS-BACKUP-}"
+
+          git remote add backup "https://oauth2:${GITLAB_TOKEN}@gitlab.com/tpios-group1/truongpink-tpios.git"
+
+          # Nhánh stable/<tên repo> = bản đã xác nhận build thành công, không bị ghi đè
+          # bởi các lần push code chưa kiểm tra (auto/<tên repo> bên GitLab do build.yml lo).
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push backup "${GITHUB_SHA}:refs/heads/stable/${GITHUB_REPOSITORY#*/}" --force
+          git push backup "refs/tags/${TAG}" --force
