@@ -195,7 +195,7 @@ Menu chính gồm 6 chức năng:
 | Nút | Chức năng | File chính |
 |---|---|---|
 | **Vị trí** | Mở giao diện quản lý vị trí, bản đồ, tọa độ và dữ liệu vị trí đã lưu | `TPIOSLocation.swift` |
-| **Quét** | Quét runtime Objective-C để tìm class/selector liên quan quota/usage/limit... | `TPIOSQuotaScanner.swift` |
+| **Sale** | Module săn sale Shopee: theo dõi sản phẩm, voucher và giá thực trả | `TPIOSSale.swift` |
 | **Xem log** | Mở cửa sổ log TPIOS | `TPIOSLog.swift` |
 | **Tắt QC** | Mở giao diện AdBlock/profile và cơ chế chặn quảng cáo đã lưu | `TPIOSAdBlock.swift` |
 | **Đồng hồ** | Hiển thị đồng hồ HH:MM:SS và phần mười giây; có thể kéo/resize | `TPIOSSaleClock.swift` |
@@ -230,11 +230,11 @@ Menu còn hiển thị:
 | `TPIOSLocation.swift` | Giao diện Vị trí: bản đồ, chọn tọa độ, tìm kiếm/reverse geocode, latitude/longitude/altitude/address, lưu nhiều vị trí, chọn/xóa vị trí, move/resize UI và công tắc spoof. |
 | `TPIOSLocationSpoofHook.swift` | Module hook Core Location; cung cấp cơ chế hook các lời gọi location manager và trả về location đã chọn khi hook được cài. |
 
-### Quét / nghiên cứu runtime
+### Sale
 
 | File | Chức năng |
 |---|---|
-| `TPIOSQuotaScanner.swift` | Quét Objective-C runtime để tìm class và selector có tên liên quan quota, usage, remaining, limit, reset, upload, attachment, image, vision, file... Không hiển thị quota thực tế nếu runtime không cung cấp dữ liệu đó. |
+| `TPIOSSale.swift` | Giao diện Sale độc lập; là điểm bắt đầu cho module nghiên cứu săn sale Shopee, theo dõi sản phẩm, voucher và giá thực trả. |
 
 ### Log / diagnostics
 
@@ -283,7 +283,7 @@ FloatingButton
 TPIOSMenu
    ├── Vị trí       → TPIOSLocation
    │                    └── TPIOSLocationSpoofHook
-   ├── Quét         → TPIOSQuotaScanner
+   ├── Sale         → TPIOSSale
    ├── Xem log      → TPIOSLog
    ├── Tắt QC       → TPIOSAdBlock
    │                    ├── TPIOSModelFilter.m
