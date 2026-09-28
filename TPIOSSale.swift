@@ -343,7 +343,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         )
 
         let contentWidth = max(0, bounds.width - 36)
-        let x = 18
+        let x: CGFloat = 18
         var y: CGFloat = 18
         let fieldHeight: CGFloat = 42
         let labelHeight: CGFloat = 20
