@@ -75,6 +75,12 @@ jobs:
           # Thêm file info vào đúng zip vừa tạo bằng git archive ở trên.
           zip -q "$ZIP" TPIOS-BACKUP-INFO.txt
 
+          # Thư mục .github bị ẩn trên iPhone/Files. Thêm 1 bản sao hiển thị
+          # bình thường để dễ kiểm tra và khôi phục.
+          mkdir -p WORKFLOWS-COPY
+          cp .github/workflows/*.yml WORKFLOWS-COPY/
+          zip -qr "$ZIP" WORKFLOWS-COPY
+
           # Mandatory validation before any Release is created.
           unzip -Z1 "$ZIP" | grep -Fxq ".github/workflows/build.yml"
           unzip -Z1 "$ZIP" | grep -Fxq ".github/workflows/backup-release.yml"
