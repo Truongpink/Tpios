@@ -27,14 +27,14 @@ final class TPIOSMenu: UIView,
     private let closeButton = UIButton(type: .system)
 
     private let bypassButton = UIButton(type: .system)
-    private let quotaButton = UIButton(type: .system)
+    private let saleButton = UIButton(type: .system)
     private let logButton = UIButton(type: .system)
     private let adBlockButton = UIButton(type: .system)
     private let clockButton = UIButton(type: .system)
     private let reloadButton = UIButton(type: .system)
 
     private let bypassLabel = UILabel()
-    private let quotaLabel = UILabel()
+    private let saleLabel = UILabel()
     private let logLabel = UILabel()
     private let adBlockLabel = UILabel()
     private let clockLabel = UILabel()
@@ -49,7 +49,7 @@ final class TPIOSMenu: UIView,
     private var resizeStartPoint = CGPoint.zero
 
     private var locationView: TPIOSLocation?
-    private var quotaScanner: TPIOSQuotaScanner?
+    private var saleView: TPIOSSale?
     private var adBlocker: TPIOSAdBlock?
 
     override init(frame: CGRect) {
@@ -170,12 +170,12 @@ final class TPIOSMenu: UIView,
         configureCaptionLabel(bypassLabel, text: "Vị trí")
 
         configureIconButton(
-            quotaButton,
-            icon: "magnifyingglass",
+            saleButton,
+            icon: "bag.fill",
             color: UIColor(red: 0.55, green: 0.35, blue: 0.95, alpha: 1),
-            action: #selector(quotaTapped)
+            action: #selector(saleTapped)
         )
-        configureCaptionLabel(quotaLabel, text: "Quét")
+        configureCaptionLabel(saleLabel, text: "Sale")
 
         configureIconButton(
             logButton,
@@ -209,10 +209,10 @@ final class TPIOSMenu: UIView,
         )
         configureCaptionLabel(reloadLabel, text: "Tải lại trang")
 
-        for view in [bypassButton, quotaButton, logButton, adBlockButton, clockButton, reloadButton] as [UIView] {
+        for view in [bypassButton, saleButton, logButton, adBlockButton, clockButton, reloadButton] as [UIView] {
             addSubview(view)
         }
-        for label in [bypassLabel, quotaLabel, logLabel, adBlockLabel, clockLabel, reloadLabel] {
+        for label in [bypassLabel, saleLabel, logLabel, adBlockLabel, clockLabel, reloadLabel] {
             addSubview(label)
         }
     }
@@ -554,7 +554,7 @@ final class TPIOSMenu: UIView,
     @objc private func closeTapped() {
 
         closeLocation()
-        closeScanner()
+        closeSale()
         closeAdBlock()
 
         NotificationCenter.default.post(
@@ -647,7 +647,7 @@ final class TPIOSMenu: UIView,
     @objc private func adBlockTapped() {
 
         guard locationView == nil,
-              quotaScanner == nil,
+              saleView == nil,
               let parent = superview else {
             return
         }
@@ -736,27 +736,25 @@ final class TPIOSMenu: UIView,
         isHidden = false
     }
 
-    // MARK: Quota Scanner
+    // MARK: Sale
 
-    @objc private func quotaTapped() {
+    @objc private func saleTapped() {
 
         guard locationView == nil,
-              quotaScanner == nil,
+              saleView == nil,
               let parent = superview else {
             return
         }
 
-        let scanner = TPIOSQuotaScanner(
-            frame: frame
-        )
+        let sale = TPIOSSale(frame: frame)
 
-        scanner.onBack = { [weak self] in
-            self?.closeScanner()
+        sale.onBack = { [weak self] in
+            self?.closeSale()
         }
 
-        scanner.onClose = { [weak self] in
+        sale.onClose = { [weak self] in
 
-            self?.closeScanner()
+            self?.closeSale()
 
             NotificationCenter.default.post(
                 name: .tpiosCloseMenu,
@@ -764,18 +762,14 @@ final class TPIOSMenu: UIView,
             )
         }
 
-        parent.addSubview(scanner)
-
-        quotaScanner = scanner
-
+        parent.addSubview(sale)
+        saleView = sale
         isHidden = true
     }
 
-    private func closeScanner() {
-
-        quotaScanner?.removeFromSuperview()
-        quotaScanner = nil
-
+    private func closeSale() {
+        saleView?.removeFromSuperview()
+        saleView = nil
         isHidden = false
     }
 
