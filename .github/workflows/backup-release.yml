@@ -58,9 +58,11 @@ jobs:
           NAME="TPIOS-BACKUP-${DATE}-${SHORT_SHA}"
           ZIP="${NAME}.zip"
 
-          mkdir -p backup-content
-
-          tar --exclude='./.git' --exclude='./backup-content' -cf - . | tar -xf - -C backup-content
+          # Dùng git archive thay vì tự tar/copy/loại trừ tay — git archive
+          # xuất CHÍNH XÁC những gì đã commit ở HEAD, đọc thẳng từ git index
+          # chứ không qua thư mục làm việc, nên không có chuyện lệch pattern
+          # exclude làm rớt file như cách cũ (đó là lý do build.yml bị thiếu).
+          git archive --format=zip --output="$ZIP" HEAD
 
           {
             echo "TPIOS Repository Backup"
@@ -68,12 +70,10 @@ jobs:
             echo "Commit: ${GITHUB_SHA}"
             echo "Repository: ${GITHUB_REPOSITORY}"
             echo "Build: verified successful"
-          } > backup-content/TPIOS-BACKUP-INFO.txt
+          } > TPIOS-BACKUP-INFO.txt
 
-          (
-            cd backup-content
-            zip -qr "../$ZIP" .
-          )
+          # Thêm file info vào đúng zip vừa tạo bằng git archive ở trên.
+          zip -q "$ZIP" TPIOS-BACKUP-INFO.txt
 
           # Mandatory validation before any Release is created.
           unzip -Z1 "$ZIP" | grep -Fxq ".github/workflows/build.yml"
@@ -90,4 +90,7 @@ jobs:
           ZIP_FILE: ${{ steps.package.outputs.zip }}
         run: |
           set -euo pipefail
-          gh release create "backup-${RELEASE_NAME#TPIOS-BACKUP-}" "$ZIP_FILE"             --title "$RELEASE_NAME"             --generate-notes             --notes "Complete repository backup. ZIP was validated to contain .github/workflows/build.yml."
+          gh release create "backup-${RELEASE_NAME#TPIOS-BACKUP-}" "$ZIP_FILE" \
+            --title "$RELEASE_NAME" \
+            --generate-notes \
+            --notes "Complete repository backup. ZIP was validated to contain .github/workflows/build.yml."
