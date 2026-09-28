@@ -504,8 +504,8 @@ final class TPIOSMenu: UIView,
         let iconXInset = max(0, (columnWidth - iconSize) / 2)
         let rowHeight = iconSize + iconLabelGap + labelHeight
 
-        let icons = [bypassButton, quotaButton, logButton, adBlockButton, clockButton, reloadButton]
-        let labels = [bypassLabel, quotaLabel, logLabel, adBlockLabel, clockLabel, reloadLabel]
+        let icons = [bypassButton, saleButton, logButton, adBlockButton, clockButton, reloadButton]
+        let labels = [bypassLabel, saleLabel, logLabel, adBlockLabel, clockLabel, reloadLabel]
 
         for index in 0..<icons.count {
             let column = index % 3
@@ -679,7 +679,7 @@ final class TPIOSMenu: UIView,
     @objc private func locationTapped() {
 
         guard locationView == nil,
-              quotaScanner == nil,
+              saleView == nil,
               let parent = superview else {
             return
         }
