@@ -450,12 +450,12 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         let saved = max(0, price + shipping - total)
 
         resultLabel.text = """
-        Giá thực trả: (formatMoney(total))
-        Tiết kiệm: (formatMoney(saved))
+        Giá thực trả: \(formatMoney(total))
+        Tiết kiệm: \(formatMoney(saved))
         """
 
         TPIOSLog.shared.log(
-            "Sale Calculator: (formatMoney(total))"
+            "Sale Calculator: \(formatMoney(total))"
         )
     }
 
@@ -474,7 +474,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         formatter.maximumFractionDigits = 0
         formatter.minimumFractionDigits = 0
 
-        return "(formatter.string(from: NSNumber(value: value)) ?? "0")đ"
+        return "\(formatter.string(from: NSNumber(value: value)) ?? "0")đ"
     }
 
     private func viewEndEditing() {
