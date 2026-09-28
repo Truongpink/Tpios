@@ -11,6 +11,7 @@ final class TPIOSSaleClock: UIView, UIGestureRecognizerDelegate {
     private let secondColon = UILabel()
     private let decimalPoint = UILabel()
     private let resizeHandle = UILabel()
+    private let statusLabel = UILabel()
 
     private var clockTimer: Timer?
     private var lastTenth: Int = -1
@@ -21,9 +22,12 @@ final class TPIOSSaleClock: UIView, UIGestureRecognizerDelegate {
     private var resizeStartFrame = CGRect.zero
     private var resizeStartPoint = CGPoint.zero
 
+    // Chiều cao gốc gồm 98 cho phần đồng hồ + 20 cho dải trạng thái
+    // (độ lệch giờ server / ping) nằm ngay dưới đồng hồ.
     private let baseWidth: CGFloat = 310
-    private let baseHeight: CGFloat = 98
-    private let aspectRatio: CGFloat = 310.0 / 98.0
+    private let baseHeight: CGFloat = 118
+    static let defaultAspectRatio: CGFloat = 310.0 / 118.0
+    private let aspectRatio: CGFloat = TPIOSSaleClock.defaultAspectRatio
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -96,6 +100,41 @@ final class TPIOSSaleClock: UIView, UIGestureRecognizerDelegate {
         resizePan.cancelsTouchesInView = false
         resizeHandle.addGestureRecognizer(resizePan)
 
+        statusLabel.textColor = UIColor.white.withAlphaComponent(0.55)
+        statusLabel.textAlignment = .center
+        statusLabel.font = .monospacedDigitSystemFont(
+            ofSize: 10,
+            weight: .medium
+        )
+        statusLabel.adjustsFontSizeToFitWidth = true
+        statusLabel.minimumScaleFactor = 0.6
+        statusLabel.isUserInteractionEnabled = true
+        statusLabel.text = TPIOSServerTime.shared.statusText
+        addSubview(statusLabel)
+
+        statusLabel.addGestureRecognizer(
+            UITapGestureRecognizer(
+                target: self,
+                action: #selector(statusTapped)
+            )
+        )
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(serverTimeChanged),
+            name: .tpiosServerTimeChanged,
+            object: nil
+        )
+
+        updateTime(force: true)
+    }
+
+    @objc private func statusTapped() {
+        TPIOSServerTime.shared.sync()
+    }
+
+    @objc private func serverTimeChanged() {
+        statusLabel.text = TPIOSServerTime.shared.statusText
         updateTime(force: true)
     }
 
@@ -156,18 +195,36 @@ final class TPIOSSaleClock: UIView, UIGestureRecognizerDelegate {
 
         let horizontalInset = max(8, 16 * scale)
         let topInset = max(8, 8 * scale)
+        let statusHeight = 20 * scale
         timeBackground.frame = CGRect(
             x: horizontalInset,
             y: topInset,
             width: max(0, bounds.width - horizontalInset * 2),
-            height: max(0, bounds.height - topInset - max(8, 10 * scale))
+            height: max(
+                0,
+                bounds.height - topInset - max(8, 10 * scale) - statusHeight
+            )
         )
 
+        let handleSide = max(28, 30 * scale)
+
         resizeHandle.frame = CGRect(
-            x: bounds.width - max(28, 30 * scale),
-            y: bounds.height - max(28, 30 * scale),
-            width: max(28, 30 * scale),
-            height: max(28, 30 * scale)
+            x: bounds.width - handleSide,
+            y: bounds.height - handleSide,
+            width: handleSide,
+            height: handleSide
+        )
+
+        // Chừa chỗ cho nút resize ở góc dưới bên phải.
+        statusLabel.frame = CGRect(
+            x: horizontalInset,
+            y: timeBackground.frame.maxY + 2 * scale,
+            width: max(0, bounds.width - horizontalInset - handleSide - 4),
+            height: statusHeight
+        )
+        statusLabel.font = .monospacedDigitSystemFont(
+            ofSize: max(8, 10 * scale),
+            weight: .medium
         )
 
         let box = timeBackground.bounds
@@ -284,6 +341,9 @@ final class TPIOSSaleClock: UIView, UIGestureRecognizerDelegate {
 
         updateTime(force: true)
 
+        // Chỉ đồng bộ 1 lần khi mở đồng hồ; muốn đo lại thì chạm dải trạng thái.
+        TPIOSServerTime.shared.syncIfNeeded()
+
         let timer = Timer(
             timeInterval: 0.05,
             repeats: true
@@ -307,7 +367,7 @@ final class TPIOSSaleClock: UIView, UIGestureRecognizerDelegate {
 
     private func updateTime(force: Bool) {
 
-        let now = Date()
+        let now = Date().addingTimeInterval(TPIOSServerTime.shared.offset)
         let calendar = Calendar.current
         let second = calendar.component(.second, from: now)
         let millisecond = calendar.component(.nanosecond, from: now) / 1_000_000
