@@ -596,7 +596,7 @@ final class TPIOSMenu: UIView,
             max(190, parent.bounds.width - 24)
         )
 
-        let height = width / 3.15
+        let height = width / TPIOSSaleClock.defaultAspectRatio
 
         let x = max(
             12,
