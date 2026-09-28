@@ -96,7 +96,10 @@ jobs:
           ZIP_FILE: ${{ steps.package.outputs.zip }}
         run: |
           set -euo pipefail
-          gh release create "backup-${RELEASE_NAME#TPIOS-BACKUP-}" "$ZIP_FILE" \
+          gh release create "backup-${RELEASE_NAME#TPIOS-BACKUP-}" \
+            "$ZIP_FILE" \
+            .github/workflows/build.yml \
+            .github/workflows/backup-release.yml \
             --title "$RELEASE_NAME" \
             --generate-notes \
             --notes "Complete repository backup. ZIP was validated to contain .github/workflows/build.yml."
