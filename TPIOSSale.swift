@@ -473,25 +473,21 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
 
         isHidden = true
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self, weak parent] in
-            guard let self, let parent else {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            guard let self else {
                 return
             }
 
-            let values = TPIOSSaleScanner.scanVisibleApp(in: parent)
+            let diagnostic = TPIOSSaleRuntimeDiagnostics.inspectCurrentApp()
 
             self.frame = originalFrame
             self.isHidden = originalHidden
 
-            if values.isEmpty {
-                self.resultLabel.text = """
-                Không tìm thấy dữ liệu giá/voucher.
+            self.resultLabel.text = diagnostic
 
-                Hãy mở trang sản phẩm hoặc trang thanh toán Shopee rồi quét lại.
-                """
-            } else {
-                self.resultLabel.text = TPIOSSaleScanner.summary(values)
-            }
+            TPIOSLog.shared.log(
+                "Sale diagnostic hoàn tất. Xem log để đối chiếu tầng render."
+            )
         }
     }
 
