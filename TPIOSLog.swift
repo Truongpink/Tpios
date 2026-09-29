@@ -19,16 +19,13 @@ private weak var logController: UIViewController?
 private weak var filterField: UITextField?
 private weak var hideCandidatesButton: UIButton?
 
-// Mặc định ẩn các dòng "ReloadCandidate:" vì đây là nguồn log dài nhất
-// (có thể >100 dòng mỗi lần reload) và hiếm khi cần xem trong lúc chỉ
-// muốn biết kết quả reload có chạy hay không.
 private var hideCandidateLines = true
 private var filterText = ""
 
 private var logStartFrame = CGRect.zero
 private var resizeStartFrame = CGRect.zero
 private var resizeStartPoint = CGPoint.zero
-private weak var resizeHandle: UILabel?
+private weak var resizeHandle: UIView?
 
 private init() {}
 
@@ -322,12 +319,19 @@ func show() {
 
         window.addSubview(textView)
 
-        let resizeHandle = UILabel()
-        resizeHandle.text = "↘"
-        resizeHandle.textColor = UIColor.white.withAlphaComponent(0.55)
-        resizeHandle.font = .systemFont(ofSize: 18, weight: .medium)
-        resizeHandle.textAlignment = .center
+        let resizeHandle = UIView()
+        resizeHandle.backgroundColor = UIColor.white.withAlphaComponent(0.08)
+        resizeHandle.layer.cornerRadius = 10
         resizeHandle.isUserInteractionEnabled = true
+
+        let resizeIcon = UILabel()
+        resizeIcon.text = "↘"
+        resizeIcon.textColor = UIColor.white.withAlphaComponent(0.85)
+        resizeIcon.font = .systemFont(ofSize: 20, weight: .bold)
+        resizeIcon.textAlignment = .center
+        resizeIcon.isUserInteractionEnabled = false
+        resizeHandle.addSubview(resizeIcon)
+
         window.addSubview(resizeHandle)
         self.resizeHandle = resizeHandle
 
@@ -345,6 +349,8 @@ func show() {
         hideCandidates.translatesAutoresizingMaskIntoConstraints = false
         filterField.translatesAutoresizingMaskIntoConstraints = false
         textView.translatesAutoresizingMaskIntoConstraints = false
+        resizeHandle.translatesAutoresizingMaskIntoConstraints = false
+        resizeIcon.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
 
@@ -479,11 +485,19 @@ func show() {
             ),
 
             resizeHandle.widthAnchor.constraint(
-                equalToConstant: 26
+                equalToConstant: 38
             ),
 
             resizeHandle.heightAnchor.constraint(
-                equalToConstant: 26
+                equalToConstant: 38
+            ),
+
+            resizeIcon.centerXAnchor.constraint(
+                equalTo: resizeHandle.centerXAnchor
+            ),
+
+            resizeIcon.centerYAnchor.constraint(
+                equalTo: resizeHandle.centerYAnchor
             )
         ])
 
@@ -615,8 +629,8 @@ func show() {
         let dy = point.y - resizeStartPoint.y
 
         let safe = host.safeAreaInsets
-        let minWidth: CGFloat = 180
-        let minHeight: CGFloat = 220
+        let minWidth: CGFloat = 160
+        let minHeight: CGFloat = 180
 
         let maxWidth = max(
             minWidth,
@@ -716,7 +730,8 @@ private func refreshView() {
                 }
 
             let text =
-                filtered.joined(separator: "\n")
+                filtered.joined(separator: "
+")
 
             textView.text = text
 
