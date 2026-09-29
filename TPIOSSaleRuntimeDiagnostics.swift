@@ -151,7 +151,7 @@ enum TPIOSSaleRuntimeDiagnostics {
 
             let urlText: String
             if let url = webView.url {
-                urlText = "(url.host ?? "<no-host>")\(url.path)"
+                urlText = "\(url.host ?? "<no-host>")\(url.path)"
             } else {
                 urlText = "<nil>"
             }
