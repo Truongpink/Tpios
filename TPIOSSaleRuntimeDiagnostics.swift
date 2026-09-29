@@ -21,7 +21,9 @@ enum TPIOSSaleRuntimeDiagnostics {
         var scrollViewDetails: [String] = []
 
         for (index, window) in windows.enumerated() {
-            let rootName = NSStringFromClass(type(of: window.rootViewController))
+            let rootName = window.rootViewController.map {
+                NSStringFromClass(type(of: $0))
+            } ?? "<nil>"
             output += "WINDOW[\(index)] \(NSStringFromClass(type(of: window)))\n"
             output += "Root: \(rootName)\n"
 
