@@ -730,8 +730,7 @@ private func refreshView() {
                 }
 
             let text =
-                filtered.joined(separator: "
-")
+                filtered.joined(separator: "\n")
 
             textView.text = text
 
