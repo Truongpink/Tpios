@@ -517,17 +517,47 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         }
 
         DispatchQueue.main.async { [weak self] in
-            guard let self else {
+            guard let self else { return }
+
+            let windows = UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .flatMap { $0.windows }
+                .filter {
+                    !$0.isHidden &&
+                    $0.alpha > 0.01 &&
+                    $0.bounds.width > 0 &&
+                    $0.bounds.height > 0 &&
+                    !NSStringFromClass(type(of: $0)).contains("TPIOS")
+                }
+
+            guard let window = windows.first else {
+                self.resultLabel.text = "Không tìm thấy màn hình Shopee."
                 return
             }
 
-            let diagnostic = TPIOSSaleRuntimeDiagnostics.inspectCurrentApp()
+            let values = TPIOSSaleScanner.scanVisibleApp(in: window)
+
+            guard !values.isEmpty else {
+                self.resultLabel.text = "Không tìm thấy giá trên màn hình hiện tại."
+                return
+            }
+
+            let lines = values.prefix(12).map {
+                "• \($0.text)"
+            }.joined(separator: "\n")
 
             self.resultLabel.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-            self.resultLabel.text = diagnostic
+            self.resultLabel.text = """
+            ĐÃ PHÂN TÍCH MÀN HÌNH
+
+            Giá trị tìm thấy:
+            \(lines)
+
+            Chưa áp dụng voucher tự động.
+            """
 
             TPIOSLog.shared.log(
-                "Sale diagnostic hoàn tất. Xem log để đối chiếu tầng render."
+                "Sale Scanner: tìm thấy \(values.count) giá trị."
             )
         }
     }
