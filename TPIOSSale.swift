@@ -516,20 +516,12 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
             return
         }
 
-        let originalFrame = frame
-        let originalHidden = isHidden
-
-        isHidden = true
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+        DispatchQueue.main.async { [weak self] in
             guard let self else {
                 return
             }
 
             let diagnostic = TPIOSSaleRuntimeDiagnostics.inspectCurrentApp()
-
-            self.frame = originalFrame
-            self.isHidden = originalHidden
 
             self.resultLabel.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
             self.resultLabel.text = diagnostic
