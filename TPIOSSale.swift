@@ -391,7 +391,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
 
         // Hai nút nằm sát nhau ở giữa, không còn dạt về hai mép.
         let actionSize: CGFloat = min(54, max(44, (contentWidth - 8) / 2))
-        let actionGap: CGFloat = 8
+        let actionGap: CGFloat = 4
         let actionGroupWidth = actionSize * 2 + actionGap
         let actionStartX = x + max(0, (contentWidth - actionGroupWidth) / 2)
         let actionLabelHeight: CGFloat = 16
