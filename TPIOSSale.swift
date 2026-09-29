@@ -5,10 +5,10 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
     var onBack: (() -> Void)?
     var onClose: (() -> Void)?
 
-    private let headerHeight: CGFloat = 66
+    private let headerHeight: CGFloat = 54
     private let handleSize: CGFloat = 30
-    private let minWidth: CGFloat = 300
-    private let minHeight: CGFloat = 420
+    private let minWidth: CGFloat = 260
+    private let minHeight: CGFloat = 300
 
     private let headerView = UIView()
     private let backButton = UIButton(type: .system)
@@ -22,7 +22,9 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
     private let freeshipField = UITextField()
 
     private let calculateButton = UIButton(type: .system)
+    private let calculateLabel = UILabel()
     private let scanButton = UIButton(type: .system)
+    private let scanLabel = UILabel()
     private let resultLabel = UILabel()
     private let noteLabel = UILabel()
     private let scrollView = UIScrollView()
@@ -146,51 +148,71 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
             placeholder: "Số tiền được giảm, ví dụ: 25000"
         )
 
-        calculateButton.setTitle("TÍNH GIÁ THỰC TRẢ", for: .normal)
-        calculateButton.setTitleColor(.white, for: .normal)
-        calculateButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .bold)
-        calculateButton.backgroundColor = UIColor(
-            red: 0.55,
-            green: 0.35,
-            blue: 0.95,
-            alpha: 1
+        configureActionButton(
+            calculateButton,
+            icon: "dollarsign.circle.fill",
+            color: UIColor(red: 0.55, green: 0.35, blue: 0.95, alpha: 1),
+            label: calculateLabel,
+            text: "Giá cuối",
+            action: #selector(calculateTapped)
         )
-        calculateButton.layer.cornerRadius = 12
-        calculateButton.addTarget(
-            self,
-            action: #selector(calculateTapped),
-            for: .touchUpInside
-        )
-        contentView.addSubview(calculateButton)
 
-        scanButton.setTitle("QUÉT TRANG SHOPEE", for: .normal)
-        scanButton.setTitleColor(.white, for: .normal)
-        scanButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .bold)
-        scanButton.backgroundColor = UIColor(
-            red: 0.12,
-            green: 0.55,
-            blue: 0.95,
-            alpha: 1
+        configureActionButton(
+            scanButton,
+            icon: "magnifyingglass",
+            color: UIColor(red: 0.12, green: 0.55, blue: 0.95, alpha: 1),
+            label: scanLabel,
+            text: "Quét",
+            action: #selector(scanShopeeTapped)
         )
-        scanButton.layer.cornerRadius = 12
-        scanButton.addTarget(
-            self,
-            action: #selector(scanShopeeTapped),
-            for: .touchUpInside
-        )
-        contentView.addSubview(scanButton)
 
         resultLabel.text = "Giá thực trả: —"
         resultLabel.textColor = .white
-        resultLabel.font = .systemFont(ofSize: 22, weight: .bold)
+        resultLabel.font = .systemFont(ofSize: 14, weight: .semibold)
         resultLabel.numberOfLines = 0
         contentView.addSubview(resultLabel)
 
-        noteLabel.text = "Mô phỏng thủ công. Chưa đọc dữ liệu voucher trực tiếp từ Shopee."
+        noteLabel.text = "Quét: chỉ kiểm tra cấu trúc màn hình hiện tại để nghiên cứu cách lấy dữ liệu. Chưa tự lấy voucher."
         noteLabel.textColor = UIColor.white.withAlphaComponent(0.55)
         noteLabel.font = .systemFont(ofSize: 12)
         noteLabel.numberOfLines = 0
         contentView.addSubview(noteLabel)
+    }
+
+    private func configureActionButton(
+        _ button: UIButton,
+        icon: String,
+        color: UIColor,
+        label: UILabel,
+        text: String,
+        action: Selector
+    ) {
+        let config = UIImage.SymbolConfiguration(
+            pointSize: 22,
+            weight: .semibold
+        )
+
+        button.setImage(
+            UIImage(systemName: icon, withConfiguration: config),
+            for: .normal
+        )
+        button.tintColor = .white
+        button.backgroundColor = color
+        button.layer.cornerRadius = 14
+        button.addTarget(
+            self,
+            action: action,
+            for: .touchUpInside
+        )
+        contentView.addSubview(button)
+
+        label.text = text
+        label.textColor = .white
+        label.font = .systemFont(ofSize: 12, weight: .semibold)
+        label.textAlignment = .center
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.7
+        contentView.addSubview(label)
     }
 
     private func addField(
@@ -360,25 +382,64 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
             height: max(0, bounds.height - headerHeight)
         )
 
-        let contentWidth = max(0, bounds.width - 36)
-        let x: CGFloat = 18
-        var y: CGFloat = 18
-        let fieldHeight: CGFloat = 42
-        let labelHeight: CGFloat = 20
-        let gap: CGFloat = 12
+        let contentWidth = max(0, bounds.width - 28)
+        let x: CGFloat = 14
+        var y: CGFloat = 12
+        let fieldHeight: CGFloat = 38
+        let labelHeight: CGFloat = 18
+        let gap: CGFloat = 8
+
+        // Action buttons luôn nằm trên cùng, vuông gọn để dễ bấm và dễ thu nhỏ.
+        let actionSize: CGFloat = min(54, max(44, (contentWidth - 12) / 2))
+        let actionLabelHeight: CGFloat = 16
+
+        calculateButton.frame = CGRect(
+            x: x,
+            y: y,
+            width: actionSize,
+            height: actionSize
+        )
+        calculateButton.layer.cornerRadius = actionSize * 0.26
+
+        calculateLabel.frame = CGRect(
+            x: x - 4,
+            y: y + actionSize + 3,
+            width: actionSize + 8,
+            height: actionLabelHeight
+        )
+
+        let scanX = x + contentWidth - actionSize
+        scanButton.frame = CGRect(
+            x: scanX,
+            y: y,
+            width: actionSize,
+            height: actionSize
+        )
+        scanButton.layer.cornerRadius = actionSize * 0.26
+
+        scanLabel.frame = CGRect(
+            x: scanX - 4,
+            y: y + actionSize + 3,
+            width: actionSize + 8,
+            height: actionLabelHeight
+        )
+
+        y += actionSize + actionLabelHeight + 14
 
         let fields = [
-            (priceField, "Giá sản phẩm"),
-            (shopVoucherField, "Shop Voucher"),
-            (shopeeVoucherField, "Shopee Voucher"),
-            (shippingField, "Phí vận chuyển"),
-            (freeshipField, "Freeship")
+            priceField,
+            shopVoucherField,
+            shopeeVoucherField,
+            shippingField,
+            freeshipField
         ]
 
         var labels: [UILabel] = []
         for view in contentView.subviews {
             if let label = view as? UILabel,
                label.tag != 0,
+               label !== calculateLabel,
+               label !== scanLabel,
                label !== resultLabel,
                label !== noteLabel {
                 labels.append(label)
@@ -388,7 +449,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         labels.sort { $0.frame.minY < $1.frame.minY }
 
         for index in 0..<fields.count {
-            let field = fields[index].0
+            let field = fields[index]
             let label = labels[index]
 
             label.frame = CGRect(
@@ -408,23 +469,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
             y += labelHeight + fieldHeight + gap
         }
 
-        calculateButton.frame = CGRect(
-            x: x,
-            y: y + 2,
-            width: contentWidth,
-            height: 46
-        )
-
-        y += 60
-
-        scanButton.frame = CGRect(
-            x: x,
-            y: y,
-            width: contentWidth,
-            height: 46
-        )
-
-        y += 58
+        y += 4
 
         resultLabel.frame = CGRect(
             x: x,
@@ -464,7 +509,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
     @objc private func scanShopeeTapped() {
         viewEndEditing()
 
-        guard let parent = superview else {
+        guard superview != nil else {
             return
         }
 
