@@ -430,10 +430,10 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
             x: x,
             y: y,
             width: contentWidth,
-            height: 88
+            height: 600
         )
 
-        y += 100
+        y += 620
 
         noteLabel.frame = CGRect(
             x: x,
@@ -483,6 +483,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
             self.frame = originalFrame
             self.isHidden = originalHidden
 
+            self.resultLabel.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
             self.resultLabel.text = diagnostic
 
             TPIOSLog.shared.log(
