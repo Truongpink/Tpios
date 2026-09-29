@@ -172,7 +172,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         resultLabel.numberOfLines = 0
         contentView.addSubview(resultLabel)
 
-        noteLabel.text = "Quét: chỉ kiểm tra cấu trúc màn hình hiện tại để nghiên cứu cách lấy dữ liệu. Chưa tự lấy voucher."
+        noteLabel.text = "Phân tích: kiểm tra Window / Controller / WebView / ScrollView để xác định cách lấy dữ liệu. Chưa tự lấy voucher."
         noteLabel.textColor = UIColor.white.withAlphaComponent(0.55)
         noteLabel.font = .systemFont(ofSize: 12)
         noteLabel.numberOfLines = 0
