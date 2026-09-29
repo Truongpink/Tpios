@@ -162,7 +162,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
             icon: "magnifyingglass",
             color: UIColor(red: 0.12, green: 0.55, blue: 0.95, alpha: 1),
             label: scanLabel,
-            text: "Quét",
+            text: "Phân tích",
             action: #selector(scanShopeeTapped)
         )
 
