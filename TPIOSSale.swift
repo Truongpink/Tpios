@@ -542,18 +542,16 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
                 return
             }
 
-            let lines = values.prefix(12).map {
-                "• \($0.text)"
-            }.joined(separator: "\n")
+            let target = values.first!
 
-            self.resultLabel.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+            self.resultLabel.font = .systemFont(ofSize: 14, weight: .semibold)
             self.resultLabel.text = """
-            ĐÃ PHÂN TÍCH MÀN HÌNH
+            SẢN PHẨM MỤC TIÊU
 
-            Giá trị tìm thấy:
-            \(lines)
+            Giá phát hiện: \(self.formatMoney(target.amount))
 
-            Chưa áp dụng voucher tự động.
+            Giá trị này được chọn làm giá chính để tiếp tục săn sale.
+            Voucher tự động: chưa có dữ liệu voucher thực tế.
             """
 
             TPIOSLog.shared.log(
