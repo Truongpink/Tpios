@@ -26,6 +26,9 @@ private var hideCandidateLines = true
 private var filterText = ""
 
 private var logStartFrame = CGRect.zero
+private var resizeStartFrame = CGRect.zero
+private var resizeStartPoint = CGPoint.zero
+private weak var resizeHandle: UILabel?
 
 private init() {}
 
@@ -319,6 +322,22 @@ func show() {
 
         window.addSubview(textView)
 
+        let resizeHandle = UILabel()
+        resizeHandle.text = "↘"
+        resizeHandle.textColor = UIColor.white.withAlphaComponent(0.55)
+        resizeHandle.font = .systemFont(ofSize: 18, weight: .medium)
+        resizeHandle.textAlignment = .center
+        resizeHandle.isUserInteractionEnabled = true
+        window.addSubview(resizeHandle)
+        self.resizeHandle = resizeHandle
+
+        let resizePan = UIPanGestureRecognizer(
+            target: self,
+            action: #selector(resizeLog(_:))
+        )
+        resizePan.cancelsTouchesInView = false
+        resizeHandle.addGestureRecognizer(resizePan)
+
         title.translatesAutoresizingMaskIntoConstraints = false
         close.translatesAutoresizingMaskIntoConstraints = false
         clear.translatesAutoresizingMaskIntoConstraints = false
@@ -447,6 +466,24 @@ func show() {
 
             textView.bottomAnchor.constraint(
                 equalTo: window.bottomAnchor
+            ),
+
+            resizeHandle.trailingAnchor.constraint(
+                equalTo: window.trailingAnchor,
+                constant: -2
+            ),
+
+            resizeHandle.bottomAnchor.constraint(
+                equalTo: window.bottomAnchor,
+                constant: -2
+            ),
+
+            resizeHandle.widthAnchor.constraint(
+                equalToConstant: 26
+            ),
+
+            resizeHandle.heightAnchor.constraint(
+                equalToConstant: 26
             )
         ])
 
@@ -458,10 +495,10 @@ func show() {
                 hostWindow.safeAreaInsets
 
             let width: CGFloat =
-                min(260, hostWindow.bounds.width - 20)
+                min(190, hostWindow.bounds.width - 20)
             let height: CGFloat =
                 min(
-                    320,
+                    230,
                     hostWindow.bounds.height
                     - safe.top
                     - safe.bottom
@@ -476,8 +513,8 @@ func show() {
                             (hostWindow.bounds.width - width) / 2
                         ),
                     y: safe.top + 10,
-                    width: width,
-                    height: max(280, height)
+                    width: max(180, width),
+                    height: max(220, height)
                 )
         }
 
@@ -551,6 +588,65 @@ func show() {
             )
 
         window.frame = frame
+
+    default:
+        break
+    }
+}
+
+@objc private func resizeLog(
+    _ gesture: UIPanGestureRecognizer
+) {
+    guard
+        let window = logWindow,
+        let host = window.superview
+    else {
+        return
+    }
+
+    switch gesture.state {
+    case .began:
+        resizeStartFrame = window.frame
+        resizeStartPoint = gesture.location(in: host)
+
+    case .changed, .ended:
+        let point = gesture.location(in: host)
+        let dx = point.x - resizeStartPoint.x
+        let dy = point.y - resizeStartPoint.y
+
+        let safe = host.safeAreaInsets
+        let minWidth: CGFloat = 180
+        let minHeight: CGFloat = 220
+
+        let maxWidth = max(
+            minWidth,
+            host.bounds.width - resizeStartFrame.origin.x - 10
+        )
+
+        let maxHeight = max(
+            minHeight,
+            host.bounds.height
+            - safe.bottom
+            - resizeStartFrame.origin.y
+            - 10
+        )
+
+        let width = min(
+            max(minWidth, resizeStartFrame.width + dx),
+            maxWidth
+        )
+
+        let height = min(
+            max(minHeight, resizeStartFrame.height + dy),
+            maxHeight
+        )
+
+        window.frame = CGRect(
+            x: resizeStartFrame.origin.x,
+            y: resizeStartFrame.origin.y,
+            width: width,
+            height: height
+        )
 
     default:
         break
