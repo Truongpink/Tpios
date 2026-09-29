@@ -549,19 +549,62 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         let shipping = amount(shippingField)
         let freeship = amount(freeshipField)
 
-        let productAfterShop = max(0, price - shop)
-        let productAfterShopee = max(0, productAfterShop - shopee)
-        let shippingAfterVoucher = max(0, shipping - freeship)
-        let total = productAfterShopee + shippingAfterVoucher
-        let saved = max(0, price + shipping - total)
+        let product = TPIOSProductContext(
+            productID: nil,
+            shopID: nil,
+            merchandiseAmount: price,
+            shippingAmount: shipping,
+            isVIP: true
+        )
+
+        var vouchers: [TPIOSVoucher] = []
+
+        if shop > 0 {
+            vouchers.append(
+                TPIOSVoucher(
+                    id: "manual-shop",
+                    title: "Shop Voucher",
+                    kind: .shop,
+                    discount: .fixed(shop)
+                )
+            )
+        }
+
+        if shopee > 0 {
+            vouchers.append(
+                TPIOSVoucher(
+                    id: "manual-shopee",
+                    title: "Shopee Voucher",
+                    kind: .platform,
+                    discount: .fixed(shopee)
+                )
+            )
+        }
+
+        if freeship > 0 {
+            vouchers.append(
+                TPIOSVoucher(
+                    id: "manual-freeship",
+                    title: "Freeship",
+                    kind: .freeship,
+                    discount: .fixed(freeship)
+                )
+            )
+        }
+
+        let calculation = TPIOSVoucherEngine.calculateBest(
+            product: product,
+            vouchers: vouchers
+        )
 
         resultLabel.text = """
-        Giá thực trả: \(formatMoney(total))
-        Tiết kiệm: \(formatMoney(saved))
+        Giá thực trả: \(formatMoney(calculation.totalAfter))
+        Tiết kiệm: \(formatMoney(calculation.totalSaved))
+        Voucher: \(calculation.selection.vouchers.map(\.title).joined(separator: " + "))
         """
 
         TPIOSLog.shared.log(
-            "Sale Calculator: \(formatMoney(total))"
+            "Sale Voucher Engine: \(formatMoney(calculation.totalAfter))"
         )
     }
 
