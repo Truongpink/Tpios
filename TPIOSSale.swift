@@ -22,6 +22,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
     private let freeshipField = UITextField()
 
     private let calculateButton = UIButton(type: .system)
+    private let scanButton = UIButton(type: .system)
     private let resultLabel = UILabel()
     private let noteLabel = UILabel()
     private let scrollView = UIScrollView()
@@ -161,6 +162,23 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
             for: .touchUpInside
         )
         contentView.addSubview(calculateButton)
+
+        scanButton.setTitle("QUÉT TRANG SHOPEE", for: .normal)
+        scanButton.setTitleColor(.white, for: .normal)
+        scanButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .bold)
+        scanButton.backgroundColor = UIColor(
+            red: 0.12,
+            green: 0.55,
+            blue: 0.95,
+            alpha: 1
+        )
+        scanButton.layer.cornerRadius = 12
+        scanButton.addTarget(
+            self,
+            action: #selector(scanShopeeTapped),
+            for: .touchUpInside
+        )
+        contentView.addSubview(scanButton)
 
         resultLabel.text = "Giá thực trả: —"
         resultLabel.textColor = .white
@@ -399,14 +417,23 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
 
         y += 60
 
+        scanButton.frame = CGRect(
+            x: x,
+            y: y,
+            width: contentWidth,
+            height: 46
+        )
+
+        y += 58
+
         resultLabel.frame = CGRect(
             x: x,
             y: y,
             width: contentWidth,
-            height: 70
+            height: 88
         )
 
-        y += 82
+        y += 100
 
         noteLabel.frame = CGRect(
             x: x,
@@ -432,6 +459,40 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
             width: handleSize,
             height: handleSize
         )
+    }
+
+    @objc private func scanShopeeTapped() {
+        viewEndEditing()
+
+        guard let parent = superview else {
+            return
+        }
+
+        let originalFrame = frame
+        let originalHidden = isHidden
+
+        isHidden = true
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self, weak parent] in
+            guard let self, let parent else {
+                return
+            }
+
+            let values = TPIOSSaleScanner.scanVisibleApp(in: parent)
+
+            self.frame = originalFrame
+            self.isHidden = originalHidden
+
+            if values.isEmpty {
+                self.resultLabel.text = """
+                Không tìm thấy dữ liệu giá/voucher.
+
+                Hãy mở trang sản phẩm hoặc trang thanh toán Shopee rồi quét lại.
+                """
+            } else {
+                self.resultLabel.text = TPIOSSaleScanner.summary(values)
+            }
+        }
     }
 
     @objc private func calculateTapped() {
@@ -496,6 +557,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         if touch.view === backButton ||
            touch.view === closeButton ||
            touch.view === resizeHandle ||
+           touch.view === scanButton ||
            touch.view is UITextField ||
            touch.view === calculateButton {
             return false
