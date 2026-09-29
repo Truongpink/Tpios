@@ -544,14 +544,28 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
 
             let target = values.first!
 
+            let productValues = values.filter {
+                let text = $0.text.folding(
+                    options: [.diacriticInsensitive, .caseInsensitive],
+                    locale: .current
+                )
+                return !text.contains("voucher") &&
+                       !text.contains("freeship") &&
+                       !text.contains("phi van chuyen") &&
+                       !text.contains("shipping") &&
+                       !text.contains("giam")
+            }
+
+            let targetValue = productValues.first ?? target
+
             self.resultLabel.font = .systemFont(ofSize: 14, weight: .semibold)
             self.resultLabel.text = """
             SẢN PHẨM MỤC TIÊU
 
-            Giá phát hiện: \(self.formatMoney(target.amount))
+            Giá phát hiện: \(self.formatMoney(targetValue.amount))
 
-            Giá trị này được chọn làm giá chính để tiếp tục săn sale.
-            Voucher tự động: chưa có dữ liệu voucher thực tế.
+            Giá này được dùng làm giá chính để tiếp tục tính săn sale.
+            Voucher thực tế: chưa lấy được từ Shopee.
             """
 
             TPIOSLog.shared.log(
