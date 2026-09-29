@@ -389,12 +389,15 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         let labelHeight: CGFloat = 18
         let gap: CGFloat = 8
 
-        // Action buttons luôn nằm trên cùng, vuông gọn để dễ bấm và dễ thu nhỏ.
-        let actionSize: CGFloat = min(54, max(44, (contentWidth - 12) / 2))
+        // Hai nút nằm sát nhau ở giữa, không còn dạt về hai mép.
+        let actionSize: CGFloat = min(54, max(44, (contentWidth - 8) / 2))
+        let actionGap: CGFloat = 8
+        let actionGroupWidth = actionSize * 2 + actionGap
+        let actionStartX = x + max(0, (contentWidth - actionGroupWidth) / 2)
         let actionLabelHeight: CGFloat = 16
 
         calculateButton.frame = CGRect(
-            x: x,
+            x: actionStartX,
             y: y,
             width: actionSize,
             height: actionSize
@@ -402,13 +405,13 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         calculateButton.layer.cornerRadius = actionSize * 0.26
 
         calculateLabel.frame = CGRect(
-            x: x - 4,
+            x: actionStartX - 4,
             y: y + actionSize + 3,
             width: actionSize + 8,
             height: actionLabelHeight
         )
 
-        let scanX = x + contentWidth - actionSize
+        let scanX = actionStartX + actionSize + actionGap
         scanButton.frame = CGRect(
             x: scanX,
             y: y,
