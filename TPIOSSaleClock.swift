@@ -12,6 +12,9 @@ final class TPIOSSaleClock: UIView, UIGestureRecognizerDelegate {
     private let decimalPoint = UILabel()
     private let resizeHandle = UILabel()
     private let statusLabel = UILabel()
+    private let closeButton = UIButton(type: .system)
+
+    var onClose: (() -> Void)?
 
     private var clockTimer: Timer?
     private var lastTenth: Int = -1
@@ -74,6 +77,12 @@ final class TPIOSSaleClock: UIView, UIGestureRecognizerDelegate {
         resizeHandle.font = .systemFont(ofSize: 18, weight: .medium)
         resizeHandle.isUserInteractionEnabled = true
         addSubview(resizeHandle)
+
+        closeButton.setImage(UIImage(systemName: "xmark"), for: .normal)
+        closeButton.tintColor = UIColor.white.withAlphaComponent(0.75)
+        closeButton.backgroundColor = UIColor.white.withAlphaComponent(0.10)
+        closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
+        addSubview(closeButton)
 
         let movePan = UIPanGestureRecognizer(
             target: self,
@@ -174,6 +183,10 @@ final class TPIOSSaleClock: UIView, UIGestureRecognizerDelegate {
         )
     }
 
+    @objc private func closeTapped() {
+        onClose?()
+    }
+
     override func layoutSubviews() {
 
         super.layoutSubviews()
@@ -197,6 +210,15 @@ final class TPIOSSaleClock: UIView, UIGestureRecognizerDelegate {
         )
 
         let handleSide = max(28, 30 * scale)
+        let closeSide = max(24, 26 * scale)
+
+        closeButton.frame = CGRect(
+            x: bounds.width - closeSide - 6 * scale,
+            y: 6 * scale,
+            width: closeSide,
+            height: closeSide
+        )
+        closeButton.layer.cornerRadius = closeSide / 2
 
         resizeHandle.frame = CGRect(
             x: bounds.width - handleSide,
