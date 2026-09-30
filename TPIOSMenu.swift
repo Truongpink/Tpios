@@ -224,6 +224,10 @@ final class TPIOSMenu: UIView,
         button.layer.cornerRadius = 18
         button.imageView?.contentMode = .center
 
+        if let imageView = button.imageView {
+            button.bringSubviewToFront(imageView)
+        }
+
         button.addTarget(
             self,
             action: action,
@@ -603,6 +607,10 @@ final class TPIOSMenu: UIView,
                 height: height
             )
         )
+
+        clock.onClose = { [weak self] in
+            self?.closeSaleClock()
+        }
 
         parent.addSubview(clock)
 
