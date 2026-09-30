@@ -112,22 +112,7 @@ func show() {
                 frame: windowScene.coordinateSpace.bounds
             )
 
-        window.backgroundColor = UIColor(
-            red: 0.045,
-            green: 0.05,
-            blue: 0.065,
-            alpha: 0.98
-        )
-        window.layer.cornerRadius = 24
-        window.layer.borderWidth = 1
-        window.layer.borderColor =
-            UIColor.white.withAlphaComponent(0.10).cgColor
-        window.layer.shadowColor = UIColor.black.cgColor
-        window.layer.shadowOpacity = 0.42
-        window.layer.shadowRadius = 20
-        window.layer.shadowOffset = CGSize(width: 0, height: 8)
-
-        window.clipsToBounds = true
+        TPIOSPanelStyle.applyGlassBackground(to: window, cornerRadius: 24)
 
         let title =
             UILabel()
