@@ -115,17 +115,7 @@ final class TPIOSLocation: UIView,
 
     private func setup() {
 
-        backgroundColor = UIColor(
-            red: 0.045, green: 0.05, blue: 0.065, alpha: 0.98
-        )
-        layer.cornerRadius = 24
-        layer.borderWidth = 1
-        layer.borderColor = UIColor.white.withAlphaComponent(0.10).cgColor
-        layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.42
-        layer.shadowRadius = 20
-        layer.shadowOffset = CGSize(width: 0, height: 8)
-        clipsToBounds = false
+        TPIOSPanelStyle.applyGlassBackground(to: self, cornerRadius: 24)
 
         setupHeader()
         setupContent()
