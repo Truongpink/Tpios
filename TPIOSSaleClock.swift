@@ -45,17 +45,7 @@ final class TPIOSSaleClock: UIView, UIGestureRecognizerDelegate {
 
     private func setup() {
 
-        backgroundColor = UIColor.black.withAlphaComponent(0.82)
-
-        layer.cornerRadius = 22
-        layer.borderWidth = 1
-        layer.borderColor = UIColor.white.withAlphaComponent(0.10).cgColor
-        layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.35
-        layer.shadowRadius = 16
-        layer.shadowOffset = CGSize(width: 0, height: 7)
-
-        clipsToBounds = false
+        TPIOSPanelStyle.applyGlassBackground(to: self, cornerRadius: 22)
 
         timeBackground.backgroundColor = UIColor.black.withAlphaComponent(0.18)
         timeBackground.layer.cornerRadius = 16
