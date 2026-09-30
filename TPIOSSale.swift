@@ -510,17 +510,19 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
                 return
             }
 
-            let diagnostic = TPIOSSaleRuntimeDiagnostics.inspectCurrentApp()
+            TPIOSProductContextScanner.scanCurrentApp { [weak self] result in
+                guard let self else {
+                    return
+                }
 
-            self.frame = originalFrame
-            self.isHidden = originalHidden
+                self.frame = originalFrame
+                self.isHidden = originalHidden
 
-            self.resultLabel.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-            self.resultLabel.text = diagnostic
+                self.resultLabel.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+                self.resultLabel.text = result.displayText()
 
-            TPIOSLog.shared.log(
-                "Sale diagnostic hoàn tất. Xem log để đối chiếu tầng render."
-            )
+                TPIOSLog.shared.log("Sale Product Context scan hoàn tất.")
+            }
         }
     }
 
