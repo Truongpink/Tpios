@@ -63,24 +63,7 @@ final class TPIOSMenu: UIView,
 
     private func setup() {
 
-        backgroundColor = UIColor(
-            red: 0.045,
-            green: 0.05,
-            blue: 0.065,
-            alpha: 0.98
-        )
-
-        layer.cornerRadius = 24
-        layer.borderWidth = 1
-        layer.borderColor =
-            UIColor.white.withAlphaComponent(0.10).cgColor
-
-        layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.42
-        layer.shadowRadius = 20
-        layer.shadowOffset = CGSize(width: 0, height: 8)
-
-        clipsToBounds = false
+        TPIOSPanelStyle.applyGlassBackground(to: self, cornerRadius: 24)
 
         setupHeader()
         setupButtons()
@@ -164,7 +147,7 @@ final class TPIOSMenu: UIView,
         configureIconButton(
             bypassButton,
             icon: "location.fill",
-            color: UIColor(red: 0.95, green: 0.55, blue: 0.15, alpha: 1),
+            colors: [UIColor(red: 1.00, green: 0.65, blue: 0.25, alpha: 1), UIColor(red: 0.85, green: 0.25, blue: 0.08, alpha: 1)],
             action: #selector(locationTapped)
         )
         configureCaptionLabel(bypassLabel, text: "Vị trí")
@@ -172,7 +155,7 @@ final class TPIOSMenu: UIView,
         configureIconButton(
             saleButton,
             icon: "bag.fill",
-            color: UIColor(red: 0.55, green: 0.35, blue: 0.95, alpha: 1),
+            colors: [UIColor(red: 0.68, green: 0.47, blue: 1.00, alpha: 1), UIColor(red: 0.31, green: 0.20, blue: 0.82, alpha: 1)],
             action: #selector(saleTapped)
         )
         configureCaptionLabel(saleLabel, text: "Sale")
@@ -180,7 +163,7 @@ final class TPIOSMenu: UIView,
         configureIconButton(
             logButton,
             icon: "doc.text.magnifyingglass",
-            color: UIColor(red: 0.15, green: 0.55, blue: 0.95, alpha: 1),
+            colors: [UIColor(red: 0.36, green: 0.71, blue: 1.00, alpha: 1), UIColor(red: 0.09, green: 0.39, blue: 0.80, alpha: 1)],
             action: #selector(logTapped)
         )
         configureCaptionLabel(logLabel, text: "Xem log")
@@ -188,7 +171,7 @@ final class TPIOSMenu: UIView,
         configureIconButton(
             adBlockButton,
             icon: "shield.fill",
-            color: UIColor(red: 0.85, green: 0.12, blue: 0.07, alpha: 1),
+            colors: [UIColor(red: 1.00, green: 0.35, blue: 0.27, alpha: 1), UIColor(red: 0.64, green: 0.06, blue: 0.06, alpha: 1)],
             action: #selector(adBlockTapped)
         )
         configureCaptionLabel(adBlockLabel, text: "Tắt QC")
@@ -196,7 +179,7 @@ final class TPIOSMenu: UIView,
         configureIconButton(
             clockButton,
             icon: "clock.fill",
-            color: UIColor(red: 0.15, green: 0.75, blue: 0.35, alpha: 1),
+            colors: [UIColor(red: 0.36, green: 0.88, blue: 0.55, alpha: 1), UIColor(red: 0.06, green: 0.52, blue: 0.33, alpha: 1)],
             action: #selector(clockTapped)
         )
         configureCaptionLabel(clockLabel, text: "Đồng hồ")
@@ -204,7 +187,7 @@ final class TPIOSMenu: UIView,
         configureIconButton(
             reloadButton,
             icon: "arrow.clockwise",
-            color: UIColor(red: 0.10, green: 0.65, blue: 0.65, alpha: 1),
+            colors: [UIColor(red: 0.27, green: 0.84, blue: 0.84, alpha: 1), UIColor(red: 0.04, green: 0.43, blue: 0.55, alpha: 1)],
             action: #selector(reloadTapped)
         )
         configureCaptionLabel(reloadLabel, text: "Tải lại trang")
@@ -222,7 +205,7 @@ final class TPIOSMenu: UIView,
     private func configureIconButton(
         _ button: UIButton,
         icon: String,
-        color: UIColor,
+        colors: [UIColor],
         action: Selector
     ) {
 
@@ -237,7 +220,7 @@ final class TPIOSMenu: UIView,
         )
 
         button.tintColor = .white
-        button.backgroundColor = color
+        TPIOSPanelStyle.applyGradientFill(to: button, colors: colors, cornerRadius: 18)
         button.layer.cornerRadius = 18
         button.imageView?.contentMode = .center
 
@@ -521,6 +504,7 @@ final class TPIOSMenu: UIView,
                 height: iconSize
             )
             icons[index].layer.cornerRadius = iconSize * 0.28
+            TPIOSPanelStyle.syncFrames(in: icons[index])
 
             labels[index].frame = CGRect(
                 x: columnX,
