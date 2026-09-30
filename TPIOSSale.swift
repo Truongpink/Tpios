@@ -44,23 +44,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
     }
 
     private func setup() {
-        backgroundColor = UIColor(
-            red: 0.045,
-            green: 0.05,
-            blue: 0.065,
-            alpha: 0.98
-        )
-
-        layer.cornerRadius = 24
-        layer.borderWidth = 1
-        layer.borderColor = UIColor.white.withAlphaComponent(0.12).cgColor
-
-        layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.42
-        layer.shadowRadius = 20
-        layer.shadowOffset = CGSize(width: 0, height: 8)
-
-        clipsToBounds = true
+        TPIOSPanelStyle.applyGlassBackground(to: self, cornerRadius: 24)
 
         setupHeader()
         setupContent()
@@ -516,60 +500,26 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
             return
         }
 
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
+        let originalFrame = frame
+        let originalHidden = isHidden
 
-            let windows = UIApplication.shared.connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .flatMap { $0.windows }
-                .filter {
-                    !$0.isHidden &&
-                    $0.alpha > 0.01 &&
-                    $0.bounds.width > 0 &&
-                    $0.bounds.height > 0 &&
-                    !NSStringFromClass(type(of: $0)).contains("TPIOS")
-                }
+        isHidden = true
 
-            guard let window = windows.first else {
-                self.resultLabel.text = "Không tìm thấy màn hình Shopee."
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            guard let self else {
                 return
             }
 
-            let values = TPIOSSaleScanner.scanVisibleApp(in: window)
+            let diagnostic = TPIOSSaleRuntimeDiagnostics.inspectCurrentApp()
 
-            guard !values.isEmpty else {
-                self.resultLabel.text = "Không tìm thấy giá trên màn hình hiện tại."
-                return
-            }
+            self.frame = originalFrame
+            self.isHidden = originalHidden
 
-            let target = values.first!
-
-            let productValues = values.filter {
-                let text = $0.text.folding(
-                    options: [.diacriticInsensitive, .caseInsensitive],
-                    locale: .current
-                )
-                return !text.contains("voucher") &&
-                       !text.contains("freeship") &&
-                       !text.contains("phi van chuyen") &&
-                       !text.contains("shipping") &&
-                       !text.contains("giam")
-            }
-
-            let targetValue = productValues.first ?? target
-
-            self.resultLabel.font = .systemFont(ofSize: 14, weight: .semibold)
-            self.resultLabel.text = """
-            SẢN PHẨM MỤC TIÊU
-
-            Giá phát hiện: \(self.formatMoney(targetValue.amount))
-
-            Giá này được dùng làm giá chính để tiếp tục tính săn sale.
-            Voucher thực tế: chưa lấy được từ Shopee.
-            """
+            self.resultLabel.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+            self.resultLabel.text = diagnostic
 
             TPIOSLog.shared.log(
-                "Sale Scanner: tìm thấy \(values.count) giá trị."
+                "Sale diagnostic hoàn tất. Xem log để đối chiếu tầng render."
             )
         }
     }
