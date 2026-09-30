@@ -608,8 +608,10 @@ final class TPIOSMenu: UIView,
             )
         )
 
-        clock.onClose = { [weak self] in
-            self?.closeSaleClock()
+        clock.onClose = { [weak self, weak clock] in
+            clock?.stop()
+            clock?.removeFromSuperview()
+            self?.saleClock = nil
         }
 
         parent.addSubview(clock)
