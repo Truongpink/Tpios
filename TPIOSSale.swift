@@ -115,8 +115,8 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
 
         configureIconButton(addButton, icon: "plus", action: #selector(addProductTapped))
         configureIconButton(analyzeButton, icon: "magnifyingglass", action: #selector(analyzeTapped))
-        configureCaption(addLabel, text: "Thêm sản phẩm")
-        configureCaption(analyzeLabel, text: "Kiểm tra ngay")
+        configureCaption(addLabel, text: "Thêm SP")
+        configureCaption(analyzeLabel, text: "KT ngay")
         contentView.addSubview(addButton)
         contentView.addSubview(addLabel)
         contentView.addSubview(analyzeButton)
@@ -277,21 +277,21 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         linkField.frame = CGRect(x: x, y: y, width: width, height: 42)
         y += 50
 
-        let gridGap: CGFloat = 18
-        let iconSize = min(72, max(54, (width - gridGap) / 2))
+        let scale = min(width / 360, max(0.75, bounds.height / 560))
+        let gridGap = max(22, min(34, 26 * scale))
+        let iconSize = min(74, max(54, (width - gridGap) / 2))
         let gridWidth = iconSize * 2 + gridGap
         let gridX = x + max(0, (width - gridWidth) / 2)
+        let captionGap = max(7, 8 * scale)
+        let captionHeight = max(18, 19 * scale)
 
         addButton.frame = CGRect(x: gridX, y: y, width: iconSize, height: iconSize)
-        addLabel.frame = CGRect(x: gridX - 10, y: y + iconSize + 6, width: iconSize + 20, height: 18)
+        addLabel.frame = CGRect(x: gridX, y: y + iconSize + captionGap, width: iconSize, height: captionHeight)
         analyzeButton.frame = CGRect(x: gridX + iconSize + gridGap, y: y, width: iconSize, height: iconSize)
-        analyzeLabel.frame = CGRect(
-            x: gridX + iconSize + gridGap - 10,
-            y: y + iconSize + 6,
-            width: iconSize + 20,
-            height: 18
-        )
-        y += iconSize + 32
+        analyzeLabel.frame = CGRect(x: gridX + iconSize + gridGap, y: y + iconSize + captionGap, width: iconSize, height: captionHeight)
+        addLabel.font = .systemFont(ofSize: max(10, 13 * scale), weight: .semibold)
+        analyzeLabel.font = .systemFont(ofSize: max(10, 13 * scale), weight: .semibold)
+        y += iconSize + captionGap + captionHeight + max(22, 24 * scale)
 
         resultLabel.frame = CGRect(x: x, y: y, width: width, height: 170)
         y += 180
@@ -371,26 +371,42 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
     @objc private func addProductTapped() {
         viewEndEditing()
 
-        guard let info = TPIOSSaleLinkParser.parse(linkField.text ?? "") else {
-            resultLabel.text = "Link không hợp lệ. Hãy dán link sản phẩm Shopee."
+        let raw = linkField.text ?? ""
+        guard let url = TPIOSSaleLinkParser.makeURL(raw) else {
+            resultLabel.text = "Link không hợp lệ. Hãy dán link Shopee."
             return
         }
 
-        let title = "Shopee item \(info.itemID ?? "chưa xác định")"
-        let product = TPIOSSaleStore.shared.add(
-            url: info.url,
-            title: title,
-            itemID: info.itemID,
-            shopID: info.shopID
-        )
+        resultLabel.text = "Đang xác định link sản phẩm…"
 
-        selectedProductID = product.id
-        resultLabel.text = "Đã lưu sản phẩm. Bấm “Kiểm tra ngay” để tạo snapshot."
-        refreshList()
+        TPIOSSaleLinkParser.resolve(url) { [weak self] resolvedURL in
+            DispatchQueue.main.async {
+                guard let self,
+                      let resolvedURL,
+                      let info = TPIOSSaleLinkParser.parse(resolvedURL) else {
+                    self?.resultLabel.text = "Không xác định được sản phẩm từ link này."
+                    return
+                }
 
-        TPIOSLog.shared.log(
-            "Sale: đã lưu product URL itemID=\(info.itemID ?? "-") shopID=\(info.shopID ?? "-")"
-        )
+                let title = "Shopee item \(info.itemID ?? "chưa xác định")"
+                let product = TPIOSSaleStore.shared.add(
+                    url: info.url,
+                    title: title,
+                    itemID: info.itemID,
+                    shopID: info.shopID
+                )
+
+                self.selectedProductID = product.id
+                self.resultLabel.text = info.itemID == nil
+                    ? "Đã lưu link. Cần dữ liệu Shopee để xác định sản phẩm/biến thể."
+                    : "Đã xác định sản phẩm. Chưa chọn biến thể/SKU."
+                self.refreshList()
+
+                TPIOSLog.shared.log(
+                    "Sale: đã lưu product URL itemID=\(info.itemID ?? "-") shopID=\(info.shopID ?? "-")"
+                )
+            }
+        }
     }
 
     @objc private func analyzeTapped() {
@@ -502,6 +518,8 @@ struct TPIOSWatchedSale: Codable {
     var title: String
     var itemID: String?
     var shopID: String?
+    var variantID: String?
+    var variantName: String?
     var createdAt: Date
     var lastCheckedAt: Date?
     var bestFinalPrice: Double?
@@ -530,7 +548,7 @@ private final class TPIOSSaleStore {
         if let index = products.firstIndex(where: { normalizedURL($0.url) == normalizedURL(url) }) {
             return products[index]
         }
-        let product = TPIOSWatchedSale(id: UUID(), url: url, title: title, itemID: itemID, shopID: shopID, createdAt: Date(), lastCheckedAt: nil, bestFinalPrice: nil, snapshots: [])
+        let product = TPIOSWatchedSale(id: UUID(), url: url, title: title, itemID: itemID, shopID: shopID, variantID: nil, variantName: nil, createdAt: Date(), lastCheckedAt: nil, bestFinalPrice: nil, snapshots: [])
         products.insert(product, at: 0)
         save(products)
         return product
@@ -567,23 +585,64 @@ private struct TPIOSSaleLinkInfo {
 }
 
 private enum TPIOSSaleLinkParser {
-    static func parse(_ rawURL: String) -> TPIOSSaleLinkInfo? {
+    static func makeURL(_ rawURL: String) -> URL? {
         let trimmed = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let value = trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") ? trimmed : "https://\\(trimmed)"
-        guard let url = URL(string: value), let host = url.host?.lowercased(), host.contains("shopee") else { return nil }
+
+        let value: String
+        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
+            value = trimmed
+        } else {
+            value = "https://\(trimmed)"
+        }
+
+        guard let url = URL(string: value),
+              let host = url.host?.lowercased(),
+              host == "vn.shp.ee" || host.hasSuffix(".shopee.vn") || host == "shopee.vn"
+        else {
+            return nil
+        }
+
+        return url
+    }
+
+    static func resolve(_ url: URL, completion: @escaping (URL?) -> Void) {
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 10
+
+        URLSession.shared.dataTask(with: request) { _, response, _ in
+            completion((response as? HTTPURLResponse)?.url ?? url)
+        }.resume()
+    }
+
+    static func parse(_ url: URL) -> TPIOSSaleLinkInfo? {
+        guard let host = url.host?.lowercased(),
+              host == "vn.shp.ee" || host.hasSuffix(".shopee.vn") || host == "shopee.vn"
+        else {
+            return nil
+        }
+
         let components = url.pathComponents.filter { $0 != "/" }
         var itemID: String?
         var shopID: String?
-        if let index = components.firstIndex(where: { $0.lowercased() == "product" }), index + 2 < components.count {
+
+        if let index = components.firstIndex(where: { $0.lowercased() == "product" }),
+           index + 2 < components.count {
             shopID = components[index + 1]
             itemID = components[index + 2]
         }
+
         if itemID == nil {
             let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-            itemID = queryItems.first(where: { ["itemid", "item_id", "item"].contains($0.name.lowercased()) })?.value
-            shopID = queryItems.first(where: { ["shopid", "shop_id", "shop"].contains($0.name.lowercased()) })?.value
+            itemID = queryItems.first(where: {
+                ["itemid", "item_id", "item"].contains($0.name.lowercased())
+            })?.value
+            shopID = queryItems.first(where: {
+                ["shopid", "shop_id", "shop"].contains($0.name.lowercased())
+            })?.value
         }
+
         return TPIOSSaleLinkInfo(url: url.absoluteString, itemID: itemID, shopID: shopID)
     }
 }
