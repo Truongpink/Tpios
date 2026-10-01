@@ -7,32 +7,26 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
 
     private let headerHeight: CGFloat = 54
     private let handleSize: CGFloat = 30
-    private let minWidth: CGFloat = 260
-    private let minHeight: CGFloat = 300
+    private let minWidth: CGFloat = 280
+    private let minHeight: CGFloat = 360
 
     private let headerView = UIView()
     private let backButton = UIButton(type: .system)
     private let titleLabel = UILabel()
     private let closeButton = UIButton(type: .system)
 
-    private let priceField = UITextField()
-    private let shopVoucherField = UITextField()
-    private let shopeeVoucherField = UITextField()
-    private let shippingField = UITextField()
-    private let freeshipField = UITextField()
-
-    private let calculateButton = UIButton(type: .system)
-    private let calculateLabel = UILabel()
-    private let scanButton = UIButton(type: .system)
-    private let scanLabel = UILabel()
+    private let linkField = UITextField()
+    private let addButton = UIButton(type: .system)
+    private let analyzeButton = UIButton(type: .system)
     private let resultLabel = UILabel()
-    private let noteLabel = UILabel()
+    private let historyLabel = UILabel()
     private let scrollView = UIScrollView()
     private let contentView = UIView()
     private let resizeHandle = UILabel()
 
     private var resizeStartFrame = CGRect.zero
     private var resizeStartPoint = CGPoint.zero
+    private var selectedProductID: UUID?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -45,11 +39,11 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
 
     private func setup() {
         TPIOSPanelStyle.applyGlassBackground(to: self, cornerRadius: 24)
-
         setupHeader()
         setupContent()
         setupResize()
         setupMove()
+        refreshList()
     }
 
     private func setupHeader() {
@@ -59,23 +53,17 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
             blue: 0.105,
             alpha: 1
         )
-
         headerView.layer.cornerRadius = 24
         headerView.layer.maskedCorners = [
             .layerMinXMinYCorner,
             .layerMaxXMinYCorner
         ]
-
         addSubview(headerView)
 
         backButton.setTitle("‹", for: .normal)
         backButton.setTitleColor(.white, for: .normal)
         backButton.titleLabel?.font = .systemFont(ofSize: 30)
-        backButton.addTarget(
-            self,
-            action: #selector(backTapped),
-            for: .touchUpInside
-        )
+        backButton.addTarget(self, action: #selector(backTapped), for: .touchUpInside)
         headerView.addSubview(backButton)
 
         titleLabel.text = "SALE"
@@ -87,11 +75,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         closeButton.setTitle("×", for: .normal)
         closeButton.setTitleColor(.white, for: .normal)
         closeButton.titleLabel?.font = .systemFont(ofSize: 28)
-        closeButton.addTarget(
-            self,
-            action: #selector(closeTapped),
-            for: .touchUpInside
-        )
+        closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         headerView.addSubview(closeButton)
     }
 
@@ -99,139 +83,76 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         addSubview(scrollView)
         scrollView.alwaysBounceVertical = true
         scrollView.showsVerticalScrollIndicator = true
-
         scrollView.addSubview(contentView)
 
-        addField(
-            priceField,
-            title: "Giá sản phẩm",
-            placeholder: "Ví dụ: 299000"
-        )
+        let linkTitle = makeLabel("Link sản phẩm Shopee")
+        contentView.addSubview(linkTitle)
 
-        addField(
-            shopVoucherField,
-            title: "Shop Voucher",
-            placeholder: "Số tiền giảm, ví dụ: 30000"
+        linkField.textColor = .white
+        linkField.tintColor = .white
+        linkField.backgroundColor = UIColor.white.withAlphaComponent(0.07)
+        linkField.layer.cornerRadius = 10
+        linkField.layer.borderWidth = 1
+        linkField.layer.borderColor = UIColor.white.withAlphaComponent(0.08).cgColor
+        linkField.font = .systemFont(ofSize: 14)
+        linkField.placeholder = "Dán link sản phẩm vào đây"
+        linkField.attributedPlaceholder = NSAttributedString(
+            string: "Dán link sản phẩm vào đây",
+            attributes: [.foregroundColor: UIColor.white.withAlphaComponent(0.3)]
         )
+        linkField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 10, height: 1))
+        linkField.leftViewMode = .always
+        contentView.addSubview(linkField)
 
-        addField(
-            shopeeVoucherField,
-            title: "Shopee Voucher",
-            placeholder: "Số tiền giảm, ví dụ: 50000"
-        )
+        configureButton(addButton, title: "Thêm sản phẩm", action: #selector(addProductTapped))
+        contentView.addSubview(addButton)
 
-        addField(
-            shippingField,
-            title: "Phí vận chuyển",
-            placeholder: "Ví dụ: 25000"
-        )
+        configureButton(analyzeButton, title: "Kiểm tra ngay", action: #selector(analyzeTapped))
+        contentView.addSubview(analyzeButton)
 
-        addField(
-            freeshipField,
-            title: "Freeship",
-            placeholder: "Số tiền được giảm, ví dụ: 25000"
-        )
-
-        configureActionButton(
-            calculateButton,
-            icon: "dollarsign.circle.fill",
-            color: UIColor(red: 0.55, green: 0.35, blue: 0.95, alpha: 1),
-            label: calculateLabel,
-            text: "Giá cuối",
-            action: #selector(calculateTapped)
-        )
-
-        configureActionButton(
-            scanButton,
-            icon: "magnifyingglass",
-            color: UIColor(red: 0.12, green: 0.55, blue: 0.95, alpha: 1),
-            label: scanLabel,
-            text: "Phân tích",
-            action: #selector(scanShopeeTapped)
-        )
-
-        resultLabel.text = "Giá thực trả: —"
         resultLabel.textColor = .white
-        resultLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+        resultLabel.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         resultLabel.numberOfLines = 0
         contentView.addSubview(resultLabel)
 
-        noteLabel.text = "Phân tích: kiểm tra Window / Controller / WebView / ScrollView để xác định cách lấy dữ liệu. Chưa tự lấy voucher."
-        noteLabel.textColor = UIColor.white.withAlphaComponent(0.55)
-        noteLabel.font = .systemFont(ofSize: 12)
-        noteLabel.numberOfLines = 0
-        contentView.addSubview(noteLabel)
+        historyLabel.textColor = UIColor.white.withAlphaComponent(0.82)
+        historyLabel.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        historyLabel.numberOfLines = 0
+        contentView.addSubview(historyLabel)
+
+        let note = makeLabel(
+            "Mỗi lần kiểm tra tạo một snapshot mới. TPIOS dùng link đã lưu và dữ liệu request Shopee làm nền để xây phân tích; chưa giả lập giá/voucher khi API response chưa được thu thập."
+        )
+        note.numberOfLines = 0
+        note.textColor = UIColor.white.withAlphaComponent(0.48)
+        contentView.addSubview(note)
+        note.tag = 999
     }
 
-    private func configureActionButton(
-        _ button: UIButton,
-        icon: String,
-        color: UIColor,
-        label: UILabel,
-        text: String,
-        action: Selector
-    ) {
-        let config = UIImage.SymbolConfiguration(
-            pointSize: 22,
-            weight: .semibold
-        )
-
-        button.setImage(
-            UIImage(systemName: icon, withConfiguration: config),
-            for: .normal
-        )
-        button.tintColor = .white
-        button.backgroundColor = color
-        button.layer.cornerRadius = 14
-        button.addTarget(
-            self,
-            action: action,
-            for: .touchUpInside
-        )
-        contentView.addSubview(button)
-
-        label.text = text
-        label.textColor = .white
-        label.font = .systemFont(ofSize: 12, weight: .semibold)
-        label.textAlignment = .center
-        label.adjustsFontSizeToFitWidth = true
-        label.minimumScaleFactor = 0.7
-        contentView.addSubview(label)
-    }
-
-    private func addField(
-        _ field: UITextField,
-        title: String,
-        placeholder: String
-    ) {
+    private func makeLabel(_ text: String) -> UILabel {
         let label = UILabel()
-        label.text = title
+        label.text = text
         label.textColor = UIColor.white.withAlphaComponent(0.82)
         label.font = .systemFont(ofSize: 13, weight: .semibold)
-        label.tag = field.hash
-        contentView.addSubview(label)
+        return label
+    }
 
-        field.textColor = .white
-        field.tintColor = .white
-        field.backgroundColor = UIColor.white.withAlphaComponent(0.07)
-        field.layer.cornerRadius = 10
-        field.layer.borderWidth = 1
-        field.layer.borderColor = UIColor.white.withAlphaComponent(0.08).cgColor
-        field.font = .systemFont(ofSize: 15)
-        field.placeholder = placeholder
-        field.attributedPlaceholder = NSAttributedString(
-            string: placeholder,
-            attributes: [
-                .foregroundColor: UIColor.white.withAlphaComponent(0.3)
-            ]
+    private func configureButton(
+        _ button: UIButton,
+        title: String,
+        action: Selector
+    ) {
+        button.setTitle(title, for: .normal)
+        button.setTitleColor(.white, for: .normal)
+        button.backgroundColor = UIColor(
+            red: 0.12,
+            green: 0.55,
+            blue: 0.95,
+            alpha: 1
         )
-        field.keyboardType = .decimalPad
-        field.textAlignment = .right
-        field.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 10, height: 1))
-        field.leftViewMode = .always
-        field.rightView = UIView(frame: CGRect(x: 0, y: 0, width: 10, height: 1))
-        field.rightViewMode = .always
-        contentView.addSubview(field)
+        button.layer.cornerRadius = 12
+        button.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
+        button.addTarget(self, action: action, for: .touchUpInside)
     }
 
     private func setupResize() {
@@ -242,18 +163,13 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         resizeHandle.isUserInteractionEnabled = true
         addSubview(resizeHandle)
 
-        let pan = UIPanGestureRecognizer(
-            target: self,
-            action: #selector(resize(_:))
-        )
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(resize(_:)))
         pan.cancelsTouchesInView = false
         resizeHandle.addGestureRecognizer(pan)
     }
 
     @objc private func resize(_ gesture: UIPanGestureRecognizer) {
-        guard let parent = superview else {
-            return
-        }
+        guard let parent = superview else { return }
 
         switch gesture.state {
         case .began:
@@ -267,18 +183,12 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
 
             let width = max(
                 minWidth,
-                min(
-                    resizeStartFrame.width + dx,
-                    parent.bounds.width - resizeStartFrame.origin.x
-                )
+                min(resizeStartFrame.width + dx, parent.bounds.width - resizeStartFrame.origin.x)
             )
 
             let height = max(
                 minHeight,
-                min(
-                    resizeStartFrame.height + dy,
-                    parent.bounds.height - resizeStartFrame.origin.y
-                )
+                min(resizeStartFrame.height + dy, parent.bounds.height - resizeStartFrame.origin.y)
             )
 
             frame = CGRect(
@@ -294,27 +204,18 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
     }
 
     private func setupMove() {
-        let pan = UIPanGestureRecognizer(
-            target: self,
-            action: #selector(moveSale(_:))
-        )
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(moveSale(_:)))
         pan.delegate = self
         pan.cancelsTouchesInView = false
         headerView.addGestureRecognizer(pan)
     }
 
     @objc private func moveSale(_ gesture: UIPanGestureRecognizer) {
-        guard let parent = superview else {
-            return
-        }
-
-        guard gesture.state == .began || gesture.state == .changed else {
-            return
-        }
+        guard let parent = superview else { return }
+        guard gesture.state == .began || gesture.state == .changed else { return }
 
         let delta = gesture.translation(in: parent)
         var newFrame = frame
-
         newFrame.origin.x += delta.x
         newFrame.origin.y += delta.y
 
@@ -331,33 +232,10 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
     override func layoutSubviews() {
         super.layoutSubviews()
 
-        headerView.frame = CGRect(
-            x: 0,
-            y: 0,
-            width: bounds.width,
-            height: headerHeight
-        )
-
-        backButton.frame = CGRect(
-            x: 4,
-            y: 3,
-            width: 40,
-            height: 38
-        )
-
-        titleLabel.frame = CGRect(
-            x: 46,
-            y: 0,
-            width: max(0, bounds.width - 92),
-            height: headerHeight
-        )
-
-        closeButton.frame = CGRect(
-            x: bounds.width - 46,
-            y: 4,
-            width: 42,
-            height: 36
-        )
+        headerView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: headerHeight)
+        backButton.frame = CGRect(x: 4, y: 3, width: 40, height: 38)
+        titleLabel.frame = CGRect(x: 46, y: 0, width: max(0, bounds.width - 92), height: headerHeight)
+        closeButton.frame = CGRect(x: bounds.width - 46, y: 4, width: 42, height: 36)
 
         scrollView.frame = CGRect(
             x: 0,
@@ -366,123 +244,38 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
             height: max(0, bounds.height - headerHeight)
         )
 
-        let contentWidth = max(0, bounds.width - 28)
         let x: CGFloat = 14
-        var y: CGFloat = 12
-        let fieldHeight: CGFloat = 38
-        let labelHeight: CGFloat = 18
-        let gap: CGFloat = 8
+        let width = max(0, bounds.width - 28)
+        var y: CGFloat = 14
 
-        // Hai nút nằm sát nhau ở giữa, không còn dạt về hai mép.
-        let actionSize: CGFloat = min(54, max(44, (contentWidth - 8) / 2))
-        let actionGap: CGFloat = 4
-        let actionGroupWidth = actionSize * 2 + actionGap
-        let actionStartX = x + max(0, (contentWidth - actionGroupWidth) / 2)
-        let actionLabelHeight: CGFloat = 16
-
-        calculateButton.frame = CGRect(
-            x: actionStartX,
-            y: y,
-            width: actionSize,
-            height: actionSize
-        )
-        calculateButton.layer.cornerRadius = actionSize * 0.26
-
-        calculateLabel.frame = CGRect(
-            x: actionStartX - 4,
-            y: y + actionSize + 3,
-            width: actionSize + 8,
-            height: actionLabelHeight
-        )
-
-        let scanX = actionStartX + actionSize + actionGap
-        scanButton.frame = CGRect(
-            x: scanX,
-            y: y,
-            width: actionSize,
-            height: actionSize
-        )
-        scanButton.layer.cornerRadius = actionSize * 0.26
-
-        scanLabel.frame = CGRect(
-            x: scanX - 4,
-            y: y + actionSize + 3,
-            width: actionSize + 8,
-            height: actionLabelHeight
-        )
-
-        y += actionSize + actionLabelHeight + 14
-
-        let fields = [
-            priceField,
-            shopVoucherField,
-            shopeeVoucherField,
-            shippingField,
-            freeshipField
-        ]
-
-        var labels: [UILabel] = []
-        for view in contentView.subviews {
-            if let label = view as? UILabel,
-               label.tag != 0,
-               label !== calculateLabel,
-               label !== scanLabel,
-               label !== resultLabel,
-               label !== noteLabel {
-                labels.append(label)
-            }
+        if let linkTitle = contentView.subviews.first(where: {
+            ($0 as? UILabel)?.text == "Link sản phẩm Shopee"
+        }) {
+            linkTitle.frame = CGRect(x: x, y: y, width: width, height: 20)
+            y += 24
         }
 
-        labels.sort { $0.frame.minY < $1.frame.minY }
+        linkField.frame = CGRect(x: x, y: y, width: width, height: 42)
+        y += 50
 
-        for index in 0..<fields.count {
-            let field = fields[index]
-            let label = labels[index]
+        addButton.frame = CGRect(x: x, y: y, width: width, height: 42)
+        y += 50
 
-            label.frame = CGRect(
-                x: x,
-                y: y,
-                width: contentWidth,
-                height: labelHeight
-            )
+        analyzeButton.frame = CGRect(x: x, y: y, width: width, height: 42)
+        y += 54
 
-            field.frame = CGRect(
-                x: x,
-                y: y + labelHeight,
-                width: contentWidth,
-                height: fieldHeight
-            )
+        resultLabel.frame = CGRect(x: x, y: y, width: width, height: 170)
+        y += 180
 
-            y += labelHeight + fieldHeight + gap
+        historyLabel.frame = CGRect(x: x, y: y, width: width, height: 360)
+        y += 370
+
+        if let note = contentView.viewWithTag(999) {
+            note.frame = CGRect(x: x, y: y, width: width, height: 80)
+            y += 90
         }
 
-        y += 4
-
-        resultLabel.frame = CGRect(
-            x: x,
-            y: y,
-            width: contentWidth,
-            height: 600
-        )
-
-        y += 620
-
-        noteLabel.frame = CGRect(
-            x: x,
-            y: y,
-            width: contentWidth,
-            height: 50
-        )
-
-        y += 70
-
-        contentView.frame = CGRect(
-            x: 0,
-            y: 0,
-            width: bounds.width,
-            height: y
-        )
-
+        contentView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: y)
         scrollView.contentSize = contentView.bounds.size
 
         resizeHandle.frame = CGRect(
@@ -493,114 +286,122 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         )
     }
 
-    @objc private func scanShopeeTapped() {
-        viewEndEditing()
+    private func refreshList() {
+        let products = TPIOSSaleStore.shared.load()
 
-        guard superview != nil else {
+        if selectedProductID == nil {
+            selectedProductID = products.first?.id
+        }
+
+        guard !products.isEmpty else {
+            resultLabel.text = "Chưa có sản phẩm theo dõi."
+            historyLabel.text = "Hãy dán link Shopee và bấm “Thêm sản phẩm”."
             return
         }
 
-        let originalFrame = frame
-        let originalHidden = isHidden
-
-        isHidden = true
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
-            guard let self else {
-                return
-            }
-
-            TPIOSProductContextScanner.scanCurrentApp { [weak self] result in
-                guard let self else {
-                    return
-                }
-
-                self.frame = originalFrame
-                self.isHidden = originalHidden
-
-                self.resultLabel.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-                self.resultLabel.text = result.displayText()
-
-                TPIOSLog.shared.log("Sale Product Context scan hoàn tất.")
+        if let selected = products.first(where: { $0.id == selectedProductID }) {
+            linkField.text = selected.url
+            showProduct(selected)
+        } else {
+            selectedProductID = products.first?.id
+            if let selected = products.first {
+                linkField.text = selected.url
+                showProduct(selected)
             }
         }
     }
 
-    @objc private func calculateTapped() {
-        viewEndEditing()
-
-        let price = amount(priceField)
-        let shop = amount(shopVoucherField)
-        let shopee = amount(shopeeVoucherField)
-        let shipping = amount(shippingField)
-        let freeship = amount(freeshipField)
-
-        let product = TPIOSProductContext(
-            productID: nil,
-            shopID: nil,
-            merchandiseAmount: price,
-            shippingAmount: shipping,
-            isVIP: true
-        )
-
-        var vouchers: [TPIOSVoucher] = []
-
-        if shop > 0 {
-            vouchers.append(
-                TPIOSVoucher(
-                    id: "manual-shop",
-                    title: "Shop Voucher",
-                    kind: .shop,
-                    discount: .fixed(shop)
-                )
-            )
-        }
-
-        if shopee > 0 {
-            vouchers.append(
-                TPIOSVoucher(
-                    id: "manual-shopee",
-                    title: "Shopee Voucher",
-                    kind: .platform,
-                    discount: .fixed(shopee)
-                )
-            )
-        }
-
-        if freeship > 0 {
-            vouchers.append(
-                TPIOSVoucher(
-                    id: "manual-freeship",
-                    title: "Freeship",
-                    kind: .freeship,
-                    discount: .fixed(freeship)
-                )
-            )
-        }
-
-        let calculation = TPIOSVoucherEngine.calculateBest(
-            product: product,
-            vouchers: vouchers
-        )
+    private func showProduct(_ product: TPIOSWatchedSale) {
+        let best = product.bestFinalPrice.map(formatMoney) ?? "chưa có"
+        let last = product.snapshots.last
 
         resultLabel.text = """
-        Giá thực trả: \(formatMoney(calculation.totalAfter))
-        Tiết kiệm: \(formatMoney(calculation.totalSaved))
-        Voucher: \(calculation.selection.vouchers.map(\.title).joined(separator: " + "))
+        (product.title)
+
+        Item ID: (product.itemID ?? "chưa xác định")
+        Shop ID: (product.shopID ?? "chưa xác định")
+        Giá cuối hiện tại: (last?.finalPrice.map(formatMoney) ?? "chưa có dữ liệu API")
+        Giá thấp nhất: (best)
+        Lần kiểm tra: (formatDate(product.lastCheckedAt))
         """
 
+        if product.snapshots.isEmpty {
+            historyLabel.text = "Lịch sử: chưa có snapshot."
+        } else {
+            historyLabel.text = "LỊCH SỬ\n" + product.snapshots.suffix(12).reversed().map {
+                let price = $0.finalPrice.map(formatMoney) ?? "chưa có"
+                return "\(formatDate($0.timestamp))  →  \(price)"
+            }.joined(separator: "\n")
+        }
+    }
+
+    @objc private func addProductTapped() {
+        viewEndEditing()
+
+        guard let info = TPIOSSaleLinkParser.parse(linkField.text ?? "") else {
+            resultLabel.text = "Link không hợp lệ. Hãy dán link sản phẩm Shopee."
+            return
+        }
+
+        let title = "Shopee item \(info.itemID ?? "chưa xác định")"
+        let product = TPIOSSaleStore.shared.add(
+            url: info.url,
+            title: title,
+            itemID: info.itemID,
+            shopID: info.shopID
+        )
+
+        selectedProductID = product.id
+        resultLabel.text = "Đã lưu sản phẩm. Bấm “Kiểm tra ngay” để tạo snapshot."
+        refreshList()
+
         TPIOSLog.shared.log(
-            "Sale Voucher Engine: \(formatMoney(calculation.totalAfter))"
+            "Sale: đã lưu product URL itemID=\(info.itemID ?? "-") shopID=\(info.shopID ?? "-")"
         )
     }
 
-    private func amount(_ field: UITextField) -> Double {
-        let raw = field.text?
-            .replacingOccurrences(of: ",", with: "")
-            .replacingOccurrences(of: ".", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    @objc private func analyzeTapped() {
+        viewEndEditing()
 
-        return Double(raw) ?? 0
+        guard let selectedProductID else {
+            resultLabel.text = "Chưa có sản phẩm để phân tích."
+            return
+        }
+
+        let products = TPIOSSaleStore.shared.load()
+        guard let product = products.first(where: { $0.id == selectedProductID }) else {
+            resultLabel.text = "Không tìm thấy sản phẩm đã lưu."
+            return
+        }
+
+        let evidence = TPIOSNetworkLog.shared.recentSaleRequestURLs()
+        let snapshot = TPIOSSaleSnapshot(
+            timestamp: Date(),
+            productName: product.title,
+            itemID: product.itemID,
+            shopID: product.shopID,
+            price: nil,
+            finalPrice: nil,
+            analysisNote: evidence.isEmpty
+                ? "Chưa có request Shopee phù hợp được NetLog ghi nhận."
+                : "Đã ghi nhận request Shopee liên quan; chưa có response payload để tính giá/voucher thật.",
+            requestEvidence: Array(evidence.suffix(20))
+        )
+
+        TPIOSSaleStore.shared.analyze(
+            productID: selectedProductID,
+            snapshot: snapshot
+        )
+
+        showProduct(
+            TPIOSSaleStore.shared.load().first(where: { $0.id == selectedProductID }) ?? product
+        )
+
+        resultLabel.text = (resultLabel.text ?? "") + "\n\n" + snapshot.analysisNote
+
+        TPIOSLog.shared.log(
+            "Sale: snapshot \(formatDate(snapshot.timestamp)) — requestEvidence=\(evidence.count)"
+        )
     }
 
     private func formatMoney(_ value: Double) -> String {
@@ -608,8 +409,14 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         formatter.numberStyle = .decimal
         formatter.maximumFractionDigits = 0
         formatter.minimumFractionDigits = 0
-
         return "\(formatter.string(from: NSNumber(value: value)) ?? "0")đ"
+    }
+
+    private func formatDate(_ date: Date?) -> String {
+        guard let date else { return "chưa có" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "dd/MM HH:mm:ss"
+        return formatter.string(from: date)
     }
 
     private func viewEndEditing() {
@@ -631,9 +438,9 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         if touch.view === backButton ||
            touch.view === closeButton ||
            touch.view === resizeHandle ||
-           touch.view === scanButton ||
-           touch.view is UITextField ||
-           touch.view === calculateButton {
+           touch.view === addButton ||
+           touch.view === analyzeButton ||
+           touch.view === linkField {
             return false
         }
 
