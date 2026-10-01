@@ -447,3 +447,109 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         return true
     }
 }
+
+
+// MARK: - Sale data/store
+
+struct TPIOSSaleSnapshot: Codable {
+    let timestamp: Date
+    let productName: String?
+    let itemID: String?
+    let shopID: String?
+    let price: Double?
+    let finalPrice: Double?
+    let analysisNote: String
+    let requestEvidence: [String]
+}
+
+struct TPIOSWatchedSale: Codable {
+    let id: UUID
+    var url: String
+    var title: String
+    var itemID: String?
+    var shopID: String?
+    var createdAt: Date
+    var lastCheckedAt: Date?
+    var bestFinalPrice: Double?
+    var snapshots: [TPIOSSaleSnapshot]
+}
+
+private final class TPIOSSaleStore {
+    static let shared = TPIOSSaleStore()
+    private let key = "TPIOS.Sale.WatchedProducts.v1"
+    private let defaults = UserDefaults.standard
+    private init() {}
+
+    func load() -> [TPIOSWatchedSale] {
+        guard let data = defaults.data(forKey: key) else { return [] }
+        return (try? JSONDecoder().withDateDecodingStrategy.decode([TPIOSWatchedSale].self, from: data)) ?? []
+    }
+
+    private func save(_ products: [TPIOSWatchedSale]) {
+        guard let data = try? JSONEncoder().withDateEncodingStrategy.encode(products) else { return }
+        defaults.set(data, forKey: key)
+    }
+
+    @discardableResult
+    func add(url: String, title: String, itemID: String?, shopID: String?) -> TPIOSWatchedSale {
+        var products = load()
+        if let index = products.firstIndex(where: { normalizedURL($0.url) == normalizedURL(url) }) {
+            return products[index]
+        }
+        let product = TPIOSWatchedSale(id: UUID(), url: url, title: title, itemID: itemID, shopID: shopID, createdAt: Date(), lastCheckedAt: nil, bestFinalPrice: nil, snapshots: [])
+        products.insert(product, at: 0)
+        save(products)
+        return product
+    }
+
+    func analyze(productID: UUID, snapshot: TPIOSSaleSnapshot) {
+        var products = load()
+        guard let index = products.firstIndex(where: { $0.id == productID }) else { return }
+        products[index].lastCheckedAt = snapshot.timestamp
+        products[index].snapshots.append(snapshot)
+        if let finalPrice = snapshot.finalPrice {
+            products[index].bestFinalPrice = products[index].bestFinalPrice.map { min($0, finalPrice) } ?? finalPrice
+        }
+        save(products)
+    }
+
+    private func normalizedURL(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
+}
+
+private extension JSONEncoder {
+    var withDateEncodingStrategy: JSONEncoder { dateEncodingStrategy = .iso8601; return self }
+}
+
+private extension JSONDecoder {
+    var withDateDecodingStrategy: JSONDecoder { dateDecodingStrategy = .iso8601; return self }
+}
+
+private struct TPIOSSaleLinkInfo {
+    let url: String
+    let itemID: String?
+    let shopID: String?
+}
+
+private enum TPIOSSaleLinkParser {
+    static func parse(_ rawURL: String) -> TPIOSSaleLinkInfo? {
+        let trimmed = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let value = trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") ? trimmed : "https://\\(trimmed)"
+        guard let url = URL(string: value), let host = url.host?.lowercased(), host.contains("shopee") else { return nil }
+        let components = url.pathComponents.filter { $0 != "/" }
+        var itemID: String?
+        var shopID: String?
+        if let index = components.firstIndex(where: { $0.lowercased() == "product" }), index + 2 < components.count {
+            shopID = components[index + 1]
+            itemID = components[index + 2]
+        }
+        if itemID == nil {
+            let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            itemID = queryItems.first(where: { ["itemid", "item_id", "item"].contains($0.name.lowercased()) })?.value
+            shopID = queryItems.first(where: { ["shopid", "shop_id", "shop"].contains($0.name.lowercased()) })?.value
+        }
+        return TPIOSSaleLinkInfo(url: url.absoluteString, itemID: itemID, shopID: shopID)
+    }
+}
