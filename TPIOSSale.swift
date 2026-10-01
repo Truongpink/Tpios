@@ -18,6 +18,8 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
     private let linkField = UITextField()
     private let addButton = UIButton(type: .system)
     private let analyzeButton = UIButton(type: .system)
+    private let addLabel = UILabel()
+    private let analyzeLabel = UILabel()
     private let resultLabel = UILabel()
     private let historyLabel = UILabel()
     private let scrollView = UIScrollView()
@@ -102,13 +104,23 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         )
         linkField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 10, height: 1))
         linkField.leftViewMode = .always
+        let clearButton = UIButton(type: .system)
+        clearButton.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
+        clearButton.tintColor = UIColor.white.withAlphaComponent(0.42)
+        clearButton.frame = CGRect(x: 0, y: 0, width: 30, height: 30)
+        clearButton.addTarget(self, action: #selector(clearLinkTapped), for: .touchUpInside)
+        linkField.rightView = clearButton
+        linkField.rightViewMode = .always
         contentView.addSubview(linkField)
 
-        configureButton(addButton, title: "Thêm sản phẩm", action: #selector(addProductTapped))
+        configureIconButton(addButton, icon: "plus", action: #selector(addProductTapped))
+        configureIconButton(analyzeButton, icon: "magnifyingglass", action: #selector(analyzeTapped))
+        configureCaption(addLabel, text: "Thêm sản phẩm")
+        configureCaption(analyzeLabel, text: "Kiểm tra ngay")
         contentView.addSubview(addButton)
-
-        configureButton(analyzeButton, title: "Kiểm tra ngay", action: #selector(analyzeTapped))
+        contentView.addSubview(addLabel)
         contentView.addSubview(analyzeButton)
+        contentView.addSubview(analyzeLabel)
 
         resultLabel.textColor = .white
         resultLabel.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
@@ -137,22 +149,29 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         return label
     }
 
-    private func configureButton(
-        _ button: UIButton,
-        title: String,
-        action: Selector
-    ) {
-        button.setTitle(title, for: .normal)
-        button.setTitleColor(.white, for: .normal)
-        button.backgroundColor = UIColor(
-            red: 0.12,
-            green: 0.55,
-            blue: 0.95,
-            alpha: 1
+    private func configureIconButton(_ button: UIButton, icon: String, action: Selector) {
+        let config = UIImage.SymbolConfiguration(pointSize: 23, weight: .semibold)
+        button.setImage(UIImage(systemName: icon, withConfiguration: config), for: .normal)
+        button.tintColor = .white
+        TPIOSPanelStyle.applyGradientFill(
+            to: button,
+            colors: [
+                UIColor(red: 0.68, green: 0.47, blue: 1.00, alpha: 1),
+                UIColor(red: 0.31, green: 0.20, blue: 0.82, alpha: 1)
+            ],
+            cornerRadius: 18
         )
-        button.layer.cornerRadius = 12
-        button.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
+        button.layer.cornerRadius = 18
         button.addTarget(self, action: action, for: .touchUpInside)
+    }
+
+    private func configureCaption(_ label: UILabel, text: String) {
+        label.text = text
+        label.textColor = .white
+        label.font = .systemFont(ofSize: 13, weight: .semibold)
+        label.textAlignment = .center
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.7
     }
 
     private func setupResize() {
@@ -258,11 +277,21 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         linkField.frame = CGRect(x: x, y: y, width: width, height: 42)
         y += 50
 
-        addButton.frame = CGRect(x: x, y: y, width: width, height: 42)
-        y += 50
+        let gridGap: CGFloat = 18
+        let iconSize = min(72, max(54, (width - gridGap) / 2))
+        let gridWidth = iconSize * 2 + gridGap
+        let gridX = x + max(0, (width - gridWidth) / 2)
 
-        analyzeButton.frame = CGRect(x: x, y: y, width: width, height: 42)
-        y += 54
+        addButton.frame = CGRect(x: gridX, y: y, width: iconSize, height: iconSize)
+        addLabel.frame = CGRect(x: gridX - 10, y: y + iconSize + 6, width: iconSize + 20, height: 18)
+        analyzeButton.frame = CGRect(x: gridX + iconSize + gridGap, y: y, width: iconSize, height: iconSize)
+        analyzeLabel.frame = CGRect(
+            x: gridX + iconSize + gridGap - 10,
+            y: y + iconSize + 6,
+            width: iconSize + 20,
+            height: 18
+        )
+        y += iconSize + 32
 
         resultLabel.frame = CGRect(x: x, y: y, width: width, height: 170)
         y += 180
@@ -333,6 +362,10 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
                 return "\(formatDate($0.timestamp))  →  \(price)"
             }.joined(separator: "\n")
         }
+    }
+
+    @objc private func clearLinkTapped() {
+        linkField.text = ""
     }
 
     @objc private func addProductTapped() {
@@ -440,7 +473,8 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
            touch.view === resizeHandle ||
            touch.view === addButton ||
            touch.view === analyzeButton ||
-           touch.view === linkField {
+           touch.view === linkField ||
+           touch.view === linkField.rightView {
             return false
         }
 
