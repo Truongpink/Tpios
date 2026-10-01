@@ -45,6 +45,25 @@ Quy trình:
 
 ### 5. Mỗi chức năng nên độc lập
 
+### 5.1. Quy tắc số lượng file cho một chức năng
+
+- Không tách một chức năng thành nhiều file chỉ để chia model/parser/store/UI nếu các phần đó chỉ phục vụ duy nhất chức năng đó.
+- Mặc định: **một chức năng = một file chính**.
+- Chỉ tạo file phụ khi thành phần đó thực sự dùng chung cho nhiều chức năng hoặc có lý do kỹ thuật rõ ràng.
+- Khi đã có nhiều file phụ nhưng không còn cần thiết, phải gom về file chính và xóa file thừa.
+
+### 5.2. Quy chuẩn menu con
+
+- Menu con phải đồng bộ phong cách với menu chính.
+- Nút chức năng dùng dạng **icon vuông bo tròn 4 góc**, giống icon ứng dụng iPhone.
+- Tên nút nằm **bên ngoài icon**, không chèn chữ chức năng lên icon.
+- Các nút phân bố theo lưới, khoảng cách giữa các nút đồng bộ với menu chính.
+- Menu con phải hỗ trợ **di chuyển, resize, Back và X/Close** nếu phù hợp với chức năng.
+- Khi resize, icon, chữ và khoảng cách phải scale theo khung, không bị đứng yên hoặc lệch.
+- Mọi ô nhập dữ liệu phải có **X xóa nhanh** và phải co giãn theo khung menu.
+
+
+
 - Chức năng mới ưu tiên file riêng.
 - Không gom các chức năng không liên quan vào `TPIOSController.swift` hoặc `TPIOSMenu.swift`.
 - Chức năng mới phải hạn chế ảnh hưởng đến chức năng cũ.
@@ -234,7 +253,7 @@ Menu còn hiển thị:
 
 | File | Chức năng |
 |---|---|
-| `TPIOSSale.swift` | Giao diện Sale độc lập; là điểm bắt đầu cho module nghiên cứu săn sale Shopee, theo dõi sản phẩm, voucher và giá thực trả. |
+| `TPIOSSale.swift` | Toàn bộ module Sale: UI, link parser, dữ liệu sản phẩm, lịch sử snapshot và lưu trữ. |
 
 ### Log / diagnostics
 
@@ -305,7 +324,7 @@ Khi thêm chức năng mới:
 
 1. Không sửa chức năng cũ nếu không liên quan.
 2. Không thay đổi UI cũ chỉ để thêm chức năng mới.
-3. Ưu tiên tạo module/file riêng.
+3. Ưu tiên tạo module/file riêng **chỉ khi thực sự cần**; nếu các thành phần chỉ thuộc một chức năng thì gom vào file chính.
 4. Nếu phải sửa `TPIOSMenu.swift`, chỉ thêm điểm kết nối cần thiết.
 5. Nếu phải sửa `TPIOSController.swift`, chỉ sửa phần lifecycle/overlay thật sự liên quan.
 6. Sau khi build phải kiểm tra chức năng vừa sửa và các chức năng menu đã hoạt động trước đó.
