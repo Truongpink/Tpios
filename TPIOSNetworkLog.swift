@@ -1,26 +1,22 @@
 import Foundation
 
+struct TPIOSSaleRequestEvidence: Codable {
+    let url: String
+    let timestamp: Date
+}
+
 final class TPIOSNetworkLog {
 
     static let shared = TPIOSNetworkLog()
 
     private var didInstall = false
+    private var recentRequests: [TPIOSSaleRequestEvidence] = []
+    private let lock = NSLock()
+    private let maxRecentRequests = 120
 
     private init() {}
 
-    // Hook NSURLSessionTask.resume để log URL mỗi khi có network request
-    // thật sự được gửi đi — cách xác nhận khách quan "reload có bắn
-    // request mới hay không" mà không cần cài proxy ngoài (Proxyman/
-    // Charles), phù hợp máy iOS cũ không cài được app proxy hiện đại.
-    //
-    // NSURLSessionTask chỉ là abstract base — instance thật lúc runtime
-    // luôn thuộc 1 class private khác (vd __NSCFURLSessionTask), và tên
-    // class private này đổi khác nhau giữa các bản iOS. Thay vì đoán tên
-    // cố định (dễ sai như log bạn vừa gặp), tự tạo 1 dataTask thăm dò để
-    // hỏi thẳng runtime "class thật của mày là gì" — không resume() nên
-    // không có network request thật nào được gửi, chỉ dùng để lấy class.
     func install() {
-
         guard didInstall == false else {
             return
         }
@@ -44,9 +40,7 @@ final class TPIOSNetworkLog {
             let originalMethod = class_getInstanceMethod(targetClass, originalSelector),
             let swizzledMethod = class_getInstanceMethod(URLSessionTask.self, swizzledSelector)
         else {
-            TPIOSLog.shared.log(
-                "NetLog: không lấy được method resume để swizzle"
-            )
+            TPIOSLog.shared.log("NetLog: không lấy được method resume để swizzle")
             didInstall = false
             return
         }
@@ -66,24 +60,63 @@ final class TPIOSNetworkLog {
         }
 
         TPIOSLog.shared.log(
-            "NetLog: đã hook \(NSStringFromClass(targetClass)).resume — request mới sẽ log ở đây, lọc bằng từ khóa \"NetLog:\" trong ô lọc"
+            "NetLog: đã hook \(NSStringFromClass(targetClass)).resume — request mới sẽ log ở đây"
         )
+    }
+
+    func recentSaleRequestEvidence() -> [TPIOSSaleRequestEvidence] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recentRequests
+    }
+
+    func recentSaleRequestURLs() -> [String] {
+        recentSaleRequestEvidence().map(\.url)
+    }
+
+    fileprivate func recordRequest(_ url: String) {
+        guard isRelevantShopeeRequest(url) else {
+            return
+        }
+
+        let evidence = TPIOSSaleRequestEvidence(
+            url: url,
+            timestamp: Date()
+        )
+
+        lock.lock()
+        recentRequests.append(evidence)
+        if recentRequests.count > maxRecentRequests {
+            recentRequests.removeFirst(recentRequests.count - maxRecentRequests)
+        }
+        lock.unlock()
+    }
+
+    private func isRelevantShopeeRequest(_ url: String) -> Bool {
+        let lower = url.lowercased()
+        guard lower.contains("shopee") else {
+            return false
+        }
+
+        return lower.contains("item") ||
+            lower.contains("product") ||
+            lower.contains("voucher") ||
+            lower.contains("discount") ||
+            lower.contains("shipping") ||
+            lower.contains("flash")
     }
 }
 
 extension URLSessionTask {
 
     @objc fileprivate func tpios_resume() {
-
         let url = self.originalRequest?.url?.absoluteString
             ?? self.currentRequest?.url?.absoluteString
             ?? "<không rõ URL>"
 
         TPIOSLog.shared.log("NetLog: \(url)")
+        TPIOSNetworkLog.shared.recordRequest(url)
 
-        // Sau swizzle, gọi lại chính selector "resume" thực chất là gọi
-        // implementation GỐC (đã bị hoán đổi bằng
-        // method_exchangeImplementations) — không đệ quy vô hạn.
         self.tpios_resume()
     }
 }
