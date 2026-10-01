@@ -55,12 +55,28 @@ Quy trình:
 ### 5.2. Quy chuẩn menu con
 
 - Menu con phải đồng bộ phong cách với menu chính.
+- **Nút menu con phải dùng màu sắc/gradient cùng hệ màu với nút menu chính**, không dùng một màu cố định khác biệt chỉ vì là menu con.
 - Nút chức năng dùng dạng **icon vuông bo tròn 4 góc**, giống icon ứng dụng iPhone.
 - Tên nút nằm **bên ngoài icon**, không chèn chữ chức năng lên icon.
-- Các nút phân bố theo lưới, khoảng cách giữa các nút đồng bộ với menu chính.
+- Tên nút phải **ngắn gọn nhưng dễ hiểu**; ưu tiên viết tắt tự nhiên khi không gây nhầm lẫn, ví dụ **“Thêm SP”** thay cho “Thêm sản phẩm”, **“KT ngay”** cho “Kiểm tra ngay” khi phù hợp.
+- Các nút phân bố theo lưới với **khoảng cách ngang/dọc đồng bộ với menu chính**; không để caption sát nhau gây chồng chữ khi menu nhỏ hoặc resize.
+- Khoảng cách giữa icon và tên nút cũng phải đồng bộ.
+- Khi resize, kích thước icon, chữ, khoảng cách và lưới phải co giãn theo khung, giữ bố cục cân đối.
 - Menu con phải hỗ trợ **di chuyển, resize, Back và X/Close** nếu phù hợp với chức năng.
-- Khi resize, icon, chữ và khoảng cách phải scale theo khung, không bị đứng yên hoặc lệch.
 - Mọi ô nhập dữ liệu phải có **X xóa nhanh** và phải co giãn theo khung menu.
+
+### 5.3. Quy chuẩn sản phẩm Sale và biến thể
+
+- Link Shopee có thể là link ngắn dạng https://vn.shp.ee/... hoặc link sản phẩm đầy đủ.
+- Không được giả định link ngắn chứa trực tiếp shopID/itemID; phải resolve/chuyển hướng link để xác định listing sản phẩm trước khi phân tích.
+- Một listing Shopee có thể có nhiều **biến thể/SKU** như màu sắc, khối lượng, kích thước, phiên bản... và mỗi biến thể có thể có giá/tồn kho khác nhau.
+- **Không được lấy giá của listing chung làm giá của biến thể người dùng muốn mua.**
+- Sau khi xác định listing, TPIOS phải lấy danh sách biến thể/SKU nếu dữ liệu Shopee cung cấp.
+- Người dùng phải có bước **chọn chính xác biến thể cần mua** (ví dụ: Màu Đen + 500g).
+- TPIOS lưu **variant/SKU ID và các thuộc tính đã chọn** cùng sản phẩm theo dõi.
+- Các lần “Kiểm tra ngay” sau đó phải phân tích đúng **SKU/biến thể đã chọn**, không tự đổi sang biến thể khác chỉ vì biến thể đó rẻ hơn.
+- Nếu sản phẩm thay đổi cấu trúc biến thể hoặc SKU không còn tồn tại, TPIOS phải báo người dùng chọn lại thay vì tự đoán.
+- Giá tốt nhất phải tính trên **đúng biến thể đã chọn + voucher hợp lệ cho biến thể đó + các điều kiện mua tương ứng**.
 
 
 
