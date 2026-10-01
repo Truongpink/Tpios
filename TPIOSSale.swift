@@ -345,13 +345,14 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         let last = product.snapshots.last
 
         resultLabel.text = """
-        (product.title)
+        \(product.title)
 
-        Item ID: (product.itemID ?? "chưa xác định")
-        Shop ID: (product.shopID ?? "chưa xác định")
-        Giá cuối hiện tại: (last?.finalPrice.map(formatMoney) ?? "chưa có dữ liệu API")
-        Giá thấp nhất: (best)
-        Lần kiểm tra: (formatDate(product.lastCheckedAt))
+        Item ID: \(product.itemID ?? "chưa xác định")
+        Shop ID: \(product.shopID ?? "chưa xác định")
+        Biến thể/SKU: \(product.variantName ?? "chưa xác nhận")
+        Giá cuối hiện tại: \(last?.finalPrice.map(formatMoney) ?? "chưa có dữ liệu API")
+        Giá thấp nhất: \(best)
+        Lần kiểm tra: \(formatDate(product.lastCheckedAt))
         """
 
         if product.snapshots.isEmpty {
@@ -429,6 +430,8 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
             productName: product.title,
             itemID: product.itemID,
             shopID: product.shopID,
+            variantID: product.variantID,
+            variantName: product.variantName,
             price: nil,
             finalPrice: nil,
             analysisNote: evidence.isEmpty
@@ -506,6 +509,8 @@ struct TPIOSSaleSnapshot: Codable {
     let productName: String?
     let itemID: String?
     let shopID: String?
+    let variantID: String?
+    let variantName: String?
     let price: Double?
     let finalPrice: Double?
     let analysisNote: String
@@ -608,8 +613,9 @@ private enum TPIOSSaleLinkParser {
 
     static func resolve(_ url: URL, completion: @escaping (URL?) -> Void) {
         var request = URLRequest(url: url)
-        request.httpMethod = "HEAD"
+        request.httpMethod = "GET"
         request.timeoutInterval = 10
+        request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
 
         URLSession.shared.dataTask(with: request) { _, response, _ in
             completion((response as? HTTPURLResponse)?.url ?? url)
