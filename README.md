@@ -64,7 +64,7 @@ Quy trình:
 
 
 
-- Chức năng mới ưu tiên file riêng.
+- Chức năng mới ưu tiên một file chính; chỉ tách file phụ khi thực sự cần.
 - Không gom các chức năng không liên quan vào `TPIOSController.swift` hoặc `TPIOSMenu.swift`.
 - Chức năng mới phải hạn chế ảnh hưởng đến chức năng cũ.
 - Nếu có thể bật/tắt độc lập thì nên thiết kế độc lập.
