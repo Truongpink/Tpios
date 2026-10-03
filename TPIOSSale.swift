@@ -1,5 +1,18 @@
 import UIKit
+import WebKit
+import ObjectiveC.runtime
 
+// Gộp 3 file (TPIOSSale + TPIOSSaleScanner + TPIOSSaleRuntimeDiagnostics)
+// thành 1 file duy nhất theo yêu cầu, và sửa đúng phần đã chốt:
+//
+// - Bỏ TPIOSNetworkLog.shared.recentSaleRequestURLs() — hàm này không tồn
+//   tại, bản cũ không build được.
+// - "KT ngay" trước đây không làm gì thật (giá/finalPrice luôn nil). Giờ
+//   đổi thành "Quét giá" — chạm vào đúng vị trí sản phẩm trên màn hình
+//   Shopee (hỗ trợ cả giỏ hàng nhiều sản phẩm), chỉ quét số tiền nằm GẦN
+//   điểm chạm đó (bán kính ~140pt) thay vì quét toàn màn hình — tránh lẫn
+//   giá của sản phẩm khác. Nếu không có gì gần điểm chạm, tự nới ra quét
+//   toàn màn hình và báo rõ cho biết.
 final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
 
     var onBack: (() -> Void)?
@@ -21,6 +34,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
     private let addLabel = UILabel()
     private let analyzeLabel = UILabel()
     private let resultLabel = UILabel()
+    private let scanStack = UIStackView()
     private let historyLabel = UILabel()
     private let scrollView = UIScrollView()
     private let contentView = UIView()
@@ -29,6 +43,10 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
     private var resizeStartFrame = CGRect.zero
     private var resizeStartPoint = CGPoint.zero
     private var selectedProductID: UUID?
+    private var lastScanValues: [TPIOSSaleScanValue] = []
+
+    private weak var pickOverlay: UIView?
+    private weak var pickCancelButton: UIButton?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -114,9 +132,9 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         contentView.addSubview(linkField)
 
         configureIconButton(addButton, icon: "plus", action: #selector(addProductTapped))
-        configureIconButton(analyzeButton, icon: "magnifyingglass", action: #selector(analyzeTapped))
+        configureIconButton(analyzeButton, icon: "text.viewfinder", action: #selector(analyzeTapped))
         configureCaption(addLabel, text: "Thêm SP")
-        configureCaption(analyzeLabel, text: "KT ngay")
+        configureCaption(analyzeLabel, text: "Quét giá")
         contentView.addSubview(addButton)
         contentView.addSubview(addLabel)
         contentView.addSubview(analyzeButton)
@@ -127,13 +145,17 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         resultLabel.numberOfLines = 0
         contentView.addSubview(resultLabel)
 
+        scanStack.axis = .vertical
+        scanStack.spacing = 6
+        contentView.addSubview(scanStack)
+
         historyLabel.textColor = UIColor.white.withAlphaComponent(0.82)
         historyLabel.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         historyLabel.numberOfLines = 0
         contentView.addSubview(historyLabel)
 
         let note = makeLabel(
-            "Mỗi lần kiểm tra tạo một snapshot mới. TPIOS dùng link đã lưu và dữ liệu request Shopee làm nền để xây phân tích; chưa giả lập giá/voucher khi API response chưa được thu thập."
+            "Quét giá đọc text đang hiển thị trên màn hình Shopee (gần điểm bạn chạm), không gọi API — bạn tự chạm chọn đúng giá."
         )
         note.numberOfLines = 0
         note.textColor = UIColor.white.withAlphaComponent(0.48)
@@ -163,6 +185,9 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         )
         button.layer.cornerRadius = 18
         button.addTarget(self, action: action, for: .touchUpInside)
+        if let imageView = button.imageView {
+            button.bringSubviewToFront(imageView)
+        }
     }
 
     private func configureCaption(_ label: UILabel, text: String) {
@@ -291,10 +316,21 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         analyzeLabel.frame = CGRect(x: gridX + iconSize + gridGap, y: y + iconSize + captionGap, width: iconSize, height: captionHeight)
         addLabel.font = .systemFont(ofSize: max(10, 13 * scale), weight: .semibold)
         analyzeLabel.font = .systemFont(ofSize: max(10, 13 * scale), weight: .semibold)
+        TPIOSPanelStyle.syncFrames(in: addButton)
+        TPIOSPanelStyle.syncFrames(in: analyzeButton)
         y += iconSize + captionGap + captionHeight + max(22, 24 * scale)
 
         resultLabel.frame = CGRect(x: x, y: y, width: width, height: 170)
         y += 180
+
+        let scanRowHeight: CGFloat = 32
+        var sy: CGFloat = 0
+        for row in scanStack.arrangedSubviews {
+            row.frame = CGRect(x: 0, y: sy, width: width, height: scanRowHeight)
+            sy += scanRowHeight + 6
+        }
+        scanStack.frame = CGRect(x: x, y: y, width: width, height: max(0, sy - 6))
+        y += sy + (sy > 0 ? 10 : 0)
 
         historyLabel.frame = CGRect(x: x, y: y, width: width, height: 360)
         y += 370
@@ -324,7 +360,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
 
         guard !products.isEmpty else {
             resultLabel.text = "Chưa có sản phẩm theo dõi."
-            historyLabel.text = "Hãy dán link Shopee và bấm “Thêm sản phẩm”."
+            historyLabel.text = "Hãy dán link Shopee và bấm \"Thêm SP\"."
             return
         }
 
@@ -350,8 +386,8 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         Item ID: \(product.itemID ?? "chưa xác định")
         Shop ID: \(product.shopID ?? "chưa xác định")
         Biến thể/SKU: \(product.variantName ?? "chưa xác nhận")
-        Giá cuối hiện tại: \(last?.finalPrice.map(formatMoney) ?? "chưa có dữ liệu API")
-        Giá thấp nhất: \(best)
+        Giá đã chọn gần nhất: \(last?.finalPrice.map(formatMoney) ?? "chưa có")
+        Giá thấp nhất từng ghi nhận: \(best)
         Lần kiểm tra: \(formatDate(product.lastCheckedAt))
         """
 
@@ -400,7 +436,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
                 self.selectedProductID = product.id
                 self.resultLabel.text = info.itemID == nil
                     ? "Đã lưu link. Cần dữ liệu Shopee để xác định sản phẩm/biến thể."
-                    : "Đã xác định sản phẩm. Chưa chọn biến thể/SKU."
+                    : "Đã xác định sản phẩm. Bấm \"Quét giá\" khi đang đứng đúng trang/giỏ hàng có sản phẩm này."
                 self.refreshList()
 
                 TPIOSLog.shared.log(
@@ -410,21 +446,155 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         }
     }
 
+    // MARK: Quét giá theo vùng chạm
+
     @objc private func analyzeTapped() {
         viewEndEditing()
 
-        guard let selectedProductID else {
-            resultLabel.text = "Chưa có sản phẩm để phân tích."
+        guard selectedProductID != nil else {
+            resultLabel.text = "Chưa có sản phẩm để quét giá. Thêm sản phẩm trước."
             return
         }
 
+        startRegionPick()
+    }
+
+    private func startRegionPick() {
+        guard let hostWindow = self.window else { return }
+
+        isHidden = true
+
+        let overlay = UIView(frame: hostWindow.bounds)
+        overlay.backgroundColor = UIColor.black.withAlphaComponent(0.001)
+
+        let hint = UILabel()
+        hint.text = "Chạm vào đúng sản phẩm/giá cần quét"
+        hint.textColor = .white
+        hint.font = .systemFont(ofSize: 13, weight: .semibold)
+        hint.textAlignment = .center
+        hint.numberOfLines = 0
+        hint.backgroundColor = UIColor.black.withAlphaComponent(0.72)
+        hint.layer.cornerRadius = 10
+        hint.clipsToBounds = true
+        let safeTop = hostWindow.safeAreaInsets.top
+        hint.frame = CGRect(x: 20, y: safeTop + 14, width: hostWindow.bounds.width - 100, height: 40)
+        overlay.addSubview(hint)
+
+        let cancel = UIButton(type: .system)
+        cancel.setTitle("Huỷ", for: .normal)
+        cancel.setTitleColor(.white, for: .normal)
+        cancel.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
+        cancel.backgroundColor = UIColor.black.withAlphaComponent(0.72)
+        cancel.layer.cornerRadius = 8
+        cancel.frame = CGRect(x: hostWindow.bounds.width - 72, y: safeTop + 14, width: 56, height: 40)
+        cancel.addTarget(self, action: #selector(cancelRegionPick), for: .touchUpInside)
+        overlay.addSubview(cancel)
+        pickCancelButton = cancel
+
+        let tap = UITapGestureRecognizer(target: self, action: #selector(regionPicked(_:)))
+        tap.delegate = self
+        overlay.addGestureRecognizer(tap)
+
+        hostWindow.addSubview(overlay)
+        pickOverlay = overlay
+    }
+
+    @objc private func cancelRegionPick() {
+        pickOverlay?.removeFromSuperview()
+        pickOverlay = nil
+        pickCancelButton = nil
+        isHidden = false
+    }
+
+    @objc private func regionPicked(_ gesture: UITapGestureRecognizer) {
+        guard let overlay = pickOverlay else { return }
+        let point = gesture.location(in: overlay)
+
+        overlay.removeFromSuperview()
+        pickOverlay = nil
+        pickCancelButton = nil
+        isHidden = false
+
+        performScan(near: point)
+    }
+
+    private func performScan(near point: CGPoint?) {
+        guard selectedProductID != nil else { return }
+
+        guard let root = TPIOSSaleScanner.visibleAppRoot(excluding: self.window) else {
+            resultLabel.text = "Không tìm thấy màn hình app để quét."
+            return
+        }
+
+        var values: [TPIOSSaleScanValue] = []
+        var usedWholeScreen = false
+
+        if let point {
+            values = TPIOSSaleScanner.scanVisibleApp(in: root, near: point, radius: 140)
+        }
+
+        if values.isEmpty {
+            values = TPIOSSaleScanner.scanVisibleApp(in: root)
+            usedWholeScreen = true
+        }
+
+        rebuildScanRows(values)
+        setNeedsLayout()
+
+        if values.isEmpty {
+            resultLabel.text = "Không quét được số tiền nào. Đứng đúng trang/giỏ hàng có sản phẩm rồi quét lại."
+        } else if usedWholeScreen && point != nil {
+            resultLabel.text = "Không thấy giá gần điểm chạm — đang hiện toàn bộ giá tìm được trên màn hình, chạm chọn đúng giá."
+        } else {
+            resultLabel.text = "Tìm được \(values.count) giá gần điểm chạm — chạm chọn đúng giá sản phẩm."
+        }
+
+        TPIOSLog.shared.log(
+            "Sale: quét \(usedWholeScreen ? "toàn màn hình" : "theo vùng chạm"), tìm được \(values.count) giá"
+        )
+    }
+
+    private func rebuildScanRows(_ values: [TPIOSSaleScanValue]) {
+        lastScanValues = values
+
+        scanStack.arrangedSubviews.forEach {
+            scanStack.removeArrangedSubview($0)
+            $0.removeFromSuperview()
+        }
+
+        for (index, value) in values.prefix(12).enumerated() {
+            let row = UIButton(type: .system)
+            var text = "  \(formatMoney(value.amount))"
+            if value.text != formatMoney(value.amount) {
+                let snippet = value.text.count > 34 ? String(value.text.prefix(34)) + "…" : value.text
+                text += "   (\(snippet))"
+            }
+            row.setTitle(text, for: .normal)
+            row.contentHorizontalAlignment = .left
+            row.setTitleColor(.white, for: .normal)
+            row.titleLabel?.font = .systemFont(ofSize: 12, weight: .medium)
+            row.titleLabel?.numberOfLines = 1
+            row.backgroundColor = UIColor.white.withAlphaComponent(0.07)
+            row.layer.cornerRadius = 8
+            row.tag = index
+            row.addTarget(self, action: #selector(scanRowTapped(_:)), for: .touchUpInside)
+            scanStack.addArrangedSubview(row)
+        }
+    }
+
+    @objc private func scanRowTapped(_ sender: UIButton) {
+        guard sender.tag < lastScanValues.count,
+              let productID = selectedProductID else {
+            return
+        }
+
+        let picked = lastScanValues[sender.tag]
         let products = TPIOSSaleStore.shared.load()
-        guard let product = products.first(where: { $0.id == selectedProductID }) else {
-            resultLabel.text = "Không tìm thấy sản phẩm đã lưu."
+
+        guard let product = products.first(where: { $0.id == productID }) else {
             return
         }
 
-        let evidence = TPIOSNetworkLog.shared.recentSaleRequestURLs()
         let snapshot = TPIOSSaleSnapshot(
             timestamp: Date(),
             productName: product.title,
@@ -432,28 +602,21 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
             shopID: product.shopID,
             variantID: product.variantID,
             variantName: product.variantName,
-            price: nil,
-            finalPrice: nil,
-            analysisNote: evidence.isEmpty
-                ? "Chưa có request Shopee phù hợp được NetLog ghi nhận."
-                : "Đã ghi nhận request Shopee liên quan; chưa có response payload để tính giá/voucher thật.",
-            requestEvidence: Array(evidence.suffix(20))
+            price: picked.amount,
+            finalPrice: picked.amount,
+            analysisNote: "Giá chọn tay từ quét màn hình (chạm theo vùng)."
         )
 
-        TPIOSSaleStore.shared.analyze(
-            productID: selectedProductID,
-            snapshot: snapshot
-        )
+        TPIOSSaleStore.shared.analyze(productID: productID, snapshot: snapshot)
 
-        showProduct(
-            TPIOSSaleStore.shared.load().first(where: { $0.id == selectedProductID }) ?? product
-        )
+        rebuildScanRows([])
+        setNeedsLayout()
 
-        resultLabel.text = (resultLabel.text ?? "") + "\n\n" + snapshot.analysisNote
+        let updated = TPIOSSaleStore.shared.load().first(where: { $0.id == productID }) ?? product
+        showProduct(updated)
+        resultLabel.text = (resultLabel.text ?? "") + "\n\nĐã lưu giá \(formatMoney(picked.amount))."
 
-        TPIOSLog.shared.log(
-            "Sale: snapshot \(formatDate(snapshot.timestamp)) — requestEvidence=\(evidence.count)"
-        )
+        TPIOSLog.shared.log("Sale: đã chọn giá \(Int(picked.amount)) cho productID=\(productID)")
     }
 
     private func formatMoney(_ value: Double) -> String {
@@ -493,7 +656,8 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
            touch.view === addButton ||
            touch.view === analyzeButton ||
            touch.view === linkField ||
-           touch.view === linkField.rightView {
+           touch.view === linkField.rightView ||
+           touch.view === pickCancelButton {
             return false
         }
 
@@ -514,7 +678,6 @@ struct TPIOSSaleSnapshot: Codable {
     let price: Double?
     let finalPrice: Double?
     let analysisNote: String
-    let requestEvidence: [String]
 }
 
 struct TPIOSWatchedSale: Codable {
@@ -650,5 +813,489 @@ private enum TPIOSSaleLinkParser {
         }
 
         return TPIOSSaleLinkInfo(url: url.absoluteString, itemID: itemID, shopID: shopID)
+    }
+}
+
+
+// MARK: - Scanner (gộp từ TPIOSSaleScanner.swift, thêm toạ độ màn hình để
+// lọc theo vùng chạm)
+
+private struct TPIOSSaleScanValue {
+    let text: String
+    let amount: Double
+    let frame: CGRect
+}
+
+private enum TPIOSSaleScanner {
+
+    // Tìm root view của app phía sau overlay TPIOS — cùng cách
+    // TPIOSAdBlock.overlayRootWindow() đã dùng, để nhất quán trong project.
+    static func visibleAppRoot(excluding selfWindow: UIWindow?) -> UIView? {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .filter { $0.activationState == .foregroundActive }
+            .flatMap { $0.windows }
+            .first(where: { $0 !== selfWindow })
+            ?? UIApplication.shared.windows.first
+
+        var controller = window?.rootViewController
+        while let presented = controller?.presentedViewController {
+            controller = presented
+        }
+
+        return controller?.view ?? window
+    }
+
+    // near/radius != nil: chỉ lấy giá trị có khung hình cách điểm chạm
+    // trong bán kính đó, sắp theo khoảng cách gần nhất trước. nil: quét
+    // toàn bộ, sắp theo số tiền giảm dần (hành vi quét toàn màn hình cũ).
+    static func scanVisibleApp(
+        in root: UIView,
+        near point: CGPoint? = nil,
+        radius: CGFloat = 140
+    ) -> [TPIOSSaleScanValue] {
+
+        var raw: [(text: String, frame: CGRect)] = []
+        collectText(from: root, into: &raw)
+
+        var values: [TPIOSSaleScanValue] = []
+        var seen = Set<String>()
+
+        for item in raw {
+            for amount in extractAmounts(from: item.text) {
+                let key = "\(item.text)|\(amount)|\(Int(item.frame.origin.x))|\(Int(item.frame.origin.y))"
+                guard seen.insert(key).inserted else { continue }
+
+                values.append(
+                    TPIOSSaleScanValue(text: item.text, amount: amount, frame: item.frame)
+                )
+            }
+        }
+
+        if let point {
+            values = values.filter { distance(from: point, to: $0.frame) <= radius }
+            values.sort { distance(from: point, to: $0.frame) < distance(from: point, to: $1.frame) }
+        } else {
+            values.sort { $0.amount > $1.amount }
+        }
+
+        return Array(values.prefix(20))
+    }
+
+    private static func distance(from point: CGPoint, to rect: CGRect) -> CGFloat {
+        let dx = max(rect.minX - point.x, 0, point.x - rect.maxX)
+        let dy = max(rect.minY - point.y, 0, point.y - rect.maxY)
+        return (dx * dx + dy * dy).squareRoot()
+    }
+
+    private static func collectText(
+        from view: UIView,
+        into items: inout [(text: String, frame: CGRect)]
+    ) {
+        guard view.isHidden == false, view.alpha > 0.01 else { return }
+
+        func add(_ text: String?) {
+            guard let text, text.isEmpty == false else { return }
+            items.append((text, view.convert(view.bounds, to: nil)))
+        }
+
+        if let label = view as? UILabel { add(label.text) }
+
+        if let field = view as? UITextField {
+            add(field.text)
+            add(field.placeholder)
+        }
+
+        if let textView = view as? UITextView { add(textView.text) }
+
+        if let button = view as? UIButton {
+            add(button.currentTitle)
+            add(button.accessibilityLabel)
+        }
+
+        add(view.accessibilityLabel)
+
+        for child in view.subviews {
+            collectText(from: child, into: &items)
+        }
+    }
+
+    private static func extractAmounts(from text: String) -> [Double] {
+        let normalized = text
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+            .replacingOccurrences(of: "₫", with: "")
+            .replacingOccurrences(of: "đ", with: "")
+            .replacingOccurrences(of: "Đ", with: "")
+
+        let pattern = #"(?<!\d)(\d{1,3}(?:[.,]\d{3})+|\d{4,9})(?!\d)"#
+
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return []
+        }
+
+        let range = NSRange(normalized.startIndex..., in: normalized)
+        let matches = regex.matches(in: normalized, range: range)
+
+        return matches.compactMap { match in
+            guard let matchRange = Range(match.range(at: 1), in: normalized) else {
+                return nil
+            }
+
+            let raw = String(normalized[matchRange])
+                .replacingOccurrences(of: ".", with: "")
+                .replacingOccurrences(of: ",", with: "")
+
+            guard let value = Double(raw),
+                  value >= 1000,
+                  value <= 999_999_999 else {
+                return nil
+            }
+
+            return value
+        }
+    }
+}
+
+
+// MARK: - Deep diagnostics (gộp từ TPIOSSaleRuntimeDiagnostics.swift,
+// công cụ nghiên cứu runtime — chưa nối vào nút nào trong UI, gọi tay khi
+// cần đào sâu thêm cấu trúc 1 màn hình Shopee cụ thể)
+
+private enum TPIOSSaleRuntimeDiagnostics {
+
+    static func inspectCurrentApp() -> String {
+        let windows = visibleAppWindows()
+
+        guard windows.isEmpty == false else {
+            return "SALE DIAGNOSTIC\n\nKhông tìm thấy window ứng dụng."
+        }
+
+        var output = "SALE DEEP DIAGNOSTIC\n\n"
+        output += "Windows: \(windows.count)\n"
+
+        var webViews: [WKWebView] = []
+        var scrollViews: [UIScrollView] = []
+        var controllerNames = Set<String>()
+        var matchedNativeClasses = Set<String>()
+        var matchedSelectors = Set<String>()
+
+        let keywords = [
+            "sale", "product", "item", "price", "voucher", "coupon",
+            "discount", "promotion", "promo", "shipping", "freeship",
+            "refresh", "reload", "home", "detail", "cart", "checkout",
+            "shopee"
+        ]
+
+        for (index, window) in windows.enumerated() {
+            let rootName = window.rootViewController.map {
+                NSStringFromClass(type(of: $0))
+            } ?? "<nil>"
+
+            output += "\nWINDOW[\(index)] class=\(NSStringFromClass(type(of: window)))\n"
+            output += "Root=\(rootName)\n"
+
+            collectControllers(
+                from: window.rootViewController,
+                into: &controllerNames
+            )
+
+            collectRuntimeMatches(
+                from: window,
+                keywords: keywords,
+                classes: &matchedNativeClasses,
+                selectors: &matchedSelectors
+            )
+
+            collectViews(
+                from: window,
+                webViews: &webViews,
+                scrollViews: &scrollViews
+            )
+        }
+
+        output += "\n=== CONTROLLERS ===\n"
+        if controllerNames.isEmpty {
+            output += "Không phát hiện.\n"
+        } else {
+            for name in controllerNames.sorted().prefix(60) {
+                output += "\(name)\n"
+            }
+        }
+
+        output += "\n=== NATIVE MATCHES ===\n"
+        if matchedNativeClasses.isEmpty {
+            output += "Không có class khớp từ khóa.\n"
+        } else {
+            for name in matchedNativeClasses.sorted().prefix(80) {
+                output += "\(name)\n"
+            }
+        }
+
+        output += "\n=== SELECTOR MATCHES ===\n"
+        if matchedSelectors.isEmpty {
+            output += "Không có selector khớp từ khóa.\n"
+        } else {
+            for name in matchedSelectors.sorted().prefix(120) {
+                output += "\(name)\n"
+            }
+        }
+
+        output += "\n=== WEBVIEWS: \(webViews.count) ===\n"
+        if webViews.isEmpty {
+            output += "Không có WKWebView.\n"
+        } else {
+            for (index, webView) in webViews.prefix(10).enumerated() {
+                let url = webView.url?.absoluteString ?? "<nil>"
+                let title = webView.title ?? "<nil>"
+                output += "WEBVIEW[\(index)] url=\(url) title=\(title)\n"
+
+                inspectWebView(
+                    webView,
+                    index: index
+                )
+            }
+        }
+
+        output += "\n=== SCROLLVIEWS: \(scrollViews.count) ===\n"
+        if scrollViews.isEmpty {
+            output += "Không phát hiện UIScrollView.\n"
+        } else {
+            for (index, scrollView) in scrollViews.prefix(40).enumerated() {
+                let className = NSStringFromClass(type(of: scrollView))
+                let delegate = scrollView.delegate.map {
+                    NSStringFromClass(type(of: $0))
+                } ?? "<nil>"
+
+                let refresh = scrollView.refreshControl.map {
+                    NSStringFromClass(type(of: $0))
+                } ?? "<nil>"
+
+                let frame = scrollView.convert(scrollView.bounds, to: nil)
+
+                output += """
+                SCROLL[\(index)] class=\(className)
+                delegate=\(delegate)
+                refresh=\(refresh)
+                frame=\(frame)
+                content=\(scrollView.contentSize)
+                """
+
+                output += "\n"
+            }
+        }
+
+        output += """
+
+        === KẾT LUẬN ===
+        """
+
+        if !webViews.isEmpty {
+            output += "\nCó WKWebView. Bước tiếp theo là đọc DOM có kiểm soát để xác định product/price/voucher và endpoint tài nguyên của màn hình hiện tại."
+        } else if !scrollViews.isEmpty {
+            output += "\nKhông có WKWebView. Bước tiếp theo là đào sâu Native/RN: class hierarchy, selector refresh/data, delegate và component chứa text/giá/voucher."
+        } else {
+            output += "\nChưa xác định được tầng render."
+        }
+
+        return output
+    }
+
+    private static func visibleAppWindows() -> [UIWindow] {
+        let scenes = UIApplication.shared.connectedScenes.compactMap {
+            $0 as? UIWindowScene
+        }
+
+        var windows: [UIWindow] = []
+
+        for scene in scenes where scene.activationState != .unattached {
+            for window in scene.windows {
+                guard window.isHidden == false,
+                      window.alpha > 0.01,
+                      window.bounds.width > 0,
+                      window.bounds.height > 0 else {
+                    continue
+                }
+
+                let className = NSStringFromClass(type(of: window))
+                if className.contains("TPIOS") {
+                    continue
+                }
+
+                windows.append(window)
+            }
+        }
+
+        return windows
+    }
+
+    private static func collectControllers(
+        from controller: UIViewController?,
+        into names: inout Set<String>
+    ) {
+        guard let controller else {
+            return
+        }
+
+        names.insert(NSStringFromClass(type(of: controller)))
+
+        if let presented = controller.presentedViewController {
+            collectControllers(from: presented, into: &names)
+        }
+
+        for child in controller.children {
+            collectControllers(from: child, into: &names)
+        }
+
+        if let navigation = controller as? UINavigationController {
+            for child in navigation.viewControllers {
+                collectControllers(from: child, into: &names)
+            }
+        }
+
+        if let tab = controller as? UITabBarController {
+            for child in tab.viewControllers ?? [] {
+                collectControllers(from: child, into: &names)
+            }
+        }
+    }
+
+    private static func collectViews(
+        from view: UIView,
+        webViews: inout [WKWebView],
+        scrollViews: inout [UIScrollView]
+    ) {
+        if let webView = view as? WKWebView {
+            webViews.append(webView)
+        }
+
+        if let scrollView = view as? UIScrollView {
+            scrollViews.append(scrollView)
+        }
+
+        for child in view.subviews {
+            collectViews(
+                from: child,
+                webViews: &webViews,
+                scrollViews: &scrollViews
+            )
+        }
+    }
+
+    private static func collectRuntimeMatches(
+        from view: UIView,
+        keywords: [String],
+        classes: inout Set<String>,
+        selectors: inout Set<String>
+    ) {
+        let className = NSStringFromClass(type(of: view))
+        let lowerClass = className.lowercased()
+
+        if keywords.contains(where: { lowerClass.contains($0) }) {
+            classes.insert(className)
+        }
+
+        var methodCount: UInt32 = 0
+
+        if let methods = class_copyMethodList(type(of: view), &methodCount) {
+            defer {
+                free(methods)
+            }
+
+            for index in 0..<Int(methodCount) {
+                let selector = method_getName(methods[index])
+                let selectorName = NSStringFromSelector(selector)
+                let lowerSelector = selectorName.lowercased()
+
+                if keywords.contains(where: { lowerSelector.contains($0) }) {
+                    selectors.insert("\(className).\(selectorName)")
+                }
+            }
+        }
+
+        for child in view.subviews {
+            collectRuntimeMatches(
+                from: child,
+                keywords: keywords,
+                classes: &classes,
+                selectors: &selectors
+            )
+        }
+    }
+
+    private static func inspectWebView(
+        _ webView: WKWebView,
+        index: Int
+    ) {
+        let script = """
+        (function() {
+            const terms = [
+                "price", "voucher", "coupon", "discount",
+                "promotion", "promo", "freeship", "shipping",
+                "product", "item", "sale", "shop"
+            ];
+
+            function clean(value) {
+                return String(value || "")
+                    .replace(/\\s+/g, " ")
+                    .trim()
+                    .slice(0, 180);
+            }
+
+            const nodes = Array.from(
+                document.querySelectorAll(
+                    "body *"
+                )
+            ).filter(el => {
+                const text = clean(el.innerText);
+                if (!text) return false;
+                const lower = text.toLowerCase();
+                return terms.some(term => lower.includes(term));
+            }).slice(0, 80).map(el => ({
+                tag: el.tagName,
+                id: clean(el.id),
+                cls: typeof el.className === "string" ? clean(el.className) : "",
+                text: clean(el.innerText)
+            }));
+
+            const resources = performance
+                .getEntriesByType("resource")
+                .map(x => x.name)
+                .filter(Boolean)
+                .slice(-100);
+
+            return JSON.stringify({
+                href: location.href,
+                title: document.title,
+                htmlLength: document.documentElement
+                    ? document.documentElement.outerHTML.length
+                    : 0,
+                bodyTextLength: document.body
+                    ? document.body.innerText.length
+                    : 0,
+                nodes: nodes,
+                resources: resources
+            });
+        })();
+        """
+
+        webView.evaluateJavaScript(script) { result, error in
+            if let error {
+                TPIOSLog.shared.log(
+                    "SaleDeep: WEBVIEW[\(index)] JS ERROR \(error.localizedDescription)"
+                )
+                return
+            }
+
+            guard let value = result as? String else {
+                TPIOSLog.shared.log(
+                    "SaleDeep: WEBVIEW[\(index)] JS result không phải String"
+                )
+                return
+            }
+
+            TPIOSLog.shared.log(
+                "SaleDeep: WEBVIEW[\(index)] DOM \(value)"
+            )
+        }
     }
 }
