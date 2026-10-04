@@ -74,6 +74,9 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         actionRow.onScanVoucher = { [weak self] in
             self?.scanVoucherTapped()
         }
+        actionRow.onDump = { [weak self] in
+            self?.dumpScreenTapped()
+        }
 
         setupResize()
         setupMove()
@@ -930,6 +933,45 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
 
     // MARK: Chạm để quét
 
+    // Nghiên cứu: ghi toàn bộ chữ đang hiển thị (kèm loại view, vị trí) vào
+    // log với tiền tố "SaleDump:" để xem cấu trúc giỏ hàng / màn voucher /
+    // màn thanh toán của Shopee trước khi viết code đọc riêng cho từng màn.
+    private func dumpScreenTapped() {
+        guard let root = TPIOSSaleScanner.visibleAppRoot(excluding: self.window) else {
+            statusText = "Không tìm thấy màn hình app để dump."
+            render()
+            return
+        }
+
+        var controllers: [String] = []
+        var responder: UIResponder? = root
+
+        while let current = responder, controllers.count < 6 {
+            if let controller = current as? UIViewController {
+                controllers.append(NSStringFromClass(type(of: controller)))
+            }
+            responder = current.next
+        }
+
+        let lines = TPIOSSaleScanner.dumpLines(in: root)
+        let limit = 250
+
+        TPIOSLog.shared.log(
+            "SaleDump: ===== \(lines.count) dòng | controller: " + controllers.joined(separator: " -> ") + " ====="
+        )
+
+        for line in lines.prefix(limit) {
+            TPIOSLog.shared.log("SaleDump: " + line)
+        }
+
+        if lines.count > limit {
+            TPIOSLog.shared.log("SaleDump: (cắt bớt \(lines.count - limit) dòng)")
+        }
+
+        statusText = "Đã dump \(min(lines.count, limit)) dòng vào log. Mở Xem log, gõ SaleDump: vào ô lọc."
+        render()
+    }
+
     private func scanPriceTapped() {
         endEditing(true)
         pickPurpose = .product
@@ -1122,6 +1164,7 @@ private final class TPIOSSaleActionRow: UIView {
 
     var onScanPrice: (() -> Void)?
     var onScanVoucher: (() -> Void)?
+    var onDump: (() -> Void)?
 
     var showsVoucher = false {
         didSet {
@@ -1159,6 +1202,11 @@ private final class TPIOSSaleActionRow: UIView {
 
         caption(priceLabel, "Quét giá")
         caption(voucherLabel, "Quét mã")
+
+        // Chạm giữ nút "Quét giá" = dump toàn bộ chữ màn hình vào log (nghiên cứu).
+        let longPress = UILongPressGestureRecognizer(target: self, action: #selector(priceLongPressed(_:)))
+        longPress.minimumPressDuration = 0.7
+        priceButton.addGestureRecognizer(longPress)
 
         addSubview(priceButton)
         addSubview(priceLabel)
@@ -1198,6 +1246,12 @@ private final class TPIOSSaleActionRow: UIView {
 
     @objc private func voucherTapped() {
         onScanVoucher?()
+    }
+
+    @objc private func priceLongPressed(_ gesture: UILongPressGestureRecognizer) {
+        if gesture.state == .began {
+            onDump?()
+        }
     }
 
     override func layoutSubviews() {
@@ -2182,6 +2236,68 @@ private enum TPIOSSaleScanner {
         }
 
         return lines
+    }
+
+    // Dump nghiên cứu: mỗi dòng = vị trí, kích thước, loại view, nguồn chữ,
+    // nội dung. Xếp từ trên xuống dưới. Có thêm dòng cho WKWebView (nếu màn
+    // render bằng web thì chữ không nằm trong view native).
+    static func dumpLines(in root: UIView) -> [String] {
+        var rows: [(minY: CGFloat, minX: CGFloat, line: String)] = []
+        var seen = Set<String>()
+        let screen = UIScreen.main.bounds
+
+        func visit(_ view: UIView) {
+            guard view.isHidden == false, view.alpha > 0.01 else { return }
+
+            let frame = view.convert(view.bounds, to: nil)
+            let className = NSStringFromClass(type(of: view))
+
+            func add(_ text: String?, _ source: String) {
+                guard let text else { return }
+
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard trimmed.isEmpty == false,
+                      trimmed.count <= 160,
+                      frame.intersects(screen) else {
+                    return
+                }
+
+                let key = "\(trimmed)|\(Int(frame.minX))|\(Int(frame.minY))"
+                guard seen.insert(key).inserted else { return }
+
+                let position = "y=\(Int(frame.minY)) x=\(Int(frame.minX)) \(Int(frame.width))x\(Int(frame.height))"
+                rows.append((frame.minY, frame.minX, position + " [" + className + "/" + source + "] " + trimmed))
+            }
+
+            if let web = view as? WKWebView, frame.intersects(screen) {
+                let position = "y=\(Int(frame.minY)) x=\(Int(frame.minX)) \(Int(frame.width))x\(Int(frame.height))"
+                rows.append((frame.minY, frame.minX, position + " [WKWebView] url=" + (web.url?.absoluteString ?? "-")))
+            }
+
+            if let label = view as? UILabel { add(label.text, "text") }
+
+            if let field = view as? UITextField {
+                add(field.text, "field")
+                add(field.placeholder, "placeholder")
+            }
+
+            if let textView = view as? UITextView { add(textView.text, "textview") }
+            if let button = view as? UIButton { add(button.currentTitle, "title") }
+
+            add(view.accessibilityLabel, "a11y")
+
+            for child in view.subviews {
+                visit(child)
+            }
+        }
+
+        visit(root)
+
+        rows.sort {
+            $0.minY != $1.minY ? $0.minY < $1.minY : $0.minX < $1.minX
+        }
+
+        return rows.map { $0.line }
     }
 
     private static func distance(from point: CGPoint, to rect: CGRect) -> CGFloat {
