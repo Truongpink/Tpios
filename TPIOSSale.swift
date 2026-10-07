@@ -27,8 +27,10 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
 
     private let headerHeight: CGFloat = 54
     private let handleSize: CGFloat = 30
-    private let minWidth: CGFloat = 280
-    private let minHeight: CGFloat = 360
+    private let minWidth: CGFloat = 160
+    private let minHeight: CGFloat = 180
+    private let designWidth: CGFloat = 200
+    private let designHeight: CGFloat = 220
 
     private let headerView = UIView()
     private let backButton = UIButton(type: .system)
@@ -177,33 +179,54 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
     override func layoutSubviews() {
         super.layoutSubviews()
 
-        headerView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: headerHeight)
-        backButton.frame = CGRect(x: 4, y: 3, width: 40, height: 38)
-        titleLabel.frame = CGRect(x: 46, y: 0, width: max(0, bounds.width - 92), height: headerHeight)
-        closeButton.frame = CGRect(x: bounds.width - 46, y: 4, width: 42, height: 36)
+        let scale = min(1, min(bounds.width / designWidth, bounds.height / designHeight))
+        let scaledHeaderHeight = headerHeight * scale
 
-        scrollView.frame = CGRect(x: 0, y: headerHeight, width: bounds.width, height: max(0, bounds.height - headerHeight))
+        headerView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: scaledHeaderHeight)
+        backButton.frame = CGRect(x: 4 * scale, y: 3 * scale, width: 40 * scale, height: 38 * scale)
+        backButton.titleLabel?.font = .systemFont(ofSize: 30 * scale, weight: .regular)
+        titleLabel.frame = CGRect(x: 46 * scale, y: 0, width: max(0, bounds.width - 92 * scale), height: scaledHeaderHeight)
+        titleLabel.font = .systemFont(ofSize: max(10, 17 * scale), weight: .bold)
+        closeButton.frame = CGRect(x: bounds.width - 46 * scale, y: 4 * scale, width: 42 * scale, height: 36 * scale)
+        closeButton.titleLabel?.font = .systemFont(ofSize: max(12, 28 * scale), weight: .regular)
+
+        scrollView.frame = CGRect(x: 0, y: scaledHeaderHeight, width: bounds.width, height: max(0, bounds.height - scaledHeaderHeight))
+
+        let logicalWidth = bounds.width / max(scale, 0.001)
+        contentView.transform = .identity
+        contentView.frame = CGRect(x: 0, y: 0, width: logicalWidth, height: 0)
 
         let icon: CGFloat = 62
-        scanButton.frame = CGRect(x: (bounds.width - icon) / 2, y: 8, width: icon, height: icon)
+        scanButton.transform = CGAffineTransform(scaleX: scale, y: scale)
+        scanButton.bounds = CGRect(x: 0, y: 0, width: icon, height: icon)
+        scanButton.center = CGPoint(x: logicalWidth / 2 * scale, y: (8 + icon / 2) * scale)
         TPIOSPanelStyle.syncFrames(in: scanButton)
-        scanCaption.frame = CGRect(x: (bounds.width - icon - 24) / 2, y: 8 + icon + 5, width: icon + 24, height: 18)
 
-        let width = max(0, bounds.width - 28)
+        scanCaption.transform = CGAffineTransform(scaleX: scale, y: scale)
+        scanCaption.bounds = CGRect(x: 0, y: 0, width: icon + 24, height: 18)
+        scanCaption.center = CGPoint(x: logicalWidth / 2 * scale, y: (8 + icon + 5 + 9) * scale)
+        scanCaption.font = .systemFont(ofSize: 12.5, weight: .semibold)
+
+        let width = max(0, logicalWidth - 28)
         var y: CGFloat = 8 + icon + 5 + 18 + 6
 
         for block in blocks {
             y += block.top
             let height = block.height(width)
-            block.view.frame = CGRect(x: 14, y: y, width: width, height: height)
+            let view = block.view
+            view.transform = .identity
+            view.bounds = CGRect(x: 0, y: 0, width: width, height: height)
+            view.center = CGPoint(x: (14 + width / 2) * scale, y: (y + height / 2) * scale)
+            view.transform = CGAffineTransform(scaleX: scale, y: scale)
             y += height
         }
 
         y += 36
-        contentView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: y)
-        scrollView.contentSize = contentView.bounds.size
+        contentView.bounds = CGRect(x: 0, y: 0, width: logicalWidth, height: y)
+        scrollView.contentSize = CGSize(width: bounds.width, height: y * scale)
 
-        resizeHandle.frame = CGRect(x: bounds.width - handleSize, y: bounds.height - handleSize, width: handleSize, height: handleSize)
+        resizeHandle.frame = CGRect(x: bounds.width - handleSize * scale, y: bounds.height - handleSize * scale, width: handleSize * scale, height: handleSize * scale)
+        resizeHandle.font = .systemFont(ofSize: max(12, 20 * scale))
     }
 
     private func setBlocks(_ new: [Block]) {
