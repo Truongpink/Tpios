@@ -58,12 +58,13 @@ final class TPIOSAppScanner {
         let count = objc_getClassList(nil, 0)
         guard count > 0 else { return [] }
 
-        var classes = [AnyClass?](repeating: nil, count: Int(count))
-        let actualCount = objc_getClassList(&classes, count)
+        let classes = UnsafeMutablePointer<AnyClass>.allocate(capacity: Int(count))
+        defer { classes.deallocate() }
 
-        return classes.prefix(Int(actualCount)).compactMap {
-            guard let cls = $0 else { return nil }
-            return NSStringFromClass(cls)
+        let actualCount = objc_getClassList(classes, count)
+
+        return (0..<Int(actualCount)).map {
+            NSStringFromClass(classes[$0])
         }
     }
 }
