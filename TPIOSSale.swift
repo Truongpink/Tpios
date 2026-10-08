@@ -27,10 +27,8 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
 
     private let headerHeight: CGFloat = 54
     private let handleSize: CGFloat = 30
-    private let minWidth: CGFloat = 160
-    private let minHeight: CGFloat = 180
-    private let designWidth: CGFloat = 200
-    private let designHeight: CGFloat = 220
+    private let minWidth: CGFloat = 280
+    private let minHeight: CGFloat = 360
 
     private let headerView = UIView()
     private let backButton = UIButton(type: .system)
@@ -84,10 +82,6 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         headerView.addSubview(titleLabel)
 
         scrollView.alwaysBounceVertical = true
-        scrollView.showsVerticalScrollIndicator = true
-        scrollView.clipsToBounds = true
-        scrollView.contentInset = .zero
-        scrollView.scrollIndicatorInsets = .zero
         addSubview(scrollView)
         scrollView.addSubview(contentView)
 
@@ -183,67 +177,33 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
     override func layoutSubviews() {
         super.layoutSubviews()
 
-        let scale = min(1, min(bounds.width / designWidth, bounds.height / designHeight))
-        let scaledHeaderHeight = headerHeight * scale
+        headerView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: headerHeight)
+        backButton.frame = CGRect(x: 4, y: 3, width: 40, height: 38)
+        titleLabel.frame = CGRect(x: 46, y: 0, width: max(0, bounds.width - 92), height: headerHeight)
+        closeButton.frame = CGRect(x: bounds.width - 46, y: 4, width: 42, height: 36)
 
-        headerView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: scaledHeaderHeight)
-        backButton.frame = CGRect(x: 4 * scale, y: 3 * scale, width: 40 * scale, height: 38 * scale)
-        backButton.titleLabel?.font = .systemFont(ofSize: max(12, 30 * scale), weight: .regular)
-        titleLabel.frame = CGRect(x: 46 * scale, y: 0, width: max(0, bounds.width - 92 * scale), height: scaledHeaderHeight)
-        titleLabel.font = .systemFont(ofSize: max(10, 17 * scale), weight: .bold)
-        closeButton.frame = CGRect(x: bounds.width - 46 * scale, y: 4 * scale, width: 42 * scale, height: 36 * scale)
-        closeButton.titleLabel?.font = .systemFont(ofSize: max(12, 28 * scale), weight: .regular)
+        scrollView.frame = CGRect(x: 0, y: headerHeight, width: bounds.width, height: max(0, bounds.height - headerHeight))
 
-        // Header nằm ngoài scroll view. Nội dung cuộn bắt đầu đúng ngay dưới header.
-        let scrollHeight = max(0, bounds.height - scaledHeaderHeight)
-        scrollView.frame = CGRect(x: 0, y: scaledHeaderHeight, width: bounds.width, height: scrollHeight)
-        scrollView.contentInset = .zero
-        scrollView.scrollIndicatorInsets = .zero
-
-        // Dùng một hệ tọa độ duy nhất, không trộn frame/bounds/transform.
-        // Nhờ vậy nội dung không bị tụt và contentSize khớp với phần hiển thị.
-        contentView.transform = .identity
-        contentView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: 0)
-
-        let icon = max(44, 62 * scale)
-        let horizontalPadding = min(14 * scale, max(8, bounds.width * 0.07))
-        let contentWidth = max(0, bounds.width - horizontalPadding * 2)
-
-        scanButton.transform = .identity
-        scanButton.bounds = CGRect(x: 0, y: 0, width: icon, height: icon)
-        scanButton.center = CGPoint(x: bounds.width / 2, y: 8 * scale + icon / 2)
-        scanButton.layer.cornerRadius = 18 * scale
+        let icon: CGFloat = 62
+        scanButton.frame = CGRect(x: (bounds.width - icon) / 2, y: 8, width: icon, height: icon)
         TPIOSPanelStyle.syncFrames(in: scanButton)
+        scanCaption.frame = CGRect(x: (bounds.width - icon - 24) / 2, y: 8 + icon + 5, width: icon + 24, height: 18)
 
-        let captionHeight = max(16, 18 * scale)
-        scanCaption.transform = .identity
-        scanCaption.bounds = CGRect(x: 0, y: 0, width: icon + 24 * scale, height: captionHeight)
-        scanCaption.center = CGPoint(x: bounds.width / 2, y: 8 * scale + icon + 5 * scale + captionHeight / 2)
-        scanCaption.font = .systemFont(ofSize: max(10, 12.5 * scale), weight: .semibold)
-
-        var y = 8 * scale + icon + 5 * scale + captionHeight + 6 * scale
+        let width = max(0, bounds.width - 28)
+        var y: CGFloat = 8 + icon + 5 + 18 + 6
 
         for block in blocks {
-            y += block.top * scale
-            let height = block.height(contentWidth / max(scale, 0.001)) * scale
-            let view = block.view
-            view.transform = .identity
-            view.frame = CGRect(x: horizontalPadding, y: y, width: contentWidth, height: height)
+            y += block.top
+            let height = block.height(width)
+            block.view.frame = CGRect(x: 14, y: y, width: width, height: height)
             y += height
         }
 
-        let bottomPadding = max(24, 36 * scale)
-        let contentHeight = max(y + bottomPadding, scrollHeight + 1)
-        contentView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: contentHeight)
-        scrollView.contentSize = CGSize(width: bounds.width, height: contentHeight)
+        y += 36
+        contentView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: y)
+        scrollView.contentSize = contentView.bounds.size
 
-        resizeHandle.frame = CGRect(
-            x: bounds.width - handleSize,
-            y: bounds.height - handleSize,
-            width: handleSize,
-            height: handleSize
-        )
-        resizeHandle.font = .systemFont(ofSize: max(12, 20 * scale))
+        resizeHandle.frame = CGRect(x: bounds.width - handleSize, y: bounds.height - handleSize, width: handleSize, height: handleSize)
     }
 
     private func setBlocks(_ new: [Block]) {
@@ -733,6 +693,80 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
     @objc private func scanTapped() {
         endEditing(true)
 
+        if compareSavedFromCart() {
+            return
+        }
+
+        startPick()
+    }
+
+    // Quét giỏ: tự nhận các sản phẩm đã lưu đang hiện, lấy giá dòng và tổng
+    // thanh đáy rồi so với lần trước. Trả false nếu không thấy sản phẩm đã
+    // lưu nào (khi đó người dùng chạm để lưu sản phẩm mới).
+    private func compareSavedFromCart() -> Bool {
+        guard let root = TPIOSSaleScanner.visibleAppRoot(excluding: window) else { return false }
+
+        let items = TPIOSSaleScanner.collectItems(in: root)
+
+        let matched = TPIOSSaleStore.shared.load().filter {
+            TPIOSSaleScanner.rowPrice(for: $0.title, in: items) != nil
+        }
+
+        guard matched.isEmpty == false else { return false }
+
+        guard matched.count == 1, let product = matched.first else {
+            status = "Đang tích nhiều sản phẩm nên thanh đáy gộp cả nhóm. Chỉ tích 1 sản phẩm rồi quét lại."
+            render()
+            return true
+        }
+
+        guard let total = TPIOSSaleScanner.cartTotal(in: items) else {
+            status = "Không đọc được tổng ở thanh đáy. Kéo giỏ hàng sao cho thanh đáy hiện rõ rồi quét lại."
+            render()
+            return true
+        }
+
+        let price = TPIOSSaleScanner.rowPrice(for: product.title, in: items) ?? total
+
+        let result = TPIOSSaleStore.shared.record(
+            name: product.title,
+            price: price,
+            finalPrice: total,
+            vouchers: []
+        )
+
+        var message = product.title + "\nGiá sau mã: " + TPIOSSaleFormat.money(total)
+
+        if let previous = result.previous {
+            if total < previous {
+                message += "\nTỐT HƠN: rẻ hơn " + TPIOSSaleFormat.money(previous - total) +
+                    " so với lần trước (" + TPIOSSaleFormat.money(previous) + ")"
+            } else if total > previous {
+                message += "\nKÉM HƠN: đắt hơn " + TPIOSSaleFormat.money(total - previous) +
+                    " so với lần trước (" + TPIOSSaleFormat.money(previous) + ")"
+            } else {
+                message += "\nBẰNG lần trước (" + TPIOSSaleFormat.money(previous) + ")"
+            }
+        } else {
+            message += "\nLần quét đầu tiên của sản phẩm này."
+        }
+
+        let lowest = result.product.snapshots.compactMap { $0.effectivePrice }.min()
+        if let lowest {
+            message += "\nThấp nhất từng quét: " + TPIOSSaleFormat.money(lowest)
+        }
+
+        selectedID = result.product.id
+        expandedIndex = nil
+        status = message
+        render()
+        scrollView.setContentOffset(.zero, animated: false)
+
+        TPIOSLog.shared.log("Sale: quét giỏ, \(product.title) tổng=\(Int(total))")
+        return true
+    }
+
+    private func startPick() {
         guard let hostWindow = window else { return }
 
         isHidden = true
