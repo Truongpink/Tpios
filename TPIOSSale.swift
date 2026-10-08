@@ -750,13 +750,14 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
 
         let items = TPIOSSaleScanner.collectItems(in: root)
 
-        let matched = TPIOSSaleStore.shared.load().filter {
-            TPIOSSaleScanner.cartLine(for: $0.title, in: items) != nil
-        }
+        let saved = TPIOSSaleStore.shared.load()
 
-        guard matched.isEmpty == false else {
-            let saved = TPIOSSaleStore.shared.load()
+        // Chỉ tính sản phẩm đã lưu có dòng "Đã áp dụng mã" (đang được tích).
+        // Sản phẩm đã lưu nhưng không tích vẫn hiện trong giỏ nên không tính.
+        let found = saved.filter { TPIOSSaleScanner.cartLine(for: $0.title, in: items) != nil }
+        let matched = saved.filter { TPIOSSaleScanner.cartLine(for: $0.title, in: items)?.applied == true }
 
+        guard found.isEmpty == false else {
             if saved.isEmpty {
                 return false
             }
@@ -764,13 +765,19 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
             let names = saved.map { $0.title }.joined(separator: " | ")
             TPIOSLog.shared.log("Sale: không khớp sản phẩm đã lưu [\(names)] trên màn hiện tại")
 
-            status = "Không thấy sản phẩm đã lưu trên màn này. Tích đúng sản phẩm trong giỏ hàng rồi quét lại, hoặc bấm + Lưu mới để lưu sản phẩm khác."
+            status = "Không thấy sản phẩm đã lưu trên màn này. Tích sản phẩm rồi quét lại, hoặc bấm + Lưu mới để lưu sản phẩm khác."
+            render()
+            return true
+        }
+
+        guard matched.isEmpty == false else {
+            status = "Sản phẩm đã lưu chưa áp mã Shopee. Mở Shopee Voucher, tích mã, bấm Đồng ý, rồi quét lại."
             render()
             return true
         }
 
         guard matched.count == 1, let product = matched.first else {
-            status = "Đang tích nhiều sản phẩm. Chỉ tích 1 sản phẩm rồi quét lại."
+            status = "Đang có nhiều sản phẩm đã áp mã trong giỏ. Chỉ tích 1 sản phẩm rồi quét lại."
             render()
             return true
         }
