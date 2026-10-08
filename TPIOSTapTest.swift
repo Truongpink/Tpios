@@ -1,5 +1,6 @@
 import UIKit
 
+//tap1
 // Bước thử chạm, chỉ với nút UIKit (không chạm xuyên tầng).
 // Bấm "Chạm thử" → chạm một điểm trên màn → tool tìm view dưới điểm đó, nếu là
 // nút UIKit (UIControl) thì gửi hành động chạm → ghi kết quả vào log "TapTest:".
