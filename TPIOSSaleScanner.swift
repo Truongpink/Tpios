@@ -260,6 +260,25 @@ enum TPIOSSaleScanner {
             .amount
     }
 
+    // Dòng sản phẩm đã lưu trong giỏ: giá đang hiện trên dòng và có chữ
+    // "Đã áp dụng mã" hay không. Giá trên dòng là giá sau mã Shopee đã tích
+    // (khi chỉ tích 1 sản phẩm thì trùng với thanh đáy). Nil nếu không thấy dòng.
+    static func cartLine(for title: String, in items: [TPIOSSaleTextItem]) -> (price: Double, applied: Bool)? {
+        let key = TPIOSSaleMatcher.normalize(title)
+        guard key.count >= 8 else { return nil }
+
+        let head = String(key.prefix(14))
+
+        guard let row = items
+            .filter({ TPIOSSaleMatcher.normalize($0.text).contains(head) })
+            .max(by: { $0.text.count < $1.text.count }),
+            let price = extractAmounts(from: row.text).first else {
+            return nil
+        }
+
+        return (price, row.text.lowercased().contains("áp dụng"))
+    }
+
     // Các dòng chữ quanh thanh đáy, dùng để ghi log khi không đọc được tổng.
     static func bottomBarDump(in items: [TPIOSSaleTextItem]) -> String {
         guard let bar = items.first(where: { $0.text.contains("Mua hàng") }) else {
