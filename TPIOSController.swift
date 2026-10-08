@@ -219,14 +219,14 @@ final class TPIOSController {
         }
 
         let width: CGFloat = 240
-        let height: CGFloat = 320
+        let height: CGFloat = 350
 
         let safeArea = rootView.safeAreaInsets
         let availableWidth = rootView.bounds.width - safeArea.left - safeArea.right
         let availableHeight = rootView.bounds.height - safeArea.top - safeArea.bottom
 
         let menuWidth = min(width, max(240, availableWidth - 20))
-        let menuHeight = min(height, max(320, availableHeight - 20))
+        let menuHeight = min(height, max(350, availableHeight - 20))
 
         let x = safeArea.left + (availableWidth - menuWidth) / 2
         let y = safeArea.top + (availableHeight - menuHeight) / 2
