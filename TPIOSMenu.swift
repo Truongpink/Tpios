@@ -483,7 +483,7 @@ private final class TPIOSMuaAll: UIView, UIGestureRecognizerDelegate {
     private var resizeStartFrame = CGRect.zero
     private var resizeStartPoint = CGPoint.zero
 
-    init(frame: CGRect) {
+    override init(frame: CGRect) {
         let titles = ["Quét IAP", "Sản phẩm", "Phân tích", "Giao dịch"]
         let icons = ["viewfinder", "bag", "chart.bar.xaxis", "arrow.left.arrow.right"]
         let colors: [[UIColor]] = [
