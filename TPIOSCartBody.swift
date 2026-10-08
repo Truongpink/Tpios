@@ -111,3 +111,14 @@ final class TPIOSCartBody {
         task.currentRequest?.url?.absoluteString.contains("cart/get") == true
     }
 }
+
+// Cài hook ngay khi tweak được nạp vào app, không chờ bấm Bắt mạng.
+// Lý do: session mạng của app thường được tạo từ lúc mở app, trước khi bấm
+// nút, nên nếu hook cài muộn thì không bắt được session đó.
+@objc(TPIOSCartBootstrap)
+final class TPIOSCartBootstrap: NSObject {
+
+    override class func load() {
+        TPIOSCartBody.shared.install()
+    }
+}
