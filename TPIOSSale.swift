@@ -46,6 +46,8 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
     private let contentView = UIView()
     private let scanButton = UIButton(type: .system)
     private let scanCaption = UILabel()
+    private let newButton = UIButton(type: .system)
+    private let newCaption = UILabel()
     private let resizeHandle = UILabel()
 
     private var blocks: [Block] = []
@@ -120,6 +122,29 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         scanCaption.textAlignment = .center
         contentView.addSubview(scanCaption)
 
+        newButton.setImage(UIImage(systemName: "plus", withConfiguration: config), for: .normal)
+        newButton.tintColor = .white
+        TPIOSPanelStyle.applyGradientFill(
+            to: newButton,
+            colors: [
+                UIColor(red: 1.00, green: 0.65, blue: 0.25, alpha: 1),
+                UIColor(red: 0.85, green: 0.25, blue: 0.08, alpha: 1)
+            ],
+            cornerRadius: 18
+        )
+        newButton.layer.cornerRadius = 18
+        newButton.addTarget(self, action: #selector(newTapped), for: .touchUpInside)
+        if let imageView = newButton.imageView {
+            newButton.bringSubviewToFront(imageView)
+        }
+        contentView.addSubview(newButton)
+
+        newCaption.text = "Lưu mới"
+        newCaption.textColor = .white
+        newCaption.font = .systemFont(ofSize: 12.5, weight: .semibold)
+        newCaption.textAlignment = .center
+        contentView.addSubview(newCaption)
+
         resizeHandle.text = "↘"
         resizeHandle.textColor = UIColor.white.withAlphaComponent(0.65)
         resizeHandle.font = .systemFont(ofSize: 20)
@@ -193,9 +218,16 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         scrollView.frame = CGRect(x: 0, y: headerHeight, width: bounds.width, height: max(0, bounds.height - headerHeight))
 
         let icon: CGFloat = 62
-        scanButton.frame = CGRect(x: (bounds.width - icon) / 2, y: 8, width: icon, height: icon)
+        let gap: CGFloat = 40
+        let startX = (bounds.width - (icon * 2 + gap)) / 2
+
+        scanButton.frame = CGRect(x: startX, y: 8, width: icon, height: icon)
+        newButton.frame = CGRect(x: startX + icon + gap, y: 8, width: icon, height: icon)
         TPIOSPanelStyle.syncFrames(in: scanButton)
-        scanCaption.frame = CGRect(x: (bounds.width - icon - 24) / 2, y: 8 + icon + 5, width: icon + 24, height: 18)
+        TPIOSPanelStyle.syncFrames(in: newButton)
+
+        scanCaption.frame = CGRect(x: startX - 12, y: 8 + icon + 5, width: icon + 24, height: 18)
+        newCaption.frame = CGRect(x: startX + icon + gap - 12, y: 8 + icon + 5, width: icon + 24, height: 18)
 
         let width = max(0, bounds.width - 28)
         var y: CGFloat = 8 + icon + 5 + 18 + 6
@@ -692,6 +724,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
 
     // MARK: Chạm để quét
 
+    // Quét: chỉ so sánh sản phẩm đã lưu đang được tích trong giỏ.
     @objc private func scanTapped() {
         endEditing(true)
 
@@ -699,6 +732,13 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
             return
         }
 
+        status = "Không thấy sản phẩm đã lưu trên màn này. Tích sản phẩm rồi quét lại, hoặc bấm + Lưu mới."
+        render()
+    }
+
+    // + Lưu mới: chạm vào sản phẩm trên màn để lưu sản phẩm khác.
+    @objc private func newTapped() {
+        endEditing(true)
         startPick()
     }
 
@@ -724,7 +764,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
             let names = saved.map { $0.title }.joined(separator: " | ")
             TPIOSLog.shared.log("Sale: không khớp sản phẩm đã lưu [\(names)] trên màn hiện tại")
 
-            status = "Không thấy sản phẩm đã lưu trên màn này. Tích đúng sản phẩm trong giỏ hàng rồi quét lại."
+            status = "Không thấy sản phẩm đã lưu trên màn này. Tích đúng sản phẩm trong giỏ hàng rồi quét lại, hoặc bấm + Lưu mới để lưu sản phẩm khác."
             render()
             return true
         }
