@@ -1,984 +1,405 @@
 import UIKit
+import WebKit
 
-// Săn sale Shopee: mỗi lần quét = 1 "ảnh chụp" sản phẩm (giá + mã giảm giá)
-// tại thời điểm đó, lưu lại để so sánh các lần với nhau.
-//   - TPIOSSale.swift         : giao diện + luồng (file này)
-//   - TPIOSSaleScanner.swift  : đọc chữ trên màn hình Shopee
-//   - TPIOSSaleData.swift     : lưu trữ, mã giảm giá (đọc + tính), định dạng
-// Chạm giữ nút "Quét" = dump chữ màn hình vào log (tiền tố SaleDump:).
-final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
+// Đọc chữ đang hiển thị trên màn hình app: giá, tên sản phẩm, mã giảm giá,
+// và dump nghiên cứu.
 
-    var onBack: (() -> Void)?
-    var onClose: (() -> Void)?
+struct TPIOSSaleTextItem {
+    let text: String
+    let frame: CGRect
+}
 
-    private struct Block {
-        let view: UIView
-        let top: CGFloat
-        let height: (CGFloat) -> CGFloat
-    }
+enum TPIOSSaleScanner {
 
-    private struct Draft {
-        var names: [String]
-        var nameIndex = 0
-        var prices: [Double]
-        var priceIndex = 0
-        var vouchers: [TPIOSSaleVoucher]
-        var total: Double?
-    }
+    // Tìm root view của app phía sau overlay TPIOS — cùng cách
+    // TPIOSAdBlock.overlayRootWindow() đã dùng, để nhất quán trong project.
+    static func visibleAppRoot(excluding selfWindow: UIWindow?) -> UIView? {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .filter { $0.activationState == .foregroundActive }
+            .flatMap { $0.windows }
+            .first(where: { $0 !== selfWindow })
+            ?? UIApplication.shared.windows.first
 
-    private let headerHeight: CGFloat = 54
-    private let handleSize: CGFloat = 30
-    private let minWidth: CGFloat = 280
-    private let minHeight: CGFloat = 360
-
-    private let headerView = UIView()
-    private let backButton = UIButton(type: .system)
-    private let titleLabel = UILabel()
-    private let closeButton = UIButton(type: .system)
-    private let scrollView = UIScrollView()
-    private let contentView = UIView()
-    private let scanButton = UIButton(type: .system)
-    private let scanCaption = UILabel()
-    private let resizeHandle = UILabel()
-
-    private var blocks: [Block] = []
-    private var selectedID: UUID?
-    private var expandedIndex: Int?
-    private var confirmDelete = false
-    private var status = ""
-    private var draft: Draft?
-    private var resizeStartFrame = CGRect.zero
-    private var resizeStartPoint = CGPoint.zero
-    private var pickOverlay: UIView?
-    private weak var pickCancel: UIButton?
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        setup()
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    // MARK: Khung
-
-    private func setup() {
-        TPIOSPanelStyle.applyGlassBackground(to: self, cornerRadius: 24)
-
-        headerView.backgroundColor = UIColor(red: 0.075, green: 0.085, blue: 0.105, alpha: 1)
-        headerView.layer.cornerRadius = 24
-        headerView.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
-        addSubview(headerView)
-
-        styleHeaderButton(backButton, "‹", size: 30, action: #selector(backTapped))
-        styleHeaderButton(closeButton, "×", size: 28, action: #selector(closeTapped))
-        headerView.addSubview(backButton)
-        headerView.addSubview(closeButton)
-
-        titleLabel.text = "SALE"
-        titleLabel.textColor = .white
-        titleLabel.font = .systemFont(ofSize: 17, weight: .bold)
-        titleLabel.textAlignment = .center
-        headerView.addSubview(titleLabel)
-
-        scrollView.alwaysBounceVertical = true
-        addSubview(scrollView)
-        scrollView.addSubview(contentView)
-
-        let config = UIImage.SymbolConfiguration(pointSize: 23, weight: .semibold)
-        scanButton.setImage(UIImage(systemName: "text.viewfinder", withConfiguration: config), for: .normal)
-        scanButton.tintColor = .white
-        TPIOSPanelStyle.applyGradientFill(
-            to: scanButton,
-            colors: [
-                UIColor(red: 0.68, green: 0.47, blue: 1.00, alpha: 1),
-                UIColor(red: 0.31, green: 0.20, blue: 0.82, alpha: 1)
-            ],
-            cornerRadius: 18
-        )
-        scanButton.layer.cornerRadius = 18
-        scanButton.addTarget(self, action: #selector(scanTapped), for: .touchUpInside)
-        if let imageView = scanButton.imageView {
-            scanButton.bringSubviewToFront(imageView)
+        var controller = window?.rootViewController
+        while let presented = controller?.presentedViewController {
+            controller = presented
         }
-        let longPress = UILongPressGestureRecognizer(target: self, action: #selector(dumpTapped(_:)))
-        longPress.minimumPressDuration = 0.7
-        scanButton.addGestureRecognizer(longPress)
-        contentView.addSubview(scanButton)
 
-        scanCaption.text = "Quét"
-        scanCaption.textColor = .white
-        scanCaption.font = .systemFont(ofSize: 12.5, weight: .semibold)
-        scanCaption.textAlignment = .center
-        contentView.addSubview(scanCaption)
-
-        resizeHandle.text = "↘"
-        resizeHandle.textColor = UIColor.white.withAlphaComponent(0.65)
-        resizeHandle.font = .systemFont(ofSize: 20)
-        resizeHandle.textAlignment = .center
-        resizeHandle.isUserInteractionEnabled = true
-        addSubview(resizeHandle)
-
-        let resizePan = UIPanGestureRecognizer(target: self, action: #selector(resizePanned(_:)))
-        resizePan.cancelsTouchesInView = false
-        resizeHandle.addGestureRecognizer(resizePan)
-
-        let movePan = UIPanGestureRecognizer(target: self, action: #selector(movePanned(_:)))
-        movePan.delegate = self
-        movePan.cancelsTouchesInView = false
-        headerView.addGestureRecognizer(movePan)
-
-        render()
+        return controller?.view ?? window
     }
 
-    private func styleHeaderButton(_ button: UIButton, _ title: String, size: CGFloat, action: Selector) {
-        button.setTitle(title, for: .normal)
-        button.setTitleColor(.white, for: .normal)
-        button.titleLabel?.font = .systemFont(ofSize: size)
-        button.addTarget(self, action: action, for: .touchUpInside)
+    // Đọc 1 lần toàn bộ chữ đang hiển thị (kèm khung hình trên màn hình),
+    // bỏ phần nằm ngoài màn hình (ô cuộn chưa lộ ra) và trùng lặp.
+    static func collectItems(in root: UIView) -> [TPIOSSaleTextItem] {
+        var raw: [TPIOSSaleTextItem] = []
+        collect(from: root, into: &raw)
+
+        let screen = UIScreen.main.bounds
+        var seen = Set<String>()
+        var items: [TPIOSSaleTextItem] = []
+
+        for item in raw {
+            guard item.frame.intersects(screen) else { continue }
+
+            let key = "\(item.text)|\(Int(item.frame.origin.x))|\(Int(item.frame.origin.y))"
+            guard seen.insert(key).inserted else { continue }
+
+            items.append(item)
+        }
+
+        return items
     }
 
-    @objc private func resizePanned(_ gesture: UIPanGestureRecognizer) {
-        guard let parent = superview else { return }
+    private static func collect(from view: UIView, into items: inout [TPIOSSaleTextItem]) {
+        guard view.isHidden == false, view.alpha > 0.01 else { return }
 
-        switch gesture.state {
-        case .began:
-            resizeStartFrame = frame
-            resizeStartPoint = gesture.location(in: parent)
+        func add(_ text: String?) {
+            guard let text else { return }
 
-        case .changed:
-            let point = gesture.location(in: parent)
-            let width = max(minWidth, min(resizeStartFrame.width + point.x - resizeStartPoint.x,
-                                          parent.bounds.width - resizeStartFrame.origin.x))
-            let height = max(minHeight, min(resizeStartFrame.height + point.y - resizeStartPoint.y,
-                                            parent.bounds.height - resizeStartFrame.origin.y))
-            frame = CGRect(x: resizeStartFrame.origin.x, y: resizeStartFrame.origin.y, width: width, height: height)
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.isEmpty == false else { return }
 
-        default:
-            break
+            items.append(
+                TPIOSSaleTextItem(text: trimmed, frame: view.convert(view.bounds, to: nil))
+            )
+        }
+
+        if let label = view as? UILabel { add(label.text) }
+
+        if let field = view as? UITextField {
+            add(field.text)
+            add(field.placeholder)
+        }
+
+        if let textView = view as? UITextView { add(textView.text) }
+
+        if let button = view as? UIButton {
+            add(button.currentTitle)
+            add(button.accessibilityLabel)
+        }
+
+        add(view.accessibilityLabel)
+
+        for child in view.subviews {
+            collect(from: child, into: &items)
         }
     }
 
-    @objc private func movePanned(_ gesture: UIPanGestureRecognizer) {
-        guard let parent = superview,
-              gesture.state == .began || gesture.state == .changed else {
-            return
-        }
+    // Tên sản phẩm = dòng chữ dài, nhiều chữ cái, không phải nút/nhãn giao
+    // diện, gần điểm chạm nhất.
+    static func nameCandidates(
+        in items: [TPIOSSaleTextItem],
+        near point: CGPoint?,
+        radius: CGFloat
+    ) -> [String] {
 
-        let delta = gesture.translation(in: parent)
-        var newFrame = frame
-        newFrame.origin.x = max(0, min(newFrame.origin.x + delta.x, max(0, parent.bounds.width - newFrame.width)))
-        newFrame.origin.y = max(0, min(newFrame.origin.y + delta.y, max(0, parent.bounds.height - newFrame.height)))
+        var scored: [(text: String, dist: CGFloat)] = []
 
-        frame = newFrame
-        gesture.setTranslation(.zero, in: parent)
-    }
+        for item in items {
+            guard isLikelyName(item.text) else { continue }
 
-    override func layoutSubviews() {
-        super.layoutSubviews()
+            var dist: CGFloat = 0
 
-        headerView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: headerHeight)
-        backButton.frame = CGRect(x: 4, y: 3, width: 40, height: 38)
-        titleLabel.frame = CGRect(x: 46, y: 0, width: max(0, bounds.width - 92), height: headerHeight)
-        closeButton.frame = CGRect(x: bounds.width - 46, y: 4, width: 42, height: 36)
-
-        scrollView.frame = CGRect(x: 0, y: headerHeight, width: bounds.width, height: max(0, bounds.height - headerHeight))
-
-        let icon: CGFloat = 62
-        scanButton.frame = CGRect(x: (bounds.width - icon) / 2, y: 8, width: icon, height: icon)
-        TPIOSPanelStyle.syncFrames(in: scanButton)
-        scanCaption.frame = CGRect(x: (bounds.width - icon - 24) / 2, y: 8 + icon + 5, width: icon + 24, height: 18)
-
-        let width = max(0, bounds.width - 28)
-        var y: CGFloat = 8 + icon + 5 + 18 + 6
-
-        for block in blocks {
-            y += block.top
-            let height = block.height(width)
-            block.view.frame = CGRect(x: 14, y: y, width: width, height: height)
-            y += height
-        }
-
-        y += 36
-        contentView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: y)
-        scrollView.contentSize = contentView.bounds.size
-
-        resizeHandle.frame = CGRect(x: bounds.width - handleSize, y: bounds.height - handleSize, width: handleSize, height: handleSize)
-    }
-
-    private func setBlocks(_ new: [Block]) {
-        blocks.forEach { $0.view.removeFromSuperview() }
-        blocks = new
-        new.forEach { contentView.addSubview($0.view) }
-        setNeedsLayout()
-    }
-
-    // MARK: Dựng giao diện
-
-    private func render() {
-        let products = TPIOSSaleStore.shared.load()
-
-        if let id = selectedID, products.contains(where: { $0.id == id }) == false {
-            selectedID = nil
-        }
-
-        var list: [Block] = []
-
-        if status.isEmpty == false {
-            list.append(text(status, top: 4, alpha: 0.95))
-        }
-
-        if let current = draft {
-            list.append(contentsOf: draftBlocks(current))
-        }
-
-        if let id = selectedID, let product = products.first(where: { $0.id == id }) {
-            list.append(contentsOf: detailBlocks(product))
-        } else {
-            list.append(contentsOf: listBlocks(products))
-        }
-
-        setBlocks(list)
-    }
-
-    private func text(
-        _ string: String,
-        top: CGFloat = 6,
-        size: CGFloat = 12.5,
-        weight: UIFont.Weight = .regular,
-        alpha: CGFloat = 0.82,
-        mono: Bool = false
-    ) -> Block {
-        let label = UILabel()
-        label.text = string
-        label.numberOfLines = 0
-        label.textColor = UIColor.white.withAlphaComponent(alpha)
-        label.font = mono ? .monospacedSystemFont(ofSize: size, weight: weight) : .systemFont(ofSize: size, weight: weight)
-        return autoBlock(label, top: top)
-    }
-
-    private func autoBlock(_ label: UILabel, top: CGFloat) -> Block {
-        Block(view: label, top: top, height: { width in
-            ceil(label.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height)
-        })
-    }
-
-    private func fixed(_ view: UIView, _ height: CGFloat, top: CGFloat) -> Block {
-        Block(view: view, top: top, height: { _ in height })
-    }
-
-    private func rowButton(_ title: String, selected: Bool, tag: Int, action: Selector) -> UIButton {
-        let row = UIButton(type: .system)
-        row.setTitle("  " + title, for: .normal)
-        row.contentHorizontalAlignment = .left
-        row.setTitleColor(.white, for: .normal)
-        row.titleLabel?.font = .systemFont(ofSize: 12, weight: .medium)
-        row.titleLabel?.lineBreakMode = .byTruncatingTail
-        row.backgroundColor = selected
-            ? UIColor(red: 0.10, green: 0.55, blue: 0.40, alpha: 1)
-            : UIColor.white.withAlphaComponent(0.07)
-        row.layer.cornerRadius = 8
-        row.tag = tag
-        row.addTarget(self, action: action, for: .touchUpInside)
-        return row
-    }
-
-    private func pill(_ title: String, _ color: UIColor, _ action: Selector) -> UIButton {
-        let button = UIButton(type: .system)
-        button.setTitle(title, for: .normal)
-        button.setTitleColor(.white, for: .normal)
-        button.titleLabel?.font = .systemFont(ofSize: 12.5, weight: .semibold)
-        button.backgroundColor = color
-        button.layer.cornerRadius = 10
-        button.addTarget(self, action: action, for: .touchUpInside)
-        return button
-    }
-
-    private func attributed(_ parts: [(String, UIColor)], size: CGFloat = 11.5) -> NSAttributedString {
-        let font = UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
-        let out = NSMutableAttributedString()
-
-        for (string, color) in parts {
-            out.append(NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: color]))
-        }
-
-        return out
-    }
-
-    // MARK: Danh sách sản phẩm
-
-    private func listBlocks(_ products: [TPIOSWatchedSale]) -> [Block] {
-        var b: [Block] = [text("SẢN PHẨM ĐÃ THEO DÕI (\(products.count))", top: 14, weight: .semibold)]
-
-        if products.isEmpty {
-            b.append(text("Chưa có sản phẩm. Mở giỏ hàng Shopee, bấm Quét rồi chạm vào sản phẩm.", size: 12, alpha: 0.6))
-        }
-
-        let sorted = products.sorted {
-            ($0.lastCheckedAt ?? $0.createdAt) > ($1.lastCheckedAt ?? $1.createdAt)
-        }
-
-        for product in sorted {
-            let row = TPIOSSaleProductRow(frame: .zero)
-            row.configure(name: product.title, info: productInfo(product))
-            row.accessibilityIdentifier = product.id.uuidString
-            row.addTarget(self, action: #selector(productTapped(_:)), for: .touchUpInside)
-            b.append(fixed(row, 56, top: 6))
-        }
-
-        return b
-    }
-
-    private func productInfo(_ product: TPIOSWatchedSale) -> NSAttributedString {
-        let white = UIColor.white.withAlphaComponent(0.85)
-        let prices = product.snapshots.compactMap { $0.effectivePrice }
-
-        guard let last = prices.last else {
-            return attributed([("chưa có giá", white)])
-        }
-
-        var parts: [(String, UIColor)] = [(TPIOSSaleFormat.money(last), white)]
-
-        if prices.count >= 2 {
-            let delta = TPIOSSaleFormat.delta(current: last, previous: prices[prices.count - 2])
-            parts.append(("  " + delta.text, delta.color))
-        }
-
-        if let low = prices.min() {
-            parts.append(("  · rẻ nhất " + TPIOSSaleFormat.money(low), white.withAlphaComponent(0.6)))
-        }
-
-        return attributed(parts)
-    }
-
-    // MARK: Chi tiết sản phẩm = các lần quét
-
-    private func detailBlocks(_ product: TPIOSWatchedSale) -> [Block] {
-        var b: [Block] = [text(product.title, top: 16, size: 14, weight: .bold, alpha: 1)]
-
-        var valued: [(index: Int, price: Double)] = []
-        for (index, snapshot) in product.snapshots.enumerated() {
-            if let price = snapshot.effectivePrice {
-                valued.append((index, price))
+            if let point {
+                dist = distance(from: point, to: item.frame)
+                if dist > radius { continue }
             }
+
+            scored.append((item.text, dist))
         }
 
-        let cheapest = valued.min(by: { $0.price < $1.price })
+        scored.sort {
+            $0.dist != $1.dist ? $0.dist < $1.dist : $0.text.count > $1.text.count
+        }
 
-        var summary = "Đã quét \(product.snapshots.count) lần"
-        if let cheapest {
-            summary += "\nRẻ nhất: " + TPIOSSaleFormat.money(cheapest.price) +
-                " (" + TPIOSSaleFormat.date(product.snapshots[cheapest.index].timestamp) + ")"
+        var result: [String] = []
+        var seen = Set<String>()
 
-            if let last = valued.last, last.index != cheapest.index {
-                summary += "\nLần gần nhất cao hơn " + TPIOSSaleFormat.money(last.price - cheapest.price)
-            } else if valued.count >= 2 {
-                summary += "\nLần gần nhất đang là RẺ NHẤT"
+        for entry in scored {
+            if seen.insert(entry.text.lowercased()).inserted {
+                result.append(entry.text)
             }
-        }
-        b.append(text(summary, top: 6, size: 12, alpha: 0.9, mono: true))
 
-        b.append(text("CÁC LẦN QUÉT (chạm để xem mã)", top: 14, weight: .semibold))
-
-        for (index, snapshot) in Array(product.snapshots.enumerated()).reversed().prefix(20) {
-            let previous: Double? = index > 0 ? product.snapshots[index - 1].effectivePrice : nil
-            let isCheapest = cheapest?.index == index
-
-            let row = rowButton("", selected: expandedIndex == index, tag: index, action: #selector(snapshotTapped(_:)))
-            row.setAttributedTitle(snapshotTitle(snapshot, previous: previous, cheapest: isCheapest), for: .normal)
-            b.append(fixed(row, 34, top: 4))
-
-            if expandedIndex == index {
-                b.append(contentsOf: expandedBlocks(snapshot, index: index))
-            }
+            if result.count == 4 { break }
         }
 
-        let deleteTitle = confirmDelete ? "Chạm lần nữa để xoá sản phẩm" : "Xoá sản phẩm này"
-        b.append(fixed(pill(deleteTitle, UIColor(red: 0.70, green: 0.15, blue: 0.12, alpha: 0.9), #selector(deleteProductTapped)), 38, top: 18))
-
-        return b
+        return result
     }
 
-    private func snapshotTitle(_ snapshot: TPIOSSaleSnapshot, previous: Double?, cheapest: Bool) -> NSAttributedString {
-        let gold = UIColor(red: 1, green: 0.85, blue: 0.3, alpha: 1)
-        let white = UIColor.white.withAlphaComponent(0.9)
-        let priceText = snapshot.effectivePrice.map { TPIOSSaleFormat.money($0) } ?? "-"
+    private static func isLikelyName(_ text: String) -> Bool {
+        let count = text.count
+        guard count >= 10, count <= 160 else { return false }
 
-        var parts: [(String, UIColor)] = [(
-            "  " + (cheapest ? "★ " : "") + TPIOSSaleFormat.date(snapshot.timestamp) + "  " + priceText,
-            cheapest ? gold : white
-        )]
+        let letters = text.unicodeScalars.filter { CharacterSet.letters.contains($0) }.count
+        guard letters >= 8 else { return false }
 
-        if let price = snapshot.effectivePrice, let previous {
-            let delta = TPIOSSaleFormat.delta(current: price, previous: previous)
-            parts.append(("  " + delta.text, delta.color))
-        }
+        let lower = text.lowercased()
 
-        return attributed(parts)
-    }
-
-    private func expandedBlocks(_ snapshot: TPIOSSaleSnapshot, index: Int) -> [Block] {
-        var lines = [
-            "Giá niêm yết: " + (snapshot.price.map { TPIOSSaleFormat.money($0) } ?? "-"),
-            "Giá sau mã:   " + (snapshot.effectivePrice.map { TPIOSSaleFormat.money($0) } ?? "-")
+        let strongNoise = [
+            "thêm vào giỏ", "mua ngay", "đã bán", "phân loại", "xem thêm",
+            "đánh giá", "thanh toán", "đặt hàng", "voucher", "freeship",
+            "miễn phí vận chuyển", "lượt thích", "chat ngay", "shopee mall",
+            "hoàn tiền", "tổng cộng", "đơn tối thiểu", "hsd", "hết hạn"
         ]
 
-        let vouchers = snapshot.voucherList
-
-        if vouchers.isEmpty {
-            lines.append("Không có mã giảm giá lúc đó.")
-        } else {
-            lines.append("Mã lúc đó:")
-            for voucher in vouchers {
-                lines.append("  • " + TPIOSSaleKind.name(voucher.kind) + ": " + voucher.title)
-            }
+        if strongNoise.contains(where: { lower.contains($0) }) {
+            return false
         }
 
-        let delete = pill("Xoá lần quét này", UIColor.white.withAlphaComponent(0.12), #selector(deleteSnapshotTapped(_:)))
-        delete.tag = index
+        if count < 40 {
+            let weakNoise = [
+                "giảm ", "giao ", "xóa", "xoá", "sửa", "chọn", "tất cả",
+                "quay lại", "kho", "ship", "ưu đãi", "gợi ý", "tìm kiếm",
+                "giỏ hàng", "sản phẩm"
+            ]
 
-        return [
-            text(lines.joined(separator: "\n"), top: 4, size: 11.5, alpha: 0.85, mono: true),
-            fixed(delete, 32, top: 6)
-        ]
-    }
-
-    // MARK: Kết quả quét đang chờ lưu
-
-    private func draftBlocks(_ d: Draft) -> [Block] {
-        var b: [Block] = [text("Sản phẩm (chạm để đổi sang tên khác):", top: 12, weight: .semibold)]
-
-        let name = d.names.indices.contains(d.nameIndex) ? d.names[d.nameIndex] : "(không đọc được tên, sẽ lưu tên tạm)"
-        b.append(fixed(rowButton(name, selected: true, tag: 0, action: #selector(nameTapped)), 36, top: 4))
-
-        b.append(text("Giá (chạm đúng giá sản phẩm):", top: 10, weight: .semibold))
-
-        for (index, price) in d.prices.prefix(6).enumerated() {
-            let row = rowButton(TPIOSSaleFormat.money(price), selected: index == d.priceIndex, tag: index, action: #selector(priceTapped(_:)))
-            b.append(fixed(row, 32, top: 4))
-        }
-
-        b.append(text("Mã giảm giá đọc được (\(d.vouchers.count)):", top: 12, weight: .semibold))
-
-        if d.vouchers.isEmpty {
-            b.append(text("Không thấy mã nào. Shop không có mã thì bỏ qua. Muốn thêm mã Shopee / free ship: mở màn đó rồi bấm + Quét mã.", top: 4, size: 11.5, alpha: 0.6))
-        }
-
-        for (index, voucher) in d.vouchers.enumerated() {
-            b.append(fixed(voucherRow(voucher, tag: index), 38, top: 6))
-        }
-
-        let finalText = d.total.map { "Giá sau mã (thanh đáy giỏ): " + TPIOSSaleFormat.money($0) }
-            ?? "Không đọc được thanh đáy giỏ. Quét lại ở màn giỏ hàng."
-        b.append(text(finalText, top: 10, weight: .semibold, alpha: 0.95))
-
-        let add = pill("+ Quét mã", UIColor(red: 0.85, green: 0.35, blue: 0.15, alpha: 1), #selector(addVouchersTapped))
-        let save = pill("Lưu", UIColor(red: 0.10, green: 0.55, blue: 0.40, alpha: 1), #selector(saveTapped))
-        let cancel = pill("Huỷ", UIColor.white.withAlphaComponent(0.12), #selector(cancelDraftTapped))
-        b.append(fixed(TPIOSSaleButtonRow(buttons: [add, save, cancel]), 38, top: 12))
-
-        return b
-    }
-
-    private func voucherRow(_ voucher: TPIOSSaleVoucher, tag: Int) -> UIView {
-        let row = UIView()
-        row.backgroundColor = UIColor.white.withAlphaComponent(0.06)
-        row.layer.cornerRadius = 8
-
-        let label = UILabel()
-        label.text = voucher.title
-        label.textColor = .white
-        label.font = .systemFont(ofSize: 11.5, weight: .medium)
-        label.lineBreakMode = .byTruncatingTail
-
-        let kind = UIButton(type: .system)
-        kind.setTitle(TPIOSSaleKind.name(voucher.kind), for: .normal)
-        kind.setTitleColor(.white, for: .normal)
-        kind.titleLabel?.font = .systemFont(ofSize: 11, weight: .semibold)
-        kind.backgroundColor = TPIOSSaleKind.color(voucher.kind)
-        kind.layer.cornerRadius = 8
-        kind.tag = tag
-        kind.addTarget(self, action: #selector(draftKindTapped(_:)), for: .touchUpInside)
-
-        let trash = UIButton(type: .system)
-        trash.setImage(UIImage(systemName: "trash"), for: .normal)
-        trash.tintColor = UIColor.systemRed.withAlphaComponent(0.85)
-        trash.tag = tag
-        trash.addTarget(self, action: #selector(draftVoucherDeleteTapped(_:)), for: .touchUpInside)
-
-        [label, kind, trash].forEach {
-            $0.translatesAutoresizingMaskIntoConstraints = false
-            row.addSubview($0)
-        }
-
-        NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 10),
-            label.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-            label.trailingAnchor.constraint(lessThanOrEqualTo: kind.leadingAnchor, constant: -6),
-
-            kind.trailingAnchor.constraint(equalTo: trash.leadingAnchor, constant: -4),
-            kind.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-            kind.widthAnchor.constraint(equalToConstant: 46),
-            kind.heightAnchor.constraint(equalToConstant: 24),
-
-            trash.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -6),
-            trash.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-            trash.widthAnchor.constraint(equalToConstant: 30)
-        ])
-
-        return row
-    }
-
-    // MARK: Hành động
-
-    @objc private func productTapped(_ sender: UIButton) {
-        guard let idString = sender.accessibilityIdentifier,
-              let id = UUID(uuidString: idString) else {
-            return
-        }
-
-        selectedID = id
-        expandedIndex = nil
-        confirmDelete = false
-        status = ""
-        render()
-        scrollView.setContentOffset(.zero, animated: false)
-    }
-
-    @objc private func snapshotTapped(_ sender: UIButton) {
-        expandedIndex = expandedIndex == sender.tag ? nil : sender.tag
-        render()
-    }
-
-    @objc private func deleteSnapshotTapped(_ sender: UIButton) {
-        guard let id = selectedID else { return }
-
-        TPIOSSaleStore.shared.deleteSnapshot(productID: id, index: sender.tag)
-        expandedIndex = nil
-        render()
-    }
-
-    @objc private func deleteProductTapped() {
-        guard let id = selectedID else { return }
-
-        if confirmDelete == false {
-            confirmDelete = true
-            render()
-            return
-        }
-
-        TPIOSSaleStore.shared.deleteProduct(id)
-        confirmDelete = false
-        selectedID = nil
-        status = "Đã xoá sản phẩm."
-        render()
-    }
-
-    @objc private func nameTapped() {
-        guard var d = draft, d.names.isEmpty == false else { return }
-
-        d.nameIndex = (d.nameIndex + 1) % d.names.count
-        draft = d
-        render()
-    }
-
-    @objc private func priceTapped(_ sender: UIButton) {
-        draft?.priceIndex = sender.tag
-        render()
-    }
-
-    @objc private func draftKindTapped(_ sender: UIButton) {
-        guard var d = draft, d.vouchers.indices.contains(sender.tag) else { return }
-
-        d.vouchers[sender.tag].kind = TPIOSSaleKind.next(d.vouchers[sender.tag].kind)
-        draft = d
-        render()
-    }
-
-    @objc private func draftVoucherDeleteTapped(_ sender: UIButton) {
-        guard var d = draft, d.vouchers.indices.contains(sender.tag) else { return }
-
-        d.vouchers.remove(at: sender.tag)
-        draft = d
-        render()
-    }
-
-    @objc private func cancelDraftTapped() {
-        draft = nil
-        render()
-    }
-
-    // Đọc thêm mã giảm giá của màn đang hiển thị (vd màn kho mã) vào bản nháp.
-    @objc private func addVouchersTapped() {
-        guard var d = draft,
-              let root = TPIOSSaleScanner.visibleAppRoot(excluding: window) else {
-            return
-        }
-
-        let found = TPIOSSaleScanner.vouchers(in: TPIOSSaleScanner.collectItems(in: root), near: nil)
-        var added = 0
-
-        for voucher in found where d.vouchers.contains(where: { $0.sameAs(voucher) }) == false {
-            d.vouchers.append(voucher)
-            added += 1
-        }
-
-        draft = d
-        status = added > 0 ? "Thêm \(added) mã từ màn hiện tại." : "Màn hiện tại không có mã mới."
-        render()
-    }
-
-    @objc private func saveTapped() {
-        guard let d = draft, d.prices.indices.contains(d.priceIndex) else { return }
-
-        let price = d.prices[d.priceIndex]
-        let name = d.names.indices.contains(d.nameIndex)
-            ? d.names[d.nameIndex]
-            : "SP không rõ tên " + TPIOSSaleFormat.date(Date())
-        let final = d.total ?? price
-
-        let result = TPIOSSaleStore.shared.record(name: name, price: price, finalPrice: final, vouchers: d.vouchers)
-
-        var message = "Đã lưu " + TPIOSSaleFormat.money(price)
-
-        if d.total != nil {
-            message += ", sau mã " + TPIOSSaleFormat.money(final)
-        }
-
-        if let previous = result.previous {
-            message += "\n" + TPIOSSaleFormat.delta(current: final, previous: previous).text + " so với lần trước."
-        } else {
-            message += " (sản phẩm mới)"
-        }
-
-        draft = nil
-        selectedID = result.product.id
-        expandedIndex = nil
-        confirmDelete = false
-        status = message
-        render()
-        scrollView.setContentOffset(.zero, animated: false)
-
-        TPIOSLog.shared.log("Sale: lưu \(Int(price)) sau mã \(Int(final)), \(d.vouchers.count) mã")
-    }
-
-    @objc private func backTapped() {
-        if draft != nil {
-            draft = nil
-        } else if selectedID != nil {
-            selectedID = nil
-            confirmDelete = false
-            status = ""
-        } else {
-            onBack?()
-            return
-        }
-
-        render()
-    }
-
-    @objc private func closeTapped() {
-        onClose?()
-    }
-
-    // MARK: Chạm để quét
-
-    @objc private func scanTapped() {
-        endEditing(true)
-
-        if compareSavedFromCart() {
-            return
-        }
-
-        startPick()
-    }
-
-    // Quét giỏ: tự nhận các sản phẩm đã lưu đang hiện, lấy giá dòng và tổng
-    // thanh đáy rồi so với lần trước. Trả false nếu không thấy sản phẩm đã
-    // lưu nào (khi đó người dùng chạm để lưu sản phẩm mới).
-    private func compareSavedFromCart() -> Bool {
-        guard let root = TPIOSSaleScanner.visibleAppRoot(excluding: window) else { return false }
-
-        let items = TPIOSSaleScanner.collectItems(in: root)
-
-        let matched = TPIOSSaleStore.shared.load().filter {
-            TPIOSSaleScanner.rowPrice(for: $0.title, in: items) != nil
-        }
-
-        guard matched.isEmpty == false else {
-            let saved = TPIOSSaleStore.shared.load()
-
-            if saved.isEmpty {
+            if weakNoise.contains(where: { lower.contains($0) }) {
                 return false
             }
-
-            let names = saved.map { $0.title }.joined(separator: " | ")
-            TPIOSLog.shared.log("Sale: không khớp sản phẩm đã lưu [\(names)] trên màn hiện tại")
-
-            status = "Không thấy sản phẩm đã lưu trên màn này. Tích đúng sản phẩm trong giỏ hàng rồi quét lại."
-            render()
-            return true
         }
 
-        guard matched.count == 1, let product = matched.first else {
-            status = "Đang tích nhiều sản phẩm nên thanh đáy gộp cả nhóm. Chỉ tích 1 sản phẩm rồi quét lại."
-            render()
-            return true
-        }
-
-        guard let total = TPIOSSaleScanner.cartTotal(in: items) else {
-            status = "Không đọc được tổng ở thanh đáy. Kéo giỏ hàng sao cho thanh đáy hiện rõ rồi quét lại."
-            render()
-            return true
-        }
-
-        let price = TPIOSSaleScanner.rowPrice(for: product.title, in: items) ?? total
-
-        let result = TPIOSSaleStore.shared.record(
-            name: product.title,
-            price: price,
-            finalPrice: total,
-            vouchers: []
-        )
-
-        var message = product.title + "\nGiá sau mã: " + TPIOSSaleFormat.money(total)
-
-        if let previous = result.previous {
-            if total < previous {
-                message += "\nTỐT HƠN: rẻ hơn " + TPIOSSaleFormat.money(previous - total) +
-                    " so với lần trước (" + TPIOSSaleFormat.money(previous) + ")"
-            } else if total > previous {
-                message += "\nKÉM HƠN: đắt hơn " + TPIOSSaleFormat.money(total - previous) +
-                    " so với lần trước (" + TPIOSSaleFormat.money(previous) + ")"
-            } else {
-                message += "\nBẰNG lần trước (" + TPIOSSaleFormat.money(previous) + ")"
-            }
-        } else {
-            message += "\nLần quét đầu tiên của sản phẩm này."
-        }
-
-        let lowest = result.product.snapshots.compactMap { $0.effectivePrice }.min()
-        if let lowest {
-            message += "\nThấp nhất từng quét: " + TPIOSSaleFormat.money(lowest)
-        }
-
-        selectedID = result.product.id
-        expandedIndex = nil
-        status = message
-        render()
-        scrollView.setContentOffset(.zero, animated: false)
-
-        TPIOSLog.shared.log("Sale: quét giỏ, \(product.title) tổng=\(Int(total))")
-        return true
-    }
-
-    private func startPick() {
-        guard let hostWindow = window else { return }
-
-        isHidden = true
-
-        let overlay = UIView(frame: hostWindow.bounds)
-        overlay.backgroundColor = UIColor.black.withAlphaComponent(0.001)
-
-        let safeTop = hostWindow.safeAreaInsets.top
-
-        let hint = UILabel()
-        hint.text = "Chạm vào sản phẩm cần quét (tên hoặc giá)"
-        hint.textColor = .white
-        hint.font = .systemFont(ofSize: 13, weight: .semibold)
-        hint.textAlignment = .center
-        hint.numberOfLines = 0
-        hint.backgroundColor = UIColor.black.withAlphaComponent(0.72)
-        hint.layer.cornerRadius = 10
-        hint.clipsToBounds = true
-        hint.frame = CGRect(x: 20, y: safeTop + 14, width: hostWindow.bounds.width - 100, height: 44)
-        overlay.addSubview(hint)
-
-        let cancel = UIButton(type: .system)
-        cancel.setTitle("Huỷ", for: .normal)
-        cancel.setTitleColor(.white, for: .normal)
-        cancel.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
-        cancel.backgroundColor = UIColor.black.withAlphaComponent(0.72)
-        cancel.layer.cornerRadius = 8
-        cancel.frame = CGRect(x: hostWindow.bounds.width - 72, y: safeTop + 14, width: 56, height: 44)
-        cancel.addTarget(self, action: #selector(cancelPick), for: .touchUpInside)
-        overlay.addSubview(cancel)
-        pickCancel = cancel
-
-        let tap = UITapGestureRecognizer(target: self, action: #selector(picked(_:)))
-        tap.delegate = self
-        overlay.addGestureRecognizer(tap)
-
-        hostWindow.addSubview(overlay)
-        pickOverlay = overlay
-    }
-
-    private func finishPick() {
-        pickOverlay?.removeFromSuperview()
-        pickOverlay = nil
-        pickCancel = nil
-        isHidden = false
-    }
-
-    @objc private func cancelPick() {
-        finishPick()
-    }
-
-    @objc private func picked(_ gesture: UITapGestureRecognizer) {
-        guard let overlay = pickOverlay else { return }
-
-        let point = gesture.location(in: overlay)
-        finishPick()
-        readScreen(at: point)
-    }
-
-    private func readScreen(at point: CGPoint) {
-        guard let root = TPIOSSaleScanner.visibleAppRoot(excluding: window) else {
-            status = "Không tìm thấy màn hình app để quét."
-            render()
-            return
-        }
-
-        let items = TPIOSSaleScanner.collectItems(in: root)
-
-        var prices = TPIOSSaleScanner.prices(in: items, near: point, radius: 140)
-        if prices.isEmpty {
-            prices = TPIOSSaleScanner.prices(in: items, near: nil, radius: 0)
-        }
-
-        guard prices.isEmpty == false else {
-            status = "Không đọc được giá nào. Mở giỏ hàng / trang sản phẩm rồi quét lại."
-            render()
-            return
-        }
-
-        var names = TPIOSSaleScanner.nameCandidates(in: items, near: point, radius: 260)
-        if names.isEmpty {
-            names = TPIOSSaleScanner.nameCandidates(in: items, near: nil, radius: 0)
-        }
-
-        let vouchers = TPIOSSaleScanner.vouchers(in: items, near: point)
-
-        draft = Draft(names: names, prices: prices, vouchers: vouchers, total: TPIOSSaleScanner.cartTotal(in: items))
-        status = ""
-        render()
-        scrollView.setContentOffset(.zero, animated: false)
-
-        TPIOSLog.shared.log("Sale: quét, \(prices.count) giá, \(names.count) tên, \(vouchers.count) mã")
-    }
-
-    // Nghiên cứu: chạm giữ nút Quét → ghi mọi chữ đang hiện (kèm loại view,
-    // vị trí) vào log với tiền tố "SaleDump:".
-    @objc private func dumpTapped(_ gesture: UILongPressGestureRecognizer) {
-        guard gesture.state == .began else { return }
-
-        guard let root = TPIOSSaleScanner.visibleAppRoot(excluding: window) else {
-            status = "Không tìm thấy màn hình app để dump."
-            render()
-            return
-        }
-
-        var controllers: [String] = []
-        var responder: UIResponder? = root
-
-        while let current = responder, controllers.count < 6 {
-            if let controller = current as? UIViewController {
-                controllers.append(NSStringFromClass(type(of: controller)))
-            }
-            responder = current.next
-        }
-
-        let lines = TPIOSSaleScanner.dumpLines(in: root)
-
-        TPIOSLog.shared.log("SaleDump: ===== \(lines.count) dòng | controller: " + controllers.joined(separator: " -> ") + " =====")
-
-        for line in lines.prefix(250) {
-            TPIOSLog.shared.log("SaleDump: " + line)
-        }
-
-        status = "Đã dump \(min(lines.count, 250)) dòng vào log. Mở Xem log, gõ SaleDump: vào ô lọc."
-        render()
-    }
-
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        if touch.view === backButton ||
-           touch.view === closeButton ||
-           touch.view === resizeHandle ||
-           touch.view === pickCancel {
+        if extractAmounts(from: text).isEmpty == false && letters < 14 {
             return false
         }
 
         return true
     }
-}
 
+    // Dump nghiên cứu: mỗi dòng = vị trí, kích thước, loại view, nguồn chữ,
+    // nội dung. Xếp từ trên xuống dưới. Có thêm dòng cho WKWebView (nếu màn
+    // render bằng web thì chữ không nằm trong view native).
+    static func dumpLines(in root: UIView) -> [String] {
+        var rows: [(minY: CGFloat, minX: CGFloat, line: String)] = []
+        var seen = Set<String>()
+        let screen = UIScreen.main.bounds
 
-// MARK: - View phụ
+        func visit(_ view: UIView) {
+            guard view.isHidden == false, view.alpha > 0.01 else { return }
 
-private final class TPIOSSaleButtonRow: UIView {
+            let frame = view.convert(view.bounds, to: nil)
+            let className = NSStringFromClass(type(of: view))
 
-    private let buttons: [UIButton]
+            func add(_ text: String?, _ source: String) {
+                guard let text else { return }
 
-    init(buttons: [UIButton]) {
-        self.buttons = buttons
-        super.init(frame: .zero)
-        buttons.forEach { addSubview($0) }
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard trimmed.isEmpty == false,
+                      trimmed.count <= 160,
+                      frame.intersects(screen) else {
+                    return
+                }
+
+                let key = "\(trimmed)|\(Int(frame.minX))|\(Int(frame.minY))"
+                guard seen.insert(key).inserted else { return }
+
+                let position = "y=\(Int(frame.minY)) x=\(Int(frame.minX)) \(Int(frame.width))x\(Int(frame.height))"
+                rows.append((frame.minY, frame.minX, position + " [" + className + "/" + source + "] " + trimmed))
+            }
+
+            if let web = view as? WKWebView, frame.intersects(screen) {
+                let position = "y=\(Int(frame.minY)) x=\(Int(frame.minX)) \(Int(frame.width))x\(Int(frame.height))"
+                rows.append((frame.minY, frame.minX, position + " [WKWebView] url=" + (web.url?.absoluteString ?? "-")))
+            }
+
+            if let label = view as? UILabel { add(label.text, "text") }
+
+            if let field = view as? UITextField {
+                add(field.text, "field")
+                add(field.placeholder, "placeholder")
+            }
+
+            if let textView = view as? UITextView { add(textView.text, "textview") }
+            if let button = view as? UIButton { add(button.currentTitle, "title") }
+
+            add(view.accessibilityLabel, "a11y")
+
+            for child in view.subviews {
+                visit(child)
+            }
+        }
+
+        visit(root)
+
+        rows.sort {
+            $0.minY != $1.minY ? $0.minY < $1.minY : $0.minX < $1.minX
+        }
+
+        return rows.map { $0.line }
     }
 
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
+    // Giá dòng sản phẩm trong giỏ có tên khớp tên đã lưu (tên đã lưu là tiền
+    // tố của tên trên dòng, hoặc ngược lại). Trả nil nếu không thấy dòng nào.
+    static func rowPrice(for title: String, in items: [TPIOSSaleTextItem]) -> Double? {
+        let key = TPIOSSaleMatcher.normalize(title)
+        guard key.count >= 8 else { return nil }
+
+        let head = String(key.prefix(14))
+
+        let row = items
+            .filter { TPIOSSaleMatcher.normalize($0.text).contains(head) }
+            .max { $0.text.count < $1.text.count }
+
+        return row.flatMap { extractAmounts(from: $0.text).first }
     }
 
-    override func layoutSubviews() {
-        super.layoutSubviews()
+    // Tổng ở thanh đáy giỏ (dòng có "Mua hàng"): số tiền lớn nhất trong dải
+    // ngang của thanh, bỏ dòng "Tiết kiệm". Nil nếu không thấy thanh đáy.
+    static func cartTotal(in items: [TPIOSSaleTextItem]) -> Double? {
+        guard let bar = items.first(where: { $0.text.contains("Mua hàng") }) else { return nil }
 
-        let gap: CGFloat = 8
-        let count = CGFloat(buttons.count)
-        let width = (bounds.width - gap * (count - 1)) / max(1, count)
+        // Chỉ lấy số nằm cùng hàng, bên trái nút Mua hàng, và sát nút nhất
+        // (tổng nằm ngay trước nút; các số khác trong dải không phải tổng).
+        return items
+            .filter {
+                abs($0.frame.midY - bar.frame.midY) <= 30 &&
+                $0.frame.maxX <= bar.frame.minX + 4 &&
+                $0.text.lowercased().contains("tiết kiệm") == false
+            }
+            .flatMap { item in extractAmounts(from: item.text).map { (amount: $0, edge: item.frame.maxX) } }
+            .max { $0.edge < $1.edge }?
+            .amount
+    }
 
-        for (index, button) in buttons.enumerated() {
-            button.frame = CGRect(x: CGFloat(index) * (width + gap), y: 0, width: width, height: bounds.height)
+    private static func distance(from point: CGPoint, to rect: CGRect) -> CGFloat {
+        let dx = max(rect.minX - point.x, 0, point.x - rect.maxX)
+        let dy = max(rect.minY - point.y, 0, point.y - rect.maxY)
+        return (dx * dx + dy * dy).squareRoot()
+    }
+
+    private static func extractAmounts(from text: String) -> [Double] {
+        let normalized = text
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+            .replacingOccurrences(of: "₫", with: "")
+            .replacingOccurrences(of: "đ", with: "")
+            .replacingOccurrences(of: "Đ", with: "")
+
+        let pattern = #"(?<!\d)(\d{1,3}(?:[.,]\d{3})+|\d{4,9})(?!\d)"#
+
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return []
+        }
+
+        let range = NSRange(normalized.startIndex..., in: normalized)
+        let matches = regex.matches(in: normalized, range: range)
+
+        return matches.compactMap { match in
+            guard let matchRange = Range(match.range(at: 1), in: normalized) else {
+                return nil
+            }
+
+            let raw = String(normalized[matchRange])
+                .replacingOccurrences(of: ".", with: "")
+                .replacingOccurrences(of: ",", with: "")
+
+            guard let value = Double(raw),
+                  value >= 1000,
+                  value <= 999_999_999 else {
+                return nil
+            }
+
+            return value
         }
     }
-}
 
-private final class TPIOSSaleProductRow: UIButton {
+    // Các giá tiền gần điểm chạm (gần nhất xếp trước). near == nil: toàn màn
+    // hình, lớn nhất xếp trước. Bỏ chữ về mã giảm giá / phí ship để không lẫn
+    // với giá sản phẩm.
+    static func prices(in items: [TPIOSSaleTextItem], near point: CGPoint?, radius: CGFloat) -> [Double] {
+        let skip = ["giảm", "tối thiểu", "voucher", "vận chuyển", "tiết kiệm", "đã bán"]
+        var scored: [(amount: Double, dist: CGFloat)] = []
 
-    private let nameLabel = UILabel()
-    private let infoLabel = UILabel()
+        for item in items {
+            let lower = item.text.lowercased()
+            if skip.contains(where: { lower.contains($0) }) { continue }
 
-    override init(frame: CGRect) {
-        super.init(frame: frame)
+            for amount in extractAmounts(from: item.text) {
+                var dist: CGFloat = 0
 
-        backgroundColor = UIColor.white.withAlphaComponent(0.07)
-        layer.cornerRadius = 12
+                if let point {
+                    dist = distance(from: point, to: item.frame)
+                    if dist > radius { continue }
+                }
 
-        nameLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        nameLabel.textColor = .white
-        nameLabel.lineBreakMode = .byTruncatingTail
-        nameLabel.isUserInteractionEnabled = false
+                scored.append((amount, dist))
+            }
+        }
 
-        infoLabel.lineBreakMode = .byTruncatingTail
-        infoLabel.isUserInteractionEnabled = false
+        if point != nil {
+            scored.sort { $0.dist < $1.dist }
+        } else {
+            scored.sort { $0.amount > $1.amount }
+        }
 
-        addSubview(nameLabel)
-        addSubview(infoLabel)
+        var result: [Double] = []
+
+        for entry in scored {
+            if result.contains(entry.amount) == false {
+                result.append(entry.amount)
+            }
+
+            if result.count == 8 { break }
+        }
+
+        return result
     }
 
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
+    // Mã giảm giá đang hiển thị: mỗi dòng có "giảm <số>" hoặc nhắc miễn phí
+    // vận chuyển là 1 mã; ghép các dòng chữ ngay quanh nó (45pt phía trên,
+    // 80pt phía dưới) thành 1 "thẻ" rồi đọc mức giảm / đơn tối thiểu / giảm
+    // tối đa / loại. Mã loại Shop chỉ lấy khi nằm gần sản phẩm đã chạm.
+    static func vouchers(in items: [TPIOSSaleTextItem], near point: CGPoint?) -> [TPIOSSaleVoucher] {
+        let discountPattern = try? NSRegularExpression(
+            pattern: #"giảm(?:\s+giá)?\s+\d"#,
+            options: [.caseInsensitive]
+        )
 
-    func configure(name: String, info: NSAttributedString) {
-        nameLabel.text = name
-        infoLabel.attributedText = info
-    }
+        func isSeed(_ text: String) -> Bool {
+            let lower = text.lowercased()
 
-    override func layoutSubviews() {
-        super.layoutSubviews()
+            if lower.contains("miễn phí vận chuyển") || lower.contains("freeship") || lower.contains("free ship") {
+                return true
+            }
 
-        nameLabel.frame = CGRect(x: 12, y: 8, width: max(0, bounds.width - 24), height: 18)
-        infoLabel.frame = CGRect(x: 12, y: 30, width: max(0, bounds.width - 24), height: 18)
+            let range = NSRange(lower.startIndex..., in: lower)
+            return discountPattern?.firstMatch(in: lower, range: range) != nil
+        }
+
+        let sorted = items
+            .filter { $0.text.count <= 140 }
+            .sorted { $0.frame.minY < $1.frame.minY }
+
+        var result: [TPIOSSaleVoucher] = []
+
+        for seed in sorted where isSeed(seed.text) {
+            let lines = sorted.filter { item in
+                let isSelf = item.frame.minY == seed.frame.minY && item.frame.minX == seed.frame.minX
+                let inBand = item.frame.minY >= seed.frame.minY - 45 && item.frame.minY <= seed.frame.minY + 80
+                return inBand && (isSelf || isSeed(item.text) == false)
+            }.map { $0.text }
+
+            guard let parsed = TPIOSSaleVoucherParser.parse(lines: lines) else { continue }
+
+            if let point, parsed.kind == "shop", abs(seed.frame.midY - point.y) > 320 {
+                continue
+            }
+
+            let voucher = TPIOSSaleVoucher(
+                id: UUID().uuidString,
+                title: parsed.title,
+                kind: parsed.kind,
+                isPercent: parsed.isPercent,
+                value: parsed.value,
+                minSpend: parsed.minSpend,
+                maxDiscount: parsed.maxDiscount,
+                expiryText: parsed.expiryText
+            )
+
+            if result.contains(where: { $0.sameAs(voucher) }) == false {
+                result.append(voucher)
+            }
+        }
+
+        return result
     }
 }
