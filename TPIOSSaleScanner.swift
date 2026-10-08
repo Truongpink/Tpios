@@ -234,8 +234,10 @@ enum TPIOSSaleScanner {
         let key = TPIOSSaleMatcher.normalize(title)
         guard key.count >= 8 else { return nil }
 
+        let head = String(key.prefix(14))
+
         let row = items
-            .filter { TPIOSSaleMatcher.normalize($0.text).hasPrefix(key) }
+            .filter { TPIOSSaleMatcher.normalize($0.text).contains(head) }
             .max { $0.text.count < $1.text.count }
 
         return row.flatMap { extractAmounts(from: $0.text).first }
