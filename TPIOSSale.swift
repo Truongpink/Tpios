@@ -23,6 +23,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         var prices: [Double]
         var priceIndex = 0
         var vouchers: [TPIOSSaleVoucher]
+        var total: Double?
     }
 
     private let headerHeight: CGFloat = 54
@@ -468,16 +469,9 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
             b.append(fixed(voucherRow(voucher, tag: index), 38, top: 6))
         }
 
-        if d.prices.indices.contains(d.priceIndex) {
-            let result = TPIOSSaleVoucherMath.best(vouchers: d.vouchers, price: d.prices[d.priceIndex])
-            var line = "Giá sau mã (ước tính): " + TPIOSSaleFormat.money(result.finalPrice)
-
-            if result.freeshipAmount > 0 {
-                line += "\nFree ship giảm thêm: -" + TPIOSSaleFormat.money(result.freeshipAmount)
-            }
-
-            b.append(text(line, top: 10, weight: .semibold, alpha: 0.95))
-        }
+        let finalText = d.total.map { "Giá sau mã (thanh đáy giỏ): " + TPIOSSaleFormat.money($0) }
+            ?? "Không đọc được thanh đáy giỏ. Quét lại ở màn giỏ hàng."
+        b.append(text(finalText, top: 10, weight: .semibold, alpha: 0.95))
 
         let add = pill("+ Quét mã", UIColor(red: 0.85, green: 0.35, blue: 0.15, alpha: 1), #selector(addVouchersTapped))
         let save = pill("Lưu", UIColor(red: 0.10, green: 0.55, blue: 0.40, alpha: 1), #selector(saveTapped))
@@ -642,13 +636,13 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         let name = d.names.indices.contains(d.nameIndex)
             ? d.names[d.nameIndex]
             : "SP không rõ tên " + TPIOSSaleFormat.date(Date())
-        let final = TPIOSSaleVoucherMath.best(vouchers: d.vouchers, price: price).finalPrice
+        let final = d.total ?? price
 
         let result = TPIOSSaleStore.shared.record(name: name, price: price, finalPrice: final, vouchers: d.vouchers)
 
         var message = "Đã lưu " + TPIOSSaleFormat.money(price)
 
-        if d.vouchers.isEmpty == false {
+        if d.total != nil {
             message += ", sau mã " + TPIOSSaleFormat.money(final)
         }
 
@@ -712,7 +706,20 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
             TPIOSSaleScanner.rowPrice(for: $0.title, in: items) != nil
         }
 
-        guard matched.isEmpty == false else { return false }
+        guard matched.isEmpty == false else {
+            let saved = TPIOSSaleStore.shared.load()
+
+            if saved.isEmpty {
+                return false
+            }
+
+            let names = saved.map { $0.title }.joined(separator: " | ")
+            TPIOSLog.shared.log("Sale: không khớp sản phẩm đã lưu [\(names)] trên màn hiện tại")
+
+            status = "Không thấy sản phẩm đã lưu trên màn này. Tích đúng sản phẩm trong giỏ hàng rồi quét lại."
+            render()
+            return true
+        }
 
         guard matched.count == 1, let product = matched.first else {
             status = "Đang tích nhiều sản phẩm nên thanh đáy gộp cả nhóm. Chỉ tích 1 sản phẩm rồi quét lại."
@@ -853,7 +860,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
 
         let vouchers = TPIOSSaleScanner.vouchers(in: items, near: point)
 
-        draft = Draft(names: names, prices: prices, vouchers: vouchers)
+        draft = Draft(names: names, prices: prices, vouchers: vouchers, total: TPIOSSaleScanner.cartTotal(in: items))
         status = ""
         render()
         scrollView.setContentOffset(.zero, animated: false)
