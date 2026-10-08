@@ -220,6 +220,7 @@ func show() {
         capture.addAction(
             UIAction { [weak capture] _ in
                 TPIOSNetworkLog.shared.install()
+                TPIOSCartBody.shared.install()
                 capture?.setTitle("Đang bắt mạng", for: .normal)
             },
             for: .touchUpInside
