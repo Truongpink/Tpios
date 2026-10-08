@@ -61,7 +61,8 @@ final class TPIOSAppScanner {
         let classes = UnsafeMutablePointer<AnyClass>.allocate(capacity: Int(count))
         defer { classes.deallocate() }
 
-        let actualCount = objc_getClassList(classes, count)
+        let autoreleasingClasses = AutoreleasingUnsafeMutablePointer<AnyClass>(classes)
+        let actualCount = objc_getClassList(autoreleasingClasses, count)
 
         return (0..<Int(actualCount)).map {
             NSStringFromClass(classes[$0])
