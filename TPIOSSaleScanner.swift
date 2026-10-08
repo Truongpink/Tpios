@@ -279,6 +279,18 @@ enum TPIOSSaleScanner {
         return (price, row.text.lowercased().contains("áp dụng"))
     }
 
+    // Giá sau mã của dòng sản phẩm gần điểm chạm nhất (trong 200pt), chỉ khi
+    // dòng đó có chữ "Đã áp dụng mã". Dùng cho chế độ chạm để lưu sản phẩm mới.
+    static func appliedPrice(near point: CGPoint, in items: [TPIOSSaleTextItem]) -> Double? {
+        let row = items
+            .filter { $0.text.lowercased().contains("áp dụng") && extractAmounts(from: $0.text).isEmpty == false }
+            .min { distance(from: point, to: $0.frame) < distance(from: point, to: $1.frame) }
+
+        guard let row, distance(from: point, to: row.frame) <= 200 else { return nil }
+
+        return extractAmounts(from: row.text).first
+    }
+
     // Các dòng chữ quanh thanh đáy, dùng để ghi log khi không đọc được tổng.
     static func bottomBarDump(in items: [TPIOSSaleTextItem]) -> String {
         guard let bar = items.first(where: { $0.text.contains("Mua hàng") }) else {
