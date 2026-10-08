@@ -248,13 +248,17 @@ enum TPIOSSaleScanner {
     static func cartTotal(in items: [TPIOSSaleTextItem]) -> Double? {
         guard let bar = items.first(where: { $0.text.contains("Mua hàng") }) else { return nil }
 
+        // Chỉ lấy số nằm cùng hàng, bên trái nút Mua hàng, và sát nút nhất
+        // (tổng nằm ngay trước nút; các số khác trong dải không phải tổng).
         return items
             .filter {
-                abs($0.frame.midY - bar.frame.midY) <= 60 &&
+                abs($0.frame.midY - bar.frame.midY) <= 30 &&
+                $0.frame.maxX <= bar.frame.minX + 4 &&
                 $0.text.lowercased().contains("tiết kiệm") == false
             }
-            .flatMap { extractAmounts(from: $0.text) }
-            .max()
+            .flatMap { item in extractAmounts(from: item.text).map { (amount: $0, edge: item.frame.maxX) } }
+            .max { $0.edge < $1.edge }?
+            .amount
     }
 
     private static func distance(from point: CGPoint, to rect: CGRect) -> CGFloat {
