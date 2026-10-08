@@ -711,7 +711,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         let items = TPIOSSaleScanner.collectItems(in: root)
 
         let matched = TPIOSSaleStore.shared.load().filter {
-            TPIOSSaleScanner.rowPrice(for: $0.title, in: items) != nil
+            TPIOSSaleScanner.cartLine(for: $0.title, in: items) != nil
         }
 
         guard matched.isEmpty == false else {
@@ -730,25 +730,25 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         }
 
         guard matched.count == 1, let product = matched.first else {
-            status = "Đang tích nhiều sản phẩm nên thanh đáy gộp cả nhóm. Chỉ tích 1 sản phẩm rồi quét lại."
+            status = "Đang tích nhiều sản phẩm. Chỉ tích 1 sản phẩm rồi quét lại."
             render()
             return true
         }
 
-        guard let total = TPIOSSaleScanner.cartTotal(in: items) else {
-            TPIOSLog.shared.log("Sale: không đọc được thanh đáy. Dải quanh Mua hàng: " + TPIOSSaleScanner.bottomBarDump(in: items))
-            status = "Không đọc được tổng ở thanh đáy. Kéo giỏ hàng sao cho thanh đáy hiện rõ rồi quét lại."
+        guard let line = TPIOSSaleScanner.cartLine(for: product.title, in: items) else {
+            status = "Không thấy dòng sản phẩm trên màn này. Kéo giỏ hàng cho thấy sản phẩm rồi quét lại."
             render()
             return true
         }
 
-        let price = TPIOSSaleScanner.rowPrice(for: product.title, in: items) ?? total
-
-        guard total <= price + 1 else {
-            status = "Số đọc được ở thanh đáy không hợp lệ. Kéo giỏ hàng sao cho thanh đáy hiện rõ rồi quét lại."
+        guard line.applied else {
+            status = "Sản phẩm này chưa áp mã Shopee. Mở Shopee Voucher, tích mã, bấm Đồng ý, quay lại giỏ rồi quét."
             render()
             return true
         }
+
+        let total = line.price
+        let price = line.price
 
         let result = TPIOSSaleStore.shared.record(
             name: product.title,
@@ -875,7 +875,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
 
         let vouchers = TPIOSSaleScanner.vouchers(in: items, near: point)
 
-        draft = Draft(names: names, prices: prices, vouchers: vouchers, total: TPIOSSaleScanner.cartTotal(in: items))
+        draft = Draft(names: names, prices: prices, vouchers: vouchers, total: names.first.flatMap { TPIOSSaleScanner.cartLine(for: $0, in: items)?.price })
         status = ""
         render()
         scrollView.setContentOffset(.zero, animated: false)
