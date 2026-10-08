@@ -144,6 +144,8 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         newCaption.font = .systemFont(ofSize: 12.5, weight: .semibold)
         newCaption.textAlignment = .center
         contentView.addSubview(newCaption)
+        newButton.isHidden = true
+        newCaption.isHidden = true
 
         resizeHandle.text = "↘"
         resizeHandle.textColor = UIColor.white.withAlphaComponent(0.65)
@@ -219,7 +221,8 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
 
         let icon: CGFloat = 62
         let gap: CGFloat = 40
-        let startX = (bounds.width - (icon * 2 + gap)) / 2
+        let showsNew = newButton.isHidden == false
+        let startX = (bounds.width - (showsNew ? icon * 2 + gap : icon)) / 2
 
         scanButton.frame = CGRect(x: startX, y: 8, width: icon, height: icon)
         newButton.frame = CGRect(x: startX + icon + gap, y: 8, width: icon, height: icon)
@@ -746,65 +749,43 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
     // thanh đáy rồi so với lần trước. Trả false nếu không thấy sản phẩm đã
     // lưu nào (khi đó người dùng chạm để lưu sản phẩm mới).
     private func compareSavedFromCart() -> Bool {
-        guard let root = TPIOSSaleScanner.visibleAppRoot(excluding: window) else { return false }
-
-        let items = TPIOSSaleScanner.collectItems(in: root)
-
-        let saved = TPIOSSaleStore.shared.load()
-
-        // Chỉ tính sản phẩm đã lưu có dòng "Đã áp dụng mã" (đang được tích).
-        // Sản phẩm đã lưu nhưng không tích vẫn hiện trong giỏ nên không tính.
-        let found = saved.filter { TPIOSSaleScanner.cartLine(for: $0.title, in: items) != nil }
-        let matched = saved.filter { TPIOSSaleScanner.cartLine(for: $0.title, in: items)?.applied == true }
-
-        guard found.isEmpty == false else {
-            if saved.isEmpty {
-                return false
-            }
-
-            let names = saved.map { $0.title }.joined(separator: " | ")
-            TPIOSLog.shared.log("Sale: không khớp sản phẩm đã lưu [\(names)] trên màn hiện tại")
-
-            status = "Không thấy sản phẩm đã lưu trên màn này. Tích sản phẩm rồi quét lại, hoặc bấm + Lưu mới để lưu sản phẩm khác."
+        guard let snap = TPIOSCartState.shared.latest else {
+            status = "Chưa có dữ liệu giỏ hàng. Mở giỏ hàng, kéo xuống để làm mới rồi quét lại."
             render()
             return true
         }
 
-        guard matched.isEmpty == false else {
-            status = "Sản phẩm đã lưu chưa áp mã Shopee. Mở Shopee Voucher, tích mã, bấm Đồng ý, rồi quét lại."
+        let checked = snap.lines.filter { $0.checked }
+
+        guard checked.count == 1, let line = checked.first else {
+            status = checked.isEmpty
+                ? "Chưa tích sản phẩm nào. Tích 1 sản phẩm rồi quét lại."
+                : "Đang tích nhiều sản phẩm nên không tách được giá. Chỉ tích 1 sản phẩm rồi quét lại."
             render()
             return true
         }
 
-        guard matched.count == 1, let product = matched.first else {
-            status = "Đang có nhiều sản phẩm đã áp mã trong giỏ. Chỉ tích 1 sản phẩm rồi quét lại."
+        guard let total = snap.total else {
+            status = "Chưa đọc được tổng tiền. Kéo giỏ hàng để làm mới rồi quét lại."
             render()
             return true
         }
 
-        guard let line = TPIOSSaleScanner.cartLine(for: product.title, in: items) else {
-            status = "Không thấy dòng sản phẩm trên màn này. Kéo giỏ hàng cho thấy sản phẩm rồi quét lại."
-            render()
-            return true
-        }
-
-        guard line.applied else {
-            status = "Sản phẩm này chưa áp mã Shopee. Mở Shopee Voucher, tích mã, bấm Đồng ý, quay lại giỏ rồi quét."
-            render()
-            return true
-        }
-
-        let total = line.price
-        let price = line.price
+        let voucherNote = snap.platformPromoID != 0
+            ? "Đã áp mã Shopee."
+            : "Chưa áp mã Shopee nào. Chọn mã trong Shopee Voucher rồi quét lại để có giá tốt hơn."
 
         let result = TPIOSSaleStore.shared.record(
-            name: product.title,
-            price: price,
+            name: line.name,
+            price: line.price,
             finalPrice: total,
-            vouchers: []
+            vouchers: [],
+            itemID: line.itemID,
+            modelID: line.modelID,
+            shopID: line.shopID
         )
 
-        var message = product.title + "\nGiá sau mã: " + TPIOSSaleFormat.money(total)
+        var message = result.product.title + "\nGiá sau mã: " + TPIOSSaleFormat.money(total) + "\n" + voucherNote
 
         if let previous = result.previous {
             if total < previous {
@@ -817,11 +798,10 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
                 message += "\nBẰNG lần trước (" + TPIOSSaleFormat.money(previous) + ")"
             }
         } else {
-            message += "\nLần quét đầu tiên của sản phẩm này."
+            message += "\nĐã lưu sản phẩm mới."
         }
 
-        let lowest = result.product.snapshots.compactMap { $0.effectivePrice }.min()
-        if let lowest {
+        if let lowest = result.product.snapshots.compactMap({ $0.effectivePrice }).min() {
             message += "\nThấp nhất từng quét: " + TPIOSSaleFormat.money(lowest)
         }
 
@@ -831,7 +811,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         render()
         scrollView.setContentOffset(.zero, animated: false)
 
-        TPIOSLog.shared.log("Sale: quét giỏ, \(product.title) tổng=\(Int(total))")
+        TPIOSLog.shared.log("Sale: quét giỏ, \(line.name) tổng=\(Int(total))")
         return true
     }
 
