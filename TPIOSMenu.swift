@@ -9,9 +9,9 @@ final class TPIOSMenu: UIView, UIGestureRecognizerDelegate {
     private let headerHeight: CGFloat = 66
     private let handleSize: CGFloat = 44
     private let minWidth: CGFloat = 240
-    private let minHeight: CGFloat = 300
+    private let minHeight: CGFloat = 330
     private let designWidth: CGFloat = 240
-    private let designHeight: CGFloat = 320
+    private let designHeight: CGFloat = 350
 
     private let headerView = UIView()
     private let titleLabel = UILabel()
@@ -26,6 +26,8 @@ final class TPIOSMenu: UIView, UIGestureRecognizerDelegate {
     private let clockButton = UIButton(type: .system)
     private let reloadButton = UIButton(type: .system)
     private let buyAllButton = UIButton(type: .system)
+    private let tapTestButton = UIButton(type: .system)
+    private let tapTestLabel = UILabel()
 
     private let bypassLabel = UILabel()
     private let saleLabel = UILabel()
@@ -114,10 +116,21 @@ final class TPIOSMenu: UIView, UIGestureRecognizerDelegate {
         configureIconButton(buyAllButton, icon: "cart.fill", colors: [UIColor(red: 1.00, green: 0.40, blue: 0.70, alpha: 1), UIColor(red: 0.72, green: 0.12, blue: 0.48, alpha: 1)], action: #selector(buyAllTapped))
         configureCaptionLabel(buyAllLabel, text: "Mua all")
 
-        for view in [bypassButton, saleButton, logButton, adBlockButton, clockButton, reloadButton, buyAllButton] as [UIView] {
+        configureIconButton(
+            tapTestButton,
+            icon: "hand.tap.fill",
+            colors: [
+                UIColor(red: 0.95, green: 0.30, blue: 0.60, alpha: 1),
+                UIColor(red: 0.55, green: 0.10, blue: 0.45, alpha: 1)
+            ],
+            action: #selector(tapTestTapped)
+        )
+        configureCaptionLabel(tapTestLabel, text: "Chạm thử")
+
+        for view in [bypassButton, saleButton, logButton, adBlockButton, clockButton, reloadButton, buyAllButton, tapTestButton] as [UIView] {
             addSubview(view)
         }
-        for label in [bypassLabel, saleLabel, logLabel, adBlockLabel, clockLabel, reloadLabel, buyAllLabel] {
+        for label in [bypassLabel, saleLabel, logLabel, adBlockLabel, clockLabel, reloadLabel, buyAllLabel, tapTestLabel] {
             addSubview(label)
         }
     }
@@ -239,8 +252,8 @@ final class TPIOSMenu: UIView, UIGestureRecognizerDelegate {
         let iconXInset = max(0, (columnWidth - iconSize) / 2)
         let rowHeight = iconSize + iconLabelGap + labelHeight
 
-        let icons = [bypassButton, saleButton, logButton, adBlockButton, clockButton, reloadButton, buyAllButton]
-        let labels = [bypassLabel, saleLabel, logLabel, adBlockLabel, clockLabel, reloadLabel, buyAllLabel]
+        let icons = [bypassButton, saleButton, logButton, adBlockButton, clockButton, reloadButton, buyAllButton, tapTestButton]
+        let labels = [bypassLabel, saleLabel, logLabel, adBlockLabel, clockLabel, reloadLabel, buyAllLabel, tapTestLabel]
 
         for index in 0..<icons.count {
             let column = index % 3
@@ -260,6 +273,10 @@ final class TPIOSMenu: UIView, UIGestureRecognizerDelegate {
 
         resizeHandle.frame = CGRect(x: bounds.width - handleSize, y: bounds.height - handleSize, width: handleSize, height: handleSize)
         resizeHandle.font = .systemFont(ofSize: 19, weight: .medium)
+    }
+
+    @objc private func tapTestTapped() {
+        TPIOSTapTest.shared.start()
     }
 
     @objc private func closeTapped() {
