@@ -736,6 +736,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         }
 
         guard let total = TPIOSSaleScanner.cartTotal(in: items) else {
+            TPIOSLog.shared.log("Sale: không đọc được thanh đáy. Dải quanh Mua hàng: " + TPIOSSaleScanner.bottomBarDump(in: items))
             status = "Không đọc được tổng ở thanh đáy. Kéo giỏ hàng sao cho thanh đáy hiện rõ rồi quét lại."
             render()
             return true
