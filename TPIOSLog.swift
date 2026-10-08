@@ -163,8 +163,8 @@ func show() {
         saveLog.layer.cornerRadius = 10
         saveLog.translatesAutoresizingMaskIntoConstraints = false
         saveLog.addAction(
-            UIAction { _ in
-                saveLogToFile()
+            UIAction { [weak self] _ in
+                self?.saveLogToFile()
             },
             for: .touchUpInside
         )
