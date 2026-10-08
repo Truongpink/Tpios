@@ -91,23 +91,34 @@ final class TPIOSCartBody {
     }
 
     private func receive(task: URLSessionDataTask, data: Data) {
-        guard isCartRequest(task) else { return }
+        guard isWatched(task) else { return }
         buffers[task.taskIdentifier, default: Data()].append(data)
     }
 
     private func finish(task: URLSessionTask) {
         let data = buffers.removeValue(forKey: task.taskIdentifier) ?? Data()
-        guard isCartRequest(task) else { return }
+        guard isWatched(task) else { return }
 
         let url = task.currentRequest?.url?.absoluteString ?? ""
-        let text = String(data: data, encoding: .utf8) ?? "không đọc được UTF-8 (\(data.count) byte)"
-        let oneLine = String(text.replacingOccurrences(of: "\n", with: " ").prefix(30000))
+        let method = task.originalRequest?.httpMethod ?? "GET"
+        TPIOSLog.shared.log("CartBody: \(method) \(url)")
 
-        TPIOSLog.shared.log("CartBody: " + url)
-        TPIOSLog.shared.log("CartBody(\(data.count) byte): " + oneLine)
+        if let body = task.originalRequest?.httpBody {
+            TPIOSLog.shared.log("CartReq(\(body.count) byte): " + oneLine(body))
+        } else if task.originalRequest?.httpBodyStream != nil {
+            TPIOSLog.shared.log("CartReq: body dạng stream, không đọc được")
+        }
+
+        TPIOSLog.shared.log("CartBody(\(data.count) byte): " + oneLine(data))
     }
 
-    private func isCartRequest(_ task: URLSessionTask) -> Bool {
-        task.currentRequest?.url?.absoluteString.contains("cart/get") == true
+    private func isWatched(_ task: URLSessionTask) -> Bool {
+        let url = task.currentRequest?.url?.absoluteString ?? ""
+        return ["cart", "voucher", "checkout"].contains { url.contains($0) }
+    }
+
+    private func oneLine(_ data: Data) -> String {
+        let text = String(data: data, encoding: .utf8) ?? "không đọc được UTF-8 (\(data.count) byte)"
+        return String(text.replacingOccurrences(of: "\n", with: " ").prefix(30000))
     }
 }
