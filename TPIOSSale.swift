@@ -84,6 +84,10 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         headerView.addSubview(titleLabel)
 
         scrollView.alwaysBounceVertical = true
+        scrollView.showsVerticalScrollIndicator = true
+        scrollView.clipsToBounds = true
+        scrollView.contentInset = .zero
+        scrollView.scrollIndicatorInsets = .zero
         addSubview(scrollView)
         scrollView.addSubview(contentView)
 
@@ -184,48 +188,61 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
 
         headerView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: scaledHeaderHeight)
         backButton.frame = CGRect(x: 4 * scale, y: 3 * scale, width: 40 * scale, height: 38 * scale)
-        backButton.titleLabel?.font = .systemFont(ofSize: 30 * scale, weight: .regular)
+        backButton.titleLabel?.font = .systemFont(ofSize: max(12, 30 * scale), weight: .regular)
         titleLabel.frame = CGRect(x: 46 * scale, y: 0, width: max(0, bounds.width - 92 * scale), height: scaledHeaderHeight)
         titleLabel.font = .systemFont(ofSize: max(10, 17 * scale), weight: .bold)
         closeButton.frame = CGRect(x: bounds.width - 46 * scale, y: 4 * scale, width: 42 * scale, height: 36 * scale)
         closeButton.titleLabel?.font = .systemFont(ofSize: max(12, 28 * scale), weight: .regular)
 
-        scrollView.frame = CGRect(x: 0, y: scaledHeaderHeight, width: bounds.width, height: max(0, bounds.height - scaledHeaderHeight))
+        // Header nằm ngoài scroll view. Nội dung cuộn bắt đầu đúng ngay dưới header.
+        let scrollHeight = max(0, bounds.height - scaledHeaderHeight)
+        scrollView.frame = CGRect(x: 0, y: scaledHeaderHeight, width: bounds.width, height: scrollHeight)
+        scrollView.contentInset = .zero
+        scrollView.scrollIndicatorInsets = .zero
 
-        let logicalWidth = bounds.width / max(scale, 0.001)
+        // Dùng một hệ tọa độ duy nhất, không trộn frame/bounds/transform.
+        // Nhờ vậy nội dung không bị tụt và contentSize khớp với phần hiển thị.
         contentView.transform = .identity
-        contentView.frame = CGRect(x: 0, y: 0, width: logicalWidth, height: 0)
+        contentView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: 0)
 
-        let icon: CGFloat = 62
-        scanButton.transform = CGAffineTransform(scaleX: scale, y: scale)
+        let icon = max(44, 62 * scale)
+        let horizontalPadding = min(14 * scale, max(8, bounds.width * 0.07))
+        let contentWidth = max(0, bounds.width - horizontalPadding * 2)
+
+        scanButton.transform = .identity
         scanButton.bounds = CGRect(x: 0, y: 0, width: icon, height: icon)
-        scanButton.center = CGPoint(x: logicalWidth / 2 * scale, y: (8 + icon / 2) * scale)
+        scanButton.center = CGPoint(x: bounds.width / 2, y: 8 * scale + icon / 2)
+        scanButton.layer.cornerRadius = 18 * scale
         TPIOSPanelStyle.syncFrames(in: scanButton)
 
-        scanCaption.transform = CGAffineTransform(scaleX: scale, y: scale)
-        scanCaption.bounds = CGRect(x: 0, y: 0, width: icon + 24, height: 18)
-        scanCaption.center = CGPoint(x: logicalWidth / 2 * scale, y: (8 + icon + 5 + 9) * scale)
-        scanCaption.font = .systemFont(ofSize: 12.5, weight: .semibold)
+        let captionHeight = max(16, 18 * scale)
+        scanCaption.transform = .identity
+        scanCaption.bounds = CGRect(x: 0, y: 0, width: icon + 24 * scale, height: captionHeight)
+        scanCaption.center = CGPoint(x: bounds.width / 2, y: 8 * scale + icon + 5 * scale + captionHeight / 2)
+        scanCaption.font = .systemFont(ofSize: max(10, 12.5 * scale), weight: .semibold)
 
-        let width = max(0, logicalWidth - 28)
-        var y: CGFloat = 8 + icon + 5 + 18 + 6
+        var y = 8 * scale + icon + 5 * scale + captionHeight + 6 * scale
 
         for block in blocks {
-            y += block.top
-            let height = block.height(width)
+            y += block.top * scale
+            let height = block.height(contentWidth / max(scale, 0.001)) * scale
             let view = block.view
             view.transform = .identity
-            view.bounds = CGRect(x: 0, y: 0, width: width, height: height)
-            view.center = CGPoint(x: (14 + width / 2) * scale, y: (y + height / 2) * scale)
-            view.transform = CGAffineTransform(scaleX: scale, y: scale)
+            view.frame = CGRect(x: horizontalPadding, y: y, width: contentWidth, height: height)
             y += height
         }
 
-        y += 36
-        contentView.bounds = CGRect(x: 0, y: 0, width: logicalWidth, height: y)
-        scrollView.contentSize = CGSize(width: bounds.width, height: y * scale)
+        let bottomPadding = max(24, 36 * scale)
+        let contentHeight = max(y + bottomPadding, scrollHeight + 1)
+        contentView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: contentHeight)
+        scrollView.contentSize = CGSize(width: bounds.width, height: contentHeight)
 
-        resizeHandle.frame = CGRect(x: bounds.width - handleSize * scale, y: bounds.height - handleSize * scale, width: handleSize * scale, height: handleSize * scale)
+        resizeHandle.frame = CGRect(
+            x: bounds.width - handleSize,
+            y: bounds.height - handleSize,
+            width: handleSize,
+            height: handleSize
+        )
         resizeHandle.font = .systemFont(ofSize: max(12, 20 * scale))
     }
 
