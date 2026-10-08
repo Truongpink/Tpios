@@ -42,7 +42,6 @@ final class TPIOSController {
     private var idleWorkItem: DispatchWorkItem?
     private let idleDelay: TimeInterval = 2.5
 
-    // Đánh dấu thao tác thật sự là kéo để không mở menu khi đang di chuyển nút.
     private var buttonDidDrag = false
 
     private init() {}
@@ -55,7 +54,6 @@ final class TPIOSController {
     }
 
     private func startOnMain() {
-
         guard Thread.isMainThread else {
             DispatchQueue.main.async { [weak self] in
                 self?.startOnMain()
@@ -67,26 +65,17 @@ final class TPIOSController {
             return
         }
 
-        guard let scene =
-            UIApplication.shared.connectedScenes
-                .compactMap({ $0 as? UIWindowScene })
-                .first(where: {
-                    $0.activationState == .foregroundActive
-                }) else {
-
-            TPIOSLog.shared.log(
-                "Chưa có foregroundActive scene, retry lần \(startRetryCount + 1)"
-            )
+        guard let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }) else {
+            TPIOSLog.shared.log("Chưa có foregroundActive scene, retry lần \(startRetryCount + 1)")
             retryStart()
             return
         }
 
         startRetryCount = 0
 
-        let window = TPIOSPassThroughWindow(
-            windowScene: scene
-        )
-
+        let window = TPIOSPassThroughWindow(windowScene: scene)
         window.backgroundColor = .clear
         window.windowLevel = .alert + 1
         window.isHidden = false
@@ -94,7 +83,6 @@ final class TPIOSController {
         let root = UIViewController()
         root.view.backgroundColor = .clear
         root.view.isOpaque = false
-
         window.rootViewController = root
         overlayWindow = window
 
@@ -102,7 +90,6 @@ final class TPIOSController {
 
         let buttonSize: CGFloat = 58
         let margin: CGFloat = 18
-
         let button = FloatingButton(
             frame: CGRect(
                 x: window.bounds.width - buttonSize - margin,
@@ -112,20 +99,9 @@ final class TPIOSController {
             )
         )
 
-        // Cơ chế giống nút Home ảo:
-        // chạm -> giữ nếu muốn kéo -> thả tay mới thực hiện hành động.
-        // Không còn phải chờ long-press 2.5 giây.
-        button.addTarget(
-            self,
-            action: #selector(buttonReleased(_:)),
-            for: .touchUpInside
-        )
+        button.addTarget(self, action: #selector(buttonReleased(_:)), for: .touchUpInside)
 
-        // Kéo nút không mở menu.
-        let dragGesture = UIPanGestureRecognizer(
-            target: self,
-            action: #selector(moveButton(_:))
-        )
+        let dragGesture = UIPanGestureRecognizer(target: self, action: #selector(moveButton(_:)))
         dragGesture.cancelsTouchesInView = false
         button.addGestureRecognizer(dragGesture)
 
@@ -133,7 +109,6 @@ final class TPIOSController {
         floatingButton = button
 
         scheduleButtonFade()
-
         TPIOSAdBlock.activateSavedProfileIfPossible()
 
         NotificationCenter.default.addObserver(
@@ -145,52 +120,33 @@ final class TPIOSController {
     }
 
     private func retryStart() {
-
-        guard startRetryCount < maxStartRetries else {
-            return
-        }
-
+        guard startRetryCount < maxStartRetries else { return }
         startRetryCount += 1
-
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + 0.5
-        ) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.startOnMain()
         }
     }
 
     @objc private func buttonReleased(_ button: UIButton) {
-        // Nếu người dùng vừa kéo nút thì tuyệt đối không mở menu.
         guard buttonDidDrag == false else {
             buttonDidDrag = false
             return
         }
-
         TPIOSLog.shared.log("Floating button released")
         showButtonImmediately()
         toggleMenu()
     }
 
-    @objc private func moveButton(
-        _ gesture: UIPanGestureRecognizer
-    ) {
-
+    @objc private func moveButton(_ gesture: UIPanGestureRecognizer) {
         guard let button = floatingButton,
-              let parent = button.superview else {
-            return
-        }
+              let parent = button.superview else { return }
 
         switch gesture.state {
-
         case .began:
             buttonDidDrag = false
             showButtonImmediately()
-
         case .changed:
             let translation = gesture.translation(in: parent)
-
-            // Chỉ coi là kéo khi ngón tay đã di chuyển đủ rõ ràng.
-            // Tránh việc rung tay rất nhỏ làm mất thao tác chạm.
             if abs(translation.x) > 8 || abs(translation.y) > 8 {
                 buttonDidDrag = true
             }
@@ -201,44 +157,24 @@ final class TPIOSController {
 
             let maxX = max(0, parent.bounds.width - newFrame.width)
             let maxY = max(0, parent.bounds.height - newFrame.height)
-
-            newFrame.origin.x = max(
-                0,
-                min(newFrame.origin.x, maxX)
-            )
-
-            newFrame.origin.y = max(
-                0,
-                min(newFrame.origin.y, maxY)
-            )
-
+            newFrame.origin.x = max(0, min(newFrame.origin.x, maxX))
+            newFrame.origin.y = max(0, min(newFrame.origin.y, maxY))
             button.frame = newFrame
-
-            gesture.setTranslation(
-                .zero,
-                in: parent
-            )
+            gesture.setTranslation(.zero, in: parent)
 
         case .ended, .cancelled, .failed:
             scheduleButtonFade()
-
-            // Giữ cờ cho đến khi UIButton xử lý touchUpInside.
             DispatchQueue.main.async { [weak self] in
                 self?.buttonDidDrag = false
             }
-
         default:
             break
         }
     }
 
     private func showButtonImmediately() {
-
         idleWorkItem?.cancel()
-
-        guard let button = floatingButton else {
-            return
-        }
+        guard let button = floatingButton else { return }
 
         UIView.animate(
             withDuration: 0.16,
@@ -250,14 +186,11 @@ final class TPIOSController {
     }
 
     private func scheduleButtonFade() {
-
         idleWorkItem?.cancel()
 
         let work = DispatchWorkItem { [weak self] in
             guard let self,
-                  let button = self.floatingButton else {
-                return
-            }
+                  let button = self.floatingButton else { return }
 
             UIView.animate(
                 withDuration: 0.7,
@@ -269,102 +202,57 @@ final class TPIOSController {
         }
 
         idleWorkItem = work
-
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + idleDelay,
-            execute: work
-        )
+        DispatchQueue.main.asyncAfter(deadline: .now() + idleDelay, execute: work)
     }
 
     private func toggleMenu() {
-
-        guard let rootView =
-            overlayWindow?.rootViewController?.view else {
-            return
-        }
+        guard let rootView = overlayWindow?.rootViewController?.view else { return }
 
         if let menu {
-
             menu.removeFromSuperview()
             self.menu = nil
-
             floatingButton?.isHidden = false
             floatingButton?.alpha = 1.0
-
             TPIOSLog.shared.log("Đóng menu chính")
             scheduleButtonFade()
             return
         }
 
-        let width: CGFloat = 200
-        let height: CGFloat = 220
+        let width: CGFloat = 240
+        let height: CGFloat = 320
 
         let safeArea = rootView.safeAreaInsets
+        let availableWidth = rootView.bounds.width - safeArea.left - safeArea.right
+        let availableHeight = rootView.bounds.height - safeArea.top - safeArea.bottom
 
-        let availableWidth =
-            rootView.bounds.width -
-            safeArea.left -
-            safeArea.right
+        let menuWidth = min(width, max(240, availableWidth - 20))
+        let menuHeight = min(height, max(320, availableHeight - 20))
 
-        let availableHeight =
-            rootView.bounds.height -
-            safeArea.top -
-            safeArea.bottom
-
-        let menuWidth = min(
-            width,
-            max(200, availableWidth - 20)
-        )
-
-        let menuHeight = min(
-            height,
-            max(220, availableHeight - 20)
-        )
-
-        let x =
-            safeArea.left +
-            (availableWidth - menuWidth) / 2
-
-        let y =
-            safeArea.top +
-            (availableHeight - menuHeight) / 2
+        let x = safeArea.left + (availableWidth - menuWidth) / 2
+        let y = safeArea.top + (availableHeight - menuHeight) / 2
 
         let newMenu = TPIOSMenu(
-            frame: CGRect(
-                x: x,
-                y: y,
-                width: menuWidth,
-                height: menuHeight
-            )
+            frame: CGRect(x: x, y: y, width: menuWidth, height: menuHeight)
         )
 
         rootView.addSubview(newMenu)
-
         menu = newMenu
-
         TPIOSLog.shared.log("Mở menu chính")
-
-        // Giống AssistiveTouch: khi menu mở, nút nổi biến mất.
         floatingButton?.isHidden = true
         floatingButton?.alpha = 1.0
         idleWorkItem?.cancel()
     }
 
     @objc private func closeMenu() {
-
         menu?.removeFromSuperview()
         menu = nil
-
         floatingButton?.isHidden = false
         floatingButton?.alpha = 1.0
-
         scheduleButtonFade()
     }
 
     func stop() {
-
         TPIOSLog.shared.log("TPIOSStop được gọi")
-
         idleWorkItem?.cancel()
         idleWorkItem = nil
 
@@ -375,13 +263,10 @@ final class TPIOSController {
         )
 
         menu?.removeFromSuperview()
-
         overlayWindow?.isHidden = true
         overlayWindow = nil
-
         floatingButton = nil
         menu = nil
-
         startRetryCount = 0
     }
 }
