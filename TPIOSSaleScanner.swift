@@ -228,6 +228,33 @@ enum TPIOSSaleScanner {
         return rows.map { $0.line }
     }
 
+    // Giá dòng sản phẩm trong giỏ có tên khớp tên đã lưu (tên đã lưu là tiền
+    // tố của tên trên dòng, hoặc ngược lại). Trả nil nếu không thấy dòng nào.
+    static func rowPrice(for title: String, in items: [TPIOSSaleTextItem]) -> Double? {
+        let key = TPIOSSaleMatcher.normalize(title)
+        guard key.count >= 8 else { return nil }
+
+        let row = items
+            .filter { TPIOSSaleMatcher.normalize($0.text).hasPrefix(key) }
+            .max { $0.text.count < $1.text.count }
+
+        return row.flatMap { extractAmounts(from: $0.text).first }
+    }
+
+    // Tổng ở thanh đáy giỏ (dòng có "Mua hàng"): số tiền lớn nhất trong dải
+    // ngang của thanh, bỏ dòng "Tiết kiệm". Nil nếu không thấy thanh đáy.
+    static func cartTotal(in items: [TPIOSSaleTextItem]) -> Double? {
+        guard let bar = items.first(where: { $0.text.contains("Mua hàng") }) else { return nil }
+
+        return items
+            .filter {
+                abs($0.frame.midY - bar.frame.midY) <= 60 &&
+                $0.text.lowercased().contains("tiết kiệm") == false
+            }
+            .flatMap { extractAmounts(from: $0.text) }
+            .max()
+    }
+
     private static func distance(from point: CGPoint, to rect: CGRect) -> CGFloat {
         let dx = max(rect.minX - point.x, 0, point.x - rect.maxX)
         let dy = max(rect.minY - point.y, 0, point.y - rect.maxY)
