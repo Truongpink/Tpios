@@ -509,8 +509,8 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
         }
 
         let shownTotal = d.prices.indices.contains(d.priceIndex) ? d.verifiedTotal(forPrice: d.prices[d.priceIndex]) : nil
-        let finalText = shownTotal.map { "Giá sau mã (thanh đáy giỏ): " + TPIOSSaleFormat.money($0) }
-            ?? "Không đọc được thanh đáy giỏ. Quét lại ở màn giỏ hàng."
+        let finalText = shownTotal.map { "Giá sau mã Shopee: " + TPIOSSaleFormat.money($0) }
+            ?? "Chưa thấy giá đã áp mã Shopee. Tích mã Shopee, bấm Đồng ý, rồi chạm lại sản phẩm."
         b.append(text(finalText, top: 10, weight: .semibold, alpha: 0.95))
 
         let add = pill("+ Quét mã", UIColor(red: 0.85, green: 0.35, blue: 0.15, alpha: 1), #selector(addVouchersTapped))
@@ -915,7 +915,7 @@ final class TPIOSSale: UIView, UIGestureRecognizerDelegate {
 
         let vouchers = TPIOSSaleScanner.vouchers(in: items, near: point)
 
-        draft = Draft(names: names, prices: prices, vouchers: vouchers, total: names.first.flatMap { TPIOSSaleScanner.cartLine(for: $0, in: items)?.price })
+        draft = Draft(names: names, prices: prices, vouchers: vouchers, total: TPIOSSaleScanner.appliedPrice(near: point, in: items))
         status = ""
         render()
         scrollView.setContentOffset(.zero, animated: false)
