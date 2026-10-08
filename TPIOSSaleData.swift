@@ -365,6 +365,11 @@ struct TPIOSWatchedSale: Codable {
     var createdAt: Date
     var lastCheckedAt: Date?
     var snapshots: [TPIOSSaleSnapshot]
+    // Mã định danh của Shopee (itemid, modelid, shopid). Có sau khi lưu bằng
+    // chế độ đọc giỏ; các mục cũ không có thì để nil và khớp theo tên.
+    var itemID: Int64? = nil
+    var modelID: Int64? = nil
+    var shopID: Int64? = nil
 }
 
 enum TPIOSSaleMatcher {
@@ -425,34 +430,56 @@ final class TPIOSSaleStore {
         name: String,
         price: Double,
         finalPrice: Double,
-        vouchers: [TPIOSSaleVoucher]
+        vouchers: [TPIOSSaleVoucher],
+        itemID: Int64? = nil,
+        modelID: Int64? = nil,
+        shopID: Int64? = nil
     ) -> (product: TPIOSWatchedSale, previous: Double?) {
 
         var products = load()
         let snapshot = TPIOSSaleSnapshot(timestamp: Date(), price: price, finalPrice: finalPrice, vouchers: vouchers)
 
-        if let index = products.firstIndex(where: { TPIOSSaleMatcher.same($0.title, name) }) {
+        // Ưu tiên khớp theo định danh; mục cũ chưa có định danh thì khớp theo tên
+        // rồi gán định danh cho mục đó.
+        var index: Int?
+        if let itemID, let modelID {
+            index = products.firstIndex { $0.itemID == itemID && $0.modelID == modelID }
+            if index == nil {
+                index = products.firstIndex { $0.itemID == nil && TPIOSSaleMatcher.same($0.title, name) }
+            }
+        } else {
+            index = products.firstIndex { TPIOSSaleMatcher.same($0.title, name) }
+        }
+
+        if let index {
             let previous = products[index].snapshots.compactMap { $0.effectivePrice }.last
 
             products[index].snapshots.append(snapshot)
             products[index].lastCheckedAt = snapshot.timestamp
 
-            // Tên lần này đầy đủ hơn tên đã lưu (bị cắt "…") thì lấy tên dài.
             if name.count > products[index].title.count {
                 products[index].title = name
+            }
+            if products[index].itemID == nil {
+                products[index].itemID = itemID
+                products[index].modelID = modelID
+                products[index].shopID = shopID
             }
 
             save(products)
             return (products[index], previous)
         }
 
-        let product = TPIOSWatchedSale(
+        var product = TPIOSWatchedSale(
             id: UUID(),
             title: name,
             createdAt: snapshot.timestamp,
             lastCheckedAt: snapshot.timestamp,
             snapshots: [snapshot]
         )
+        product.itemID = itemID
+        product.modelID = modelID
+        product.shopID = shopID
 
         products.insert(product, at: 0)
         save(products)
