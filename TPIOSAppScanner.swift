@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import ObjectiveC.runtime
 
 // Quét chẩn đoán các thành phần StoreKit đang có trong app hiện tại.
 // Chỉ đọc runtime/bundle, không can thiệp giao dịch.
@@ -54,12 +55,15 @@ final class TPIOSAppScanner {
     }
 
     private static func runtimeClasses() -> [String] {
-        var count: UInt32 = 0
-        guard let names = objc_copyClassNames(&count) else { return [] }
-        defer { free(names) }
+        let count = objc_getClassList(nil, 0)
+        guard count > 0 else { return [] }
 
-        return (0..<Int(count)).compactMap {
-            names[$0].map { String(cString: $0) }
+        var classes = [AnyClass?](repeating: nil, count: Int(count))
+        let actualCount = objc_getClassList(&classes, count)
+
+        return classes.prefix(Int(actualCount)).compactMap {
+            guard let cls = $0 else { return nil }
+            return NSStringFromClass(cls)
         }
     }
 }
