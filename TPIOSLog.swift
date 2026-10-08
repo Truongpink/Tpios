@@ -155,6 +155,21 @@ func show() {
 
         window.addSubview(close)
 
+        let saveLog = UIButton(type: .system)
+        saveLog.setTitle("Lưu", for: .normal)
+        saveLog.setTitleColor(UIColor.white.withAlphaComponent(0.85), for: .normal)
+        saveLog.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
+        saveLog.backgroundColor = UIColor.white.withAlphaComponent(0.10)
+        saveLog.layer.cornerRadius = 10
+        saveLog.translatesAutoresizingMaskIntoConstraints = false
+        saveLog.addAction(
+            UIAction { _ in
+                saveLogToFile()
+            },
+            for: .touchUpInside
+        )
+        window.addSubview(saveLog)
+
         let clear =
             UIButton(type: .system)
 
@@ -350,6 +365,24 @@ func show() {
 
             title.heightAnchor.constraint(
                 equalToConstant: 30
+            ),
+
+            saveLog.trailingAnchor.constraint(
+                equalTo: close.leadingAnchor,
+                constant: -4
+            ),
+
+            saveLog.topAnchor.constraint(
+                equalTo: close.topAnchor,
+                constant: 6
+            ),
+
+            saveLog.widthAnchor.constraint(
+                equalToConstant: 56
+            ),
+
+            saveLog.heightAnchor.constraint(
+                equalToConstant: 28
             ),
 
             close.trailingAnchor.constraint(
@@ -679,6 +712,42 @@ private func updateHideCandidatesTitle() {
         hideCandidateLines ? "Hiện candidate" : "Ẩn candidate",
         for: .normal
     )
+}
+
+// Lưu nội dung đang hiện trong khung log (theo bộ lọc hiện tại) thành file
+// .txt rồi mở bảng chia sẻ của iOS, chọn "Lưu vào Tệp" hoặc gửi đi luôn.
+// Muốn lưu toàn bộ log thì xoá ô lọc trước khi bấm Lưu.
+private func saveLogToFile() {
+    let text = logView?.text ?? ""
+
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyyMMdd-HHmmss"
+    let name = "TPIOS-log-\(formatter.string(from: Date())).txt"
+
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+
+    do {
+        try text.write(to: url, atomically: true, encoding: .utf8)
+    } catch {
+        return
+    }
+
+    let root = UIApplication.shared.connectedScenes
+        .compactMap { $0 as? UIWindowScene }
+        .flatMap { $0.windows }
+        .first(where: { $0.isKeyWindow })?
+        .rootViewController
+
+    var top = root
+    while let presented = top?.presentedViewController {
+        top = presented
+    }
+
+    guard let presenter = top else { return }
+
+    let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+    sheet.popoverPresentationController?.sourceView = presenter.view
+    presenter.present(sheet, animated: true)
 }
 
 private func refreshView() {
