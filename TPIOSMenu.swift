@@ -276,6 +276,10 @@ final class TPIOSMenu: UIView, UIGestureRecognizerDelegate {
     }
 
     @objc private func tapTestTapped() {
+        TPIOSTapTest.shared.onFinish = { [weak self] in
+            self?.isHidden = false
+        }
+        isHidden = true
         TPIOSTapTest.shared.start()
     }
 
