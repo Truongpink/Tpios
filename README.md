@@ -52,18 +52,30 @@ Quy trình:
 - Chỉ tạo file phụ khi thành phần đó thực sự dùng chung cho nhiều chức năng hoặc có lý do kỹ thuật rõ ràng.
 - Khi đã có nhiều file phụ nhưng không còn cần thiết, phải gom về file chính và xóa file thừa.
 
-### 5.2. Quy chuẩn menu con
+### 5.2. UI RULE — chuẩn chung từ Menu chính
 
-- Menu con phải đồng bộ phong cách với menu chính.
-- **Nút menu con phải dùng màu sắc/gradient cùng hệ màu với nút menu chính**, không dùng một màu cố định khác biệt chỉ vì là menu con.
-- Nút chức năng dùng dạng **icon vuông bo tròn 4 góc**, giống icon ứng dụng iPhone.
-- Tên nút nằm **bên ngoài icon**, không chèn chữ chức năng lên icon.
-- Tên nút phải **ngắn gọn nhưng dễ hiểu**; ưu tiên viết tắt tự nhiên khi không gây nhầm lẫn, ví dụ **“Thêm SP”** thay cho “Thêm sản phẩm”, **“KT ngay”** cho “Kiểm tra ngay” khi phù hợp.
-- Các nút phân bố theo lưới với **khoảng cách ngang/dọc đồng bộ với menu chính**; không để caption sát nhau gây chồng chữ khi menu nhỏ hoặc resize.
-- Khoảng cách giữa icon và tên nút cũng phải đồng bộ.
-- Khi resize, kích thước icon, chữ, khoảng cách và lưới phải co giãn theo khung, giữ bố cục cân đối.
-- Menu con phải hỗ trợ **di chuyển, resize, Back và X/Close** nếu phù hợp với chức năng.
-- Mọi ô nhập dữ liệu phải có **X xóa nhanh** và phải co giãn theo khung menu.
+Menu chính là **UI reference duy nhất**. Mọi menu con và nút bên trong phải dùng đúng thông số/style của Menu chính, không tự tạo chuẩn riêng.
+
+**Thông số hiện tại của Menu chính:**
+- Khung thiết kế: `240 × 350 pt`; tối thiểu `240 × 330 pt`.
+- Corner radius: `24 pt`.
+- Header: `66 pt` theo tỷ lệ khung.
+- Resize handle: `44 pt`.
+- Grid: `3 cột`.
+- Padding ngang: `14 pt`.
+- Khoảng cách ngang: `10 pt`; dọc: `8 pt`.
+- Icon tối đa: `58 pt`; bo góc icon theo tỷ lệ `28%` kích thước icon.
+- Icon → label: `3 pt`.
+- Label: `15 pt` theo tỷ lệ; font `13 pt`, semibold theo tỷ lệ.
+
+**Quy tắc:**
+- Menu con mở lên phải dùng cùng kích thước/logic scale, corner radius, header, padding, grid, spacing, resize và cách căn của Menu chính.
+- Nút dùng dạng icon vuông bo góc như Menu chính; giữ cùng hệ gradient/style, không tự đổi kiểu.
+- Icon, font, label và khoảng cách phải theo chuẩn trên; tên đặt ngoài icon, ngắn gọn nhưng dễ hiểu.
+- Resize phải scale đồng bộ icon, chữ, spacing và layout; không tràn, cắt hoặc chồng nội dung; giữ minimum size hợp lý.
+- Menu phải kéo bằng header và clamp trong màn hình; có Back và X/Close khi phù hợp.
+- Ô nhập liệu phải co giãn theo khung và có X xóa nhanh.
+- Không tự đặt size, màu, font, spacing hoặc layout khác cho từng menu. Muốn đổi chuẩn chung phải sửa UI RULE trước.
 
 ### 5.3. Quy chuẩn sản phẩm Sale và biến thể
 
@@ -77,8 +89,6 @@ Quy trình:
 - Các lần “Kiểm tra ngay” sau đó phải phân tích đúng **SKU/biến thể đã chọn**, không tự đổi sang biến thể khác chỉ vì biến thể đó rẻ hơn.
 - Nếu sản phẩm thay đổi cấu trúc biến thể hoặc SKU không còn tồn tại, TPIOS phải báo người dùng chọn lại thay vì tự đoán.
 - Giá tốt nhất phải tính trên **đúng biến thể đã chọn + voucher hợp lệ cho biến thể đó + các điều kiện mua tương ứng**.
-
-
 
 - Chức năng mới ưu tiên một file chính; chỉ tách file phụ khi thực sự cần.
 - Không gom các chức năng không liên quan vào `TPIOSController.swift` hoặc `TPIOSMenu.swift`.
