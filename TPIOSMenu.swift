@@ -254,11 +254,13 @@ final class TPIOSMenu: UIView, UIGestureRecognizerDelegate {
 
         let icons = [bypassButton, saleButton, logButton, adBlockButton, clockButton, reloadButton, buyAllButton, tapTestButton]
         let labels = [bypassLabel, saleLabel, logLabel, adBlockLabel, clockLabel, reloadLabel, buyAllLabel, tapTestLabel]
+
         for index in 0..<icons.count {
             let column = index % 3
             let row = index / 3
             let columnX = sidePadding + CGFloat(column) * (columnWidth + columnGap)
             let rowY = gridTop + CGFloat(row) * (rowHeight + rowGap)
+
             icons[index].frame = CGRect(x: columnX + iconXInset, y: rowY, width: iconSize, height: iconSize)
             icons[index].layer.cornerRadius = iconSize * 0.28
             TPIOSPanelStyle.syncFrames(in: icons[index])
@@ -268,6 +270,7 @@ final class TPIOSMenu: UIView, UIGestureRecognizerDelegate {
 
         footerLabel.frame = CGRect(x: 14 * scale, y: bounds.height - 30 * scale, width: max(0, bounds.width - 28 * scale), height: 18 * scale)
         footerLabel.isHidden = bounds.height < 270
+
         resizeHandle.frame = CGRect(x: bounds.width - handleSize, y: bounds.height - handleSize, width: handleSize, height: handleSize)
         resizeHandle.font = .systemFont(ofSize: 19, weight: .medium)
     }
@@ -308,93 +311,8 @@ final class TPIOSMenu: UIView, UIGestureRecognizerDelegate {
             self?.saleClock = nil
         }
         parent.addSubview(clock)
-        parent.bringSubviewToFront(clock)
         saleClock = clock
         clock.start()
-    }
-
-    @objc private func locationTapped() {
-        guard let parent = superview else { return }
-        if locationView != nil { closeLocation(); return }
-        let width = min(340, max(260, parent.bounds.width - 24))
-        let height = min(560, max(390, parent.bounds.height - 60))
-        let x = max(12, (parent.bounds.width - width) / 2)
-        let y = max(20, min(frame.maxY + 14, parent.bounds.height - height - 20))
-        let view = TPIOSLocation(frame: CGRect(x: x, y: y, width: width, height: height))
-        view.onBack = { [weak self] in self?.closeLocation() }
-        view.onClose = { [weak self] in self?.closeLocation() }
-        parent.addSubview(view)
-        parent.bringSubviewToFront(view)
-        locationView = view
-    }
-
-    private func closeLocation() {
-        locationView?.removeFromSuperview()
-        locationView = nil
-    }
-
-    @objc private func saleTapped() {
-        guard let parent = superview else { return }
-        if saleView != nil { closeSale(); return }
-        let width = min(350, max(280, parent.bounds.width - 20))
-        let height = min(620, max(400, parent.bounds.height - 40))
-        let x = max(10, (parent.bounds.width - width) / 2)
-        let y = max(10, min(frame.maxY + 12, parent.bounds.height - height - 10))
-        let view = TPIOSSale(frame: CGRect(x: x, y: y, width: width, height: height))
-        view.onBack = { [weak self] in self?.closeSale() }
-        view.onClose = { [weak self] in self?.closeSale() }
-        parent.addSubview(view)
-        parent.bringSubviewToFront(view)
-        saleView = view
-    }
-
-    private func closeSale() {
-        saleView?.removeFromSuperview()
-        saleView = nil
-    }
-
-    @objc private func adBlockTapped() {
-        guard let parent = superview else { return }
-        if adBlocker != nil { closeAdBlock(); return }
-        let width = min(350, max(280, parent.bounds.width - 20))
-        let height = min(560, max(380, parent.bounds.height - 40))
-        let x = max(10, (parent.bounds.width - width) / 2)
-        let y = max(10, min(frame.maxY + 12, parent.bounds.height - height - 10))
-        let view = TPIOSAdBlock(frame: CGRect(x: x, y: y, width: width, height: height))
-        view.onBack = { [weak self] in self?.closeAdBlock() }
-        view.onClose = { [weak self] in self?.closeAdBlock() }
-        parent.addSubview(view)
-        parent.bringSubviewToFront(view)
-        adBlocker = view
-    }
-
-    private func closeAdBlock() {
-        adBlocker?.removeFromSuperview()
-        adBlocker = nil
-    }
-
-    @objc private func reloadTapped() {
-        TPIOSReload.shared.reloadCurrentPage()
-    }
-
-    @objc private func buyAllTapped() {
-        guard let parent = superview else { return }
-        if buyAllView != nil { closeBuyAll(); return }
-        let width = min(340, max(280, parent.bounds.width - 20))
-        let height = min(560, max(390, parent.bounds.height - 40))
-        let x = max(10, (parent.bounds.width - width) / 2)
-        let y = max(10, min(frame.maxY + 12, parent.bounds.height - height - 10))
-        let view = TPIOSMuaAll(frame: CGRect(x: x, y: y, width: width, height: height))
-        view.onBack = { [weak self] in self?.closeBuyAll() }
-        view.onClose = { [weak self] in self?.closeBuyAll() }
-        parent.addSubview(view)
-        parent.bringSubviewToFront(view)
-        buyAllView = view
-    }
-
-    private func closeBuyAll() {
-        buyAllView?.removeFromSuperview()
-        buyAllView = nil
     }
 
     private func closeSaleClock() {
@@ -403,8 +321,304 @@ final class TPIOSMenu: UIView, UIGestureRecognizerDelegate {
         saleClock = nil
     }
 
+    @objc private func reloadTapped() { TPIOSReload.shared.reloadCurrentPage() }
+
+    @objc private func adBlockTapped() {
+        guard locationView == nil, saleView == nil, buyAllView == nil, let parent = superview else { return }
+        let blocker = TPIOSAdBlock.shared
+        blocker.onClose = { [weak self] in self?.closeAdBlock() }
+        blocker.prepareForDisplay(frame: frame)
+        parent.addSubview(blocker)
+        adBlocker = blocker
+        isHidden = true
+        blocker.beginOrShow()
+    }
+
+    private func closeAdBlock() {
+        adBlocker?.removeFromSuperview()
+        adBlocker = nil
+        isHidden = false
+    }
+
+    @objc private func locationTapped() {
+        guard locationView == nil, saleView == nil, buyAllView == nil, let parent = superview else { return }
+        let width = min(frame.width, parent.bounds.width)
+        let height = min(420, parent.bounds.height)
+        let childFrame = CGRect(x: frame.origin.x, y: frame.origin.y, width: width, height: height)
+        let location = TPIOSLocation(frame: childFrame)
+        location.onBack = { [weak self] in self?.closeLocation() }
+        location.onClose = { [weak self] in
+            self?.closeLocation()
+            NotificationCenter.default.post(name: .tpiosCloseMenu, object: nil)
+        }
+        parent.addSubview(location)
+        locationView = location
+        isHidden = true
+    }
+
+    private func closeLocation() {
+        locationView?.removeFromSuperview()
+        locationView = nil
+        isHidden = false
+    }
+
+    @objc private func saleTapped() {
+        guard locationView == nil, saleView == nil, buyAllView == nil, let parent = superview else { return }
+        let sale = TPIOSSale(frame: frame)
+        sale.onBack = { [weak self] in self?.closeSale() }
+        sale.onClose = { [weak self] in
+            self?.closeSale()
+            NotificationCenter.default.post(name: .tpiosCloseMenu, object: nil)
+        }
+        parent.addSubview(sale)
+        saleView = sale
+        isHidden = true
+    }
+
+    private func closeSale() {
+        saleView?.removeFromSuperview()
+        saleView = nil
+        isHidden = false
+    }
+
+    @objc private func buyAllTapped() {
+        guard locationView == nil, saleView == nil, buyAllView == nil, let parent = superview else { return }
+        let panel = TPIOSMuaAll(frame: CGRect(x: frame.origin.x, y: frame.origin.y, width: 200, height: 220))
+        panel.onBack = { [weak self] in self?.closeBuyAll() }
+        panel.onClose = { [weak self] in
+            self?.closeBuyAll()
+            NotificationCenter.default.post(name: .tpiosCloseMenu, object: nil)
+        }
+        parent.addSubview(panel)
+        buyAllView = panel
+        isHidden = true
+    }
+
+    private func closeBuyAll() {
+        buyAllView?.removeFromSuperview()
+        buyAllView = nil
+        isHidden = false
+    }
+
+    private func clamp(_ rect: inout CGRect, in parent: UIView) {
+        let maxX = max(0, parent.bounds.width - rect.width)
+        let maxY = max(0, parent.bounds.height - rect.height)
+        rect.origin.x = max(0, min(rect.origin.x, maxX))
+        rect.origin.y = max(0, min(rect.origin.y, maxY))
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool { true }
+}
+
+// MARK: - Mua all
+
+private final class TPIOSMuaAll: UIView, UIGestureRecognizerDelegate {
+
+    var onBack: (() -> Void)?
+    var onClose: (() -> Void)?
+
+    private let headerHeight: CGFloat = 48
+    private let handleSize: CGFloat = 44
+    private let minWidth: CGFloat = 160
+    private let minHeight: CGFloat = 180
+    private let designWidth: CGFloat = 200
+    private let designHeight: CGFloat = 220
+
+    private let headerView = UIView()
+    private let backButton = UIButton(type: .system)
+    private let closeButton = UIButton(type: .system)
+    private let titleLabel = UILabel()
+    private let resizeHandle = UILabel()
+    private let buttons: [UIButton]
+    private let labels: [UILabel]
+    private var resizeStartFrame = CGRect.zero
+    private var resizeStartPoint = CGPoint.zero
+
+    override init(frame: CGRect) {
+        let titles = ["Quét IAP", "Sản phẩm", "Phân tích", "Giao dịch"]
+        let icons = ["viewfinder", "bag", "chart.bar.xaxis", "arrow.left.arrow.right"]
+        let colors: [[UIColor]] = [
+            [UIColor(red: 0.98, green: 0.45, blue: 0.55, alpha: 1), UIColor(red: 0.78, green: 0.18, blue: 0.35, alpha: 1)],
+            [UIColor(red: 0.38, green: 0.65, blue: 1.00, alpha: 1), UIColor(red: 0.15, green: 0.32, blue: 0.78, alpha: 1)],
+            [UIColor(red: 0.68, green: 0.47, blue: 1.00, alpha: 1), UIColor(red: 0.31, green: 0.20, blue: 0.82, alpha: 1)],
+            [UIColor(red: 0.36, green: 0.88, blue: 0.55, alpha: 1), UIColor(red: 0.06, green: 0.52, blue: 0.33, alpha: 1)]
+        ]
+
+        var createdButtons: [UIButton] = []
+        var createdLabels: [UILabel] = []
+        for index in 0..<4 {
+            let button = UIButton(type: .system)
+            let config = UIImage.SymbolConfiguration(pointSize: 21, weight: .semibold)
+            button.setImage(UIImage(systemName: icons[index], withConfiguration: config), for: .normal)
+            button.tintColor = .white
+            TPIOSPanelStyle.applyGradientFill(to: button, colors: colors[index], cornerRadius: 16)
+            button.layer.cornerRadius = 16
+            button.tag = index
+            createdButtons.append(button)
+
+            let label = UILabel()
+            label.text = titles[index]
+            label.textColor = .white
+            label.font = .systemFont(ofSize: 11.5, weight: .semibold)
+            label.textAlignment = .center
+            label.adjustsFontSizeToFitWidth = true
+            label.minimumScaleFactor = 0.65
+            createdLabels.append(label)
+        }
+        buttons = createdButtons
+        labels = createdLabels
+        super.init(frame: frame)
+        setup()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private func setup() {
+        TPIOSPanelStyle.applyGlassBackground(to: self, cornerRadius: 24)
+        headerView.backgroundColor = UIColor(red: 0.075, green: 0.085, blue: 0.105, alpha: 1)
+        headerView.layer.cornerRadius = 24
+        headerView.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        addSubview(headerView)
+
+        backButton.setTitle("‹", for: .normal)
+        backButton.setTitleColor(.white, for: .normal)
+        backButton.titleLabel?.font = .systemFont(ofSize: 30)
+        backButton.addTarget(self, action: #selector(backTapped), for: .touchUpInside)
+        headerView.addSubview(backButton)
+
+        titleLabel.text = "MUA ALL"
+        titleLabel.textColor = .white
+        titleLabel.font = .systemFont(ofSize: 16, weight: .bold)
+        titleLabel.textAlignment = .center
+        headerView.addSubview(titleLabel)
+
+        closeButton.setTitle("×", for: .normal)
+        closeButton.setTitleColor(.white, for: .normal)
+        closeButton.titleLabel?.font = .systemFont(ofSize: 26)
+        closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
+        headerView.addSubview(closeButton)
+
+        for index in 0..<4 {
+            buttons[index].addTarget(self, action: #selector(optionTapped(_:)), for: .touchUpInside)
+            addSubview(buttons[index])
+            addSubview(labels[index])
+        }
+
+        resizeHandle.text = "↘"
+        resizeHandle.textColor = UIColor.white.withAlphaComponent(0.55)
+        resizeHandle.font = .systemFont(ofSize: 19)
+        resizeHandle.textAlignment = .center
+        resizeHandle.isUserInteractionEnabled = true
+        addSubview(resizeHandle)
+
+        let resizePan = UIPanGestureRecognizer(target: self, action: #selector(resizePanned(_:)))
+        resizePan.cancelsTouchesInView = false
+        resizeHandle.addGestureRecognizer(resizePan)
+
+        let movePan = UIPanGestureRecognizer(target: self, action: #selector(movePanned(_:)))
+        movePan.delegate = self
+        movePan.cancelsTouchesInView = false
+        headerView.addGestureRecognizer(movePan)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let scale = min(1, min(bounds.width / designWidth, bounds.height / designHeight))
+        let header = headerHeight * scale
+        headerView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: header)
+        backButton.frame = CGRect(x: 2 * scale, y: 2 * scale, width: 40 * scale, height: 38 * scale)
+        backButton.titleLabel?.font = .systemFont(ofSize: max(16, 30 * scale))
+        titleLabel.frame = CGRect(x: 42 * scale, y: 0, width: max(0, bounds.width - 84 * scale), height: header)
+        titleLabel.font = .systemFont(ofSize: max(10, 16 * scale), weight: .bold)
+        closeButton.frame = CGRect(x: bounds.width - 42 * scale, y: 3 * scale, width: 38 * scale, height: 36 * scale)
+        closeButton.titleLabel?.font = .systemFont(ofSize: max(15, 26 * scale))
+
+        let side = 12 * scale
+        let gap = 7 * scale
+        let top = header + 9 * scale
+        let width = max(0, (bounds.width - side * 2 - gap) / 2)
+        let icon = min(width, 52 * scale)
+        let labelHeight = 14 * scale
+        let rowHeight = icon + 2 * scale + labelHeight
+        let rowGap = 4 * scale
+
+        for index in 0..<4 {
+            let column = index % 2
+            let row = index / 2
+            let x = side + CGFloat(column) * (width + gap)
+            let y = top + CGFloat(row) * (rowHeight + rowGap)
+            let iconX = x + max(0, (width - icon) / 2)
+            buttons[index].frame = CGRect(x: iconX, y: y, width: icon, height: icon)
+            buttons[index].layer.cornerRadius = icon * 0.28
+            TPIOSPanelStyle.syncFrames(in: buttons[index])
+            labels[index].frame = CGRect(x: x, y: y + icon + 1 * scale, width: width, height: labelHeight)
+            labels[index].font = .systemFont(ofSize: max(8, 11.5 * scale), weight: .semibold)
+        }
+
+        resizeHandle.frame = CGRect(x: bounds.width - handleSize, y: bounds.height - handleSize, width: handleSize, height: handleSize)
+        resizeHandle.font = .systemFont(ofSize: 19)
+    }
+
+    @objc private func optionTapped(_ sender: UIButton) {
+        let title = labels[sender.tag].text ?? ""
+        let message: String
+        switch sender.tag {
+        case 0:
+            message = TPIOSAppScanner.summary() + "\n\n" + TPIOSPaymentScanner.summary()
+        case 1:
+            message = "Chẩn đoán sản phẩm StoreKit chưa có Product ID để truy vấn. Có thể bổ sung danh sách ID ở bước sau."
+        case 2:
+            message = TPIOSPaymentScanner.receiptInfo()
+        case 3:
+            message = TPIOSPaymentScanner.storeKit1Status()
+        default:
+            return
+        }
+        presentAlert(title: title, message: message)
+        TPIOSLog.shared.log("Mua all: \(title)")
+    }
+
+    private func presentAlert(title: String, message: String) {
+        guard let controller = window?.rootViewController else { return }
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        controller.present(alert, animated: true)
+    }
+
+    @objc private func backTapped() { onBack?() }
+    @objc private func closeTapped() { onClose?() }
+
+    @objc private func movePanned(_ gesture: UIPanGestureRecognizer) {
+        guard let parent = superview, gesture.state == .began || gesture.state == .changed else { return }
+        let delta = gesture.translation(in: parent)
+        var newFrame = frame
+        newFrame.origin.x += delta.x
+        newFrame.origin.y += delta.y
+        clamp(&newFrame, in: parent)
+        frame = newFrame
+        gesture.setTranslation(.zero, in: parent)
+    }
+
+    @objc private func resizePanned(_ gesture: UIPanGestureRecognizer) {
+        guard let parent = superview else { return }
+        switch gesture.state {
+        case .began:
+            resizeStartFrame = frame
+            resizeStartPoint = gesture.location(in: parent)
+        case .changed:
+            let point = gesture.location(in: parent)
+            let width = max(minWidth, min(resizeStartFrame.width + point.x - resizeStartPoint.x, parent.bounds.width - resizeStartFrame.origin.x))
+            let height = max(minHeight, min(resizeStartFrame.height + point.y - resizeStartPoint.y, parent.bounds.height - resizeStartFrame.origin.y))
+            frame = CGRect(x: resizeStartFrame.origin.x, y: resizeStartFrame.origin.y, width: width, height: height)
+        default:
+            break
+        }
+    }
+
     private func clamp(_ rect: inout CGRect, in parent: UIView) {
         rect.origin.x = max(0, min(rect.origin.x, max(0, parent.bounds.width - rect.width)))
         rect.origin.y = max(0, min(rect.origin.y, max(0, parent.bounds.height - rect.height)))
     }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool { true }
 }
