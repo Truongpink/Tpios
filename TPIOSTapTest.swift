@@ -11,20 +11,25 @@ final class TPIOSTapTest {
 
     func start() {
         guard panel == nil, let window = TPIOSAutoClickEngine.appWindow() else { return }
-        let size = CGSize(width: 240, height: 350)
+        let size = CGSize(width: 230, height: 320)
         let frame = CGRect(x: (window.bounds.width - size.width) / 2, y: (window.bounds.height - size.height) / 2, width: size.width, height: size.height)
         let p = TPIOSAutoClickPanel(frame: frame)
-        p.onBack = { [weak self] in self?.finish() }
-        p.onClose = { [weak self] in self?.finish() }
+        p.onBack = { [weak self] in self?.finish(restoreMenu: true) }
+        p.onClose = { [weak self] in
+            self?.finish(restoreMenu: false)
+            NotificationCenter.default.post(name: .tpiosCloseMenu, object: nil)
+        }
         window.addSubview(p)
         panel = p
     }
 
-    private func finish() {
+    private func finish(restoreMenu: Bool) {
         panel?.stop()
         panel?.removeFromSuperview()
         panel = nil
-        onFinish?()
+        let completion = onFinish
+        onFinish = nil
+        if restoreMenu { completion?() }
     }
 }
 
@@ -65,8 +70,12 @@ final class TPIOSAutoClickPanel: UIView {
 
     private func iconButton(_ button: UIButton, icon: String, colors: [UIColor], action: Selector) {
         let config = UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
+        button.setTitle(nil, for: .normal)
         button.setImage(UIImage(systemName: icon, withConfiguration: config), for: .normal)
+        button.setPreferredSymbolConfiguration(config, forImageIn: .normal)
         button.tintColor = .white
+        button.imageView?.tintColor = .white
+        button.imageView?.contentMode = .center
         button.accessibilityLabel = icon
         button.showsTouchWhenHighlighted = true
         button.adjustsImageWhenHighlighted = true
@@ -256,8 +265,8 @@ final class TPIOSAutoClickPanel: UIView {
             let point = gesture.location(in: superview)
             let dx = point.x - resizeStartPoint.x
             let dy = point.y - resizeStartPoint.y
-            let width = min(max(240, resizeStartFrame.width + dx), superview.bounds.width - resizeStartFrame.minX)
-            let height = min(max(330, resizeStartFrame.height + dy), superview.bounds.height - resizeStartFrame.minY)
+            let width = min(max(220, resizeStartFrame.width + dx), superview.bounds.width - resizeStartFrame.minX)
+            let height = min(max(300, resizeStartFrame.height + dy), superview.bounds.height - resizeStartFrame.minY)
             frame = CGRect(x: resizeStartFrame.minX, y: resizeStartFrame.minY, width: width, height: height)
         default:
             break
@@ -282,7 +291,6 @@ final class TPIOSAutoClickPanel: UIView {
     }
 
     @objc private func pointMode() {
-        statusLabel.text = "CHỌN ĐIỂM"
         showPicker()
     }
 
@@ -351,55 +359,45 @@ final class TPIOSAutoClickPanel: UIView {
     private func showPicker() {
         guard let window = TPIOSAutoClickEngine.appWindow(), picker == nil else { return }
         let overlay = UIView(frame: window.bounds)
-        overlay.backgroundColor = UIColor.black.withAlphaComponent(0.18)
-
-        let label = UILabel(frame: CGRect(x: 20, y: 70, width: window.bounds.width - 40, height: 40))
-        label.text = "Chạm màn hình để thêm điểm"
-        label.textAlignment = .center
-        label.textColor = .white
-        label.font = .systemFont(ofSize: 16, weight: .semibold)
-        overlay.addSubview(label)
-
-        let done = UIButton(type: .system)
-        done.setTitle("Xong", for: .normal)
-        done.setTitleColor(.white, for: .normal)
-        done.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
-        TPIOSPanelStyle.applyGradientFill(to: done, colors: [.systemBlue, .systemIndigo], cornerRadius: 18)
-        done.frame = CGRect(x: window.bounds.width - 90, y: 70, width: 70, height: 36)
-        done.addTarget(self, action: #selector(closePicker), for: .touchUpInside)
-        overlay.addSubview(done)
-
+        overlay.backgroundColor = .clear
+        overlay.isUserInteractionEnabled = true
         overlay.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(pickerTap(_:))))
         window.addSubview(overlay)
         picker = overlay
+        isHidden = true
     }
 
     @objc private func pickerTap(_ gesture: UITapGestureRecognizer) {
-        guard let window = picker?.superview else { return }
+        guard let overlay = picker, let window = overlay.superview else { return }
         let point = gesture.location(in: window)
-        guard point.y >= 120 else { return }
         points.append(point)
         addMarker(at: point)
         pointLabel.text = "POINT: \(points.count)"
-        statusLabel.text = "ĐÃ CHỌN \(points.count)"
-    }
-
-    @objc private func closePicker() {
         picker?.removeFromSuperview()
         picker = nil
-        statusLabel.text = points.isEmpty ? "CHƯA CÓ ĐIỂM" : "POINT READY"
+        isHidden = false
+        statusLabel.text = "POINT READY"
     }
 
     private func addMarker(at point: CGPoint) {
         guard let window = picker?.superview else { return }
-        let marker = UILabel(frame: CGRect(x: point.x - 16, y: point.y - 16, width: 32, height: 32))
-        marker.text = "\(points.count)"
-        marker.textAlignment = .center
-        marker.textColor = .white
-        marker.backgroundColor = .black.withAlphaComponent(0.65)
-        marker.layer.cornerRadius = 16
+        let size: CGFloat = 24
+        let marker = UIView(frame: CGRect(x: point.x - size / 2, y: point.y - size / 2, width: size, height: size))
+        marker.backgroundColor = UIColor(red: 0.95, green: 0.25, blue: 0.55, alpha: 0.9)
+        marker.layer.cornerRadius = size / 2
+        marker.layer.borderWidth = 1.5
+        marker.layer.borderColor = UIColor.white.cgColor
         marker.clipsToBounds = true
         marker.isUserInteractionEnabled = true
+
+        let number = UILabel(frame: marker.bounds)
+        number.text = "\(points.count)"
+        number.textAlignment = .center
+        number.textColor = .white
+        number.font = .systemFont(ofSize: 10, weight: .bold)
+        number.isUserInteractionEnabled = false
+        marker.addSubview(number)
+
         marker.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(moveMarker(_:))))
         window.addSubview(marker)
         markers.append(marker)
