@@ -1,6 +1,5 @@
 import UIKit
 
-//tap1
 // Bước thử chạm, chỉ với nút UIKit (không chạm xuyên tầng).
 // Bấm "Chạm thử" → chạm một điểm trên màn → tool tìm view dưới điểm đó, nếu là
 // nút UIKit (UIControl) thì gửi hành động chạm → ghi kết quả vào log "TapTest:".
@@ -12,8 +11,10 @@ final class TPIOSTapTest: NSObject {
 
     private let blockedWords = ["mua", "đặt", "thanh toán", "xác nhận", "buy", "checkout", "order"]
     private var pickOverlay: UIView?
+    private var dots: [UIView] = []
 
     func start() {
+        clearDots()
         guard let host = keyWindow() else { return }
 
         let overlay = UIView(frame: host.bounds)
@@ -42,8 +43,11 @@ final class TPIOSTapTest: NSObject {
         overlay.removeFromSuperview()
         pickOverlay = nil
 
-        showDot(at: point, in: host)
-        test(point: point, in: host)
+        // Hit test phải làm trên cửa sổ app thật, không phải cửa sổ của TPIOS
+        // (cửa sổ TPIOS không nhận chạm ở vùng trống nên trả về nil).
+        let target = appWindow() ?? host
+        showDot(at: point, in: target)
+        test(point: point, in: target)
     }
 
     private func test(point: CGPoint, in host: UIWindow) {
@@ -79,17 +83,45 @@ final class TPIOSTapTest: NSObject {
         TPIOSLog.shared.log("TapTest: đã chạm \(NSStringFromClass(type(of: target))) \"\(label)\" tại \(Int(point.x)),\(Int(point.y))")
     }
 
-    // Chấm nhỏ đánh dấu điểm vừa chạm, tự biến mất sau 3 giây, không nhận chạm.
+    // Chấm ghim: lớn, có viền trắng và số thứ tự, nằm yên đến khi bắt đầu thử lại.
     private func showDot(at point: CGPoint, in host: UIWindow) {
-        let dot = UIView(frame: CGRect(x: point.x - 5, y: point.y - 5, width: 10, height: 10))
-        dot.backgroundColor = UIColor(red: 1.0, green: 0.3, blue: 0.7, alpha: 0.95)
-        dot.layer.cornerRadius = 5
+        let size: CGFloat = 22
+        let dot = UIView(frame: CGRect(x: point.x - size / 2, y: point.y - size / 2, width: size, height: size))
+        dot.backgroundColor = UIColor(red: 1.0, green: 0.3, blue: 0.7, alpha: 1)
+        dot.layer.cornerRadius = size / 2
+        dot.layer.borderWidth = 2
+        dot.layer.borderColor = UIColor.white.cgColor
+        dot.layer.shadowColor = UIColor.black.cgColor
+        dot.layer.shadowOpacity = 0.5
+        dot.layer.shadowRadius = 3
+        dot.layer.shadowOffset = .zero
         dot.isUserInteractionEnabled = false
-        host.addSubview(dot)
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-            dot.removeFromSuperview()
-        }
+        let number = UILabel(frame: dot.bounds)
+        number.text = "\(dots.count + 1)"
+        number.textAlignment = .center
+        number.textColor = .white
+        number.font = .systemFont(ofSize: 12, weight: .bold)
+        dot.addSubview(number)
+
+        host.addSubview(dot)
+        dots.append(dot)
+    }
+
+    private func clearDots() {
+        dots.forEach { $0.removeFromSuperview() }
+        dots.removeAll()
+    }
+
+    // Cửa sổ của app (không phải cửa sổ TPIOS), ưu tiên cửa sổ mức bình thường.
+    private func appWindow() -> UIWindow? {
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .filter { $0.isHidden == false && NSStringFromClass(type(of: $0)).contains("TPIOS") == false }
+
+        return windows.first(where: { $0.windowLevel == .normal && $0.rootViewController != nil })
+            ?? windows.first
     }
 
     private func keyWindow() -> UIWindow? {
