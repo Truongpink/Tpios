@@ -2,455 +2,308 @@ import UIKit
 import Foundation
 import Darwin
 
-// Auto Clicker / Touch
-// Chỉ giữ các chức năng cần thiết: TAP, SEQ, POINT, CLEAR, SPEED, START/STOP.
-final class TPIOSTapTest: NSObject {
+final class TPIOSTapTest {
     static let shared = TPIOSTapTest()
     var onFinish: (() -> Void)?
     private var panel: TPIOSAutoClickPanel?
 
-    func start() {
-        stop()
-        guard let window = keyWindow() else { onFinish?(); return }
-        let width = min(320, max(280, window.bounds.width - 24))
-        let height = min(max(410, window.bounds.height - 80), 500)
-        let frame = CGRect(
-            x: max(12, (window.bounds.width - width) / 2),
-            y: max(20, (window.bounds.height - height) / 2),
-            width: width,
-            height: height
-        )
-        let view = TPIOSAutoClickPanel(frame: frame)
-        view.onBack = { [weak self] in self?.finish() }
-        view.onClose = { [weak self] in self?.finish() }
-        window.addSubview(view)
-        window.bringSubviewToFront(view)
-        panel = view
-    }
+    private init() {}
 
-    func stop() {
-        panel?.stop()
-        panel?.removeFromSuperview()
-        panel = nil
+    func start() {
+        guard panel == nil, let window = TPIOSAutoClickEngine.appWindow() else { return }
+        let size = CGSize(width: min(320, window.bounds.width - 24), height: min(500, window.bounds.height - 80))
+        let frame = CGRect(x: (window.bounds.width - size.width) / 2, y: (window.bounds.height - size.height) / 2, width: size.width, height: size.height)
+        let p = TPIOSAutoClickPanel(frame: frame)
+        p.onBack = { [weak self] in self?.finish() }
+        p.onClose = { [weak self] in self?.finish() }
+        window.addSubview(p)
+        panel = p
     }
 
     private func finish() {
-        stop()
+        panel?.stop()
+        panel?.removeFromSuperview()
+        panel = nil
         onFinish?()
-    }
-
-    private func keyWindow() -> UIWindow? {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-            .first(where: { $0.isKeyWindow })
     }
 }
 
-private final class TPIOSAutoClickPanel: UIView {
+final class TPIOSAutoClickPanel: UIView {
+    private enum Mode { case tap, sequence }
+    private var mode: Mode = .tap
+    private var points: [CGPoint] = []
+    private var markers: [UIView] = []
+    private var timer: DispatchSourceTimer?
+    private var sequenceIndex = 0
+    private var tapCount = 0
+    private var running = false
+    private var speed: TimeInterval = 2.0
+    private var picker: UIView?
+    private var header = UIView()
+    private var content = UIView()
+    private var statusLabel = UILabel()
+    private var countLabel = UILabel()
+    private var pointLabel = UILabel()
+    private var speedSlider = UISlider()
+    private var startButton = UIButton(type: .system)
+    private var resizeHandle = UIView()
     var onBack: (() -> Void)?
     var onClose: (() -> Void)?
-
-    private enum Mode { case tap, sequence }
-    private struct Point { var location: CGPoint; var marker: UIView }
-
-    private let header = UIView()
-    private let back = UIButton(type: .system)
-    private let close = UIButton(type: .system)
-    private let title = UILabel()
-    private let tap = UIButton(type: .system)
-    private let seq = UIButton(type: .system)
-    private let point = UIButton(type: .system)
-    private let clear = UIButton(type: .system)
-    private let tapLabel = UILabel()
-    private let seqLabel = UILabel()
-    private let pointLabel = UILabel()
-    private let clearLabel = UILabel()
-    private let start = UIButton(type: .system)
-    private let speedTitle = UILabel()
-    private let speedValue = UILabel()
-    private let slider = UISlider()
-    private let status = UILabel()
-    private let resize = UILabel()
-
-    private var mode: Mode = .tap
-    private var points: [Point] = []
-    private var picker: UIView?
-    private var timer: DispatchSourceTimer?
-    private var running = false
-    private var speed = 2.0
-    private var tapCount = 0
-    private var sequenceIndex = 0
-    private var resizeFrame = CGRect.zero
-    private var resizePoint = CGPoint.zero
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         setup()
     }
 
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    required init?(coder: NSCoder) { fatalError() }
+
+    private func button(_ title: String) -> UIButton {
+        let b = UIButton(type: .system)
+        b.setTitle(title, for: .normal)
+        b.setTitleColor(.white, for: .normal)
+        b.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
+        b.layer.cornerRadius = 12
+        b.clipsToBounds = true
+        TPIOSPanelStyle.applyGradientFill(to: b)
+        return b
+    }
 
     private func setup() {
-        TPIOSPanelStyle.applyGlassBackground(to: self, cornerRadius: 24)
-        header.backgroundColor = UIColor(red: 0.075, green: 0.085, blue: 0.105, alpha: 1)
-        header.layer.cornerRadius = 24
-        header.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
-        addSubview(header)
+        layer.cornerRadius = 18
+        clipsToBounds = true
+        TPIOSPanelStyle.applyGlassBackground(to: self)
 
-        back.setTitle("‹", for: .normal)
-        back.setTitleColor(.white, for: .normal)
-        back.titleLabel?.font = .systemFont(ofSize: 30)
-        back.addTarget(self, action: #selector(backTapped), for: .touchUpInside)
+        header.backgroundColor = .clear
+        addSubview(header)
+        let back = button("‹")
+        back.frame = CGRect(x: 8, y: 6, width: 40, height: 32)
+        back.addTarget(self, action: #selector(backTap), for: .touchUpInside)
         header.addSubview(back)
 
-        title.text = "CHẠM"
+        let title = UILabel()
+        title.text = "AUTO CLICKER"
         title.textColor = .white
-        title.font = .systemFont(ofSize: 18, weight: .bold)
+        title.font = .systemFont(ofSize: 15, weight: .bold)
         title.textAlignment = .center
         header.addSubview(title)
+        title.tag = 1001
 
-        close.setImage(UIImage(systemName: "xmark"), for: .normal)
-        close.tintColor = .white
-        close.backgroundColor = UIColor.white.withAlphaComponent(0.08)
-        close.layer.cornerRadius = 17
-        close.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
+        let close = button("×")
+        close.frame = CGRect(x: 8, y: 6, width: 40, height: 32)
+        close.addTarget(self, action: #selector(closeTap), for: .touchUpInside)
         header.addSubview(close)
+        close.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            close.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -8),
+            close.topAnchor.constraint(equalTo: header.topAnchor, constant: 6),
+            close.widthAnchor.constraint(equalToConstant: 40),
+            close.heightAnchor.constraint(equalToConstant: 32)
+        ])
 
-        configure(tap, "hand.tap.fill", [UIColor(red: 0.25, green: 0.62, blue: 1, alpha: 1), UIColor(red: 0.08, green: 0.30, blue: 0.82, alpha: 1)], #selector(tapTapped))
-        configure(seq, "arrow.right.to.line.compact", [UIColor(red: 0.68, green: 0.47, blue: 1, alpha: 1), UIColor(red: 0.31, green: 0.20, blue: 0.82, alpha: 1)], #selector(seqTapped))
-        configure(point, "plus", [UIColor(red: 1, green: 0.65, blue: 0.25, alpha: 1), UIColor(red: 0.85, green: 0.25, blue: 0.08, alpha: 1)], #selector(pointTapped))
-        configure(clear, "trash.fill", [UIColor(red: 1, green: 0.35, blue: 0.27, alpha: 1), UIColor(red: 0.64, green: 0.06, blue: 0.06, alpha: 1)], #selector(clearTapped))
-        caption(tapLabel, "TAP")
-        caption(seqLabel, "SEQ")
-        caption(pointLabel, "POINT")
-        caption(clearLabel, "CLEAR")
-        [tap, seq, point, clear].forEach(addSubview)
-        [tapLabel, seqLabel, pointLabel, clearLabel].forEach(addSubview)
+        let tap = button("TAP")
+        tap.addTarget(self, action: #selector(tapMode), for: .touchUpInside)
+        let seq = button("SEQ")
+        seq.addTarget(self, action: #selector(seqMode), for: .touchUpInside)
+        let point = button("POINT")
+        point.addTarget(self, action: #selector(pointMode), for: .touchUpInside)
+        let clear = button("CLEAR")
+        clear.addTarget(self, action: #selector(clearPoints), for: .touchUpInside)
+        [tap, seq, point, clear].enumerated().forEach { i, b in
+            b.frame = CGRect(x: 12 + CGFloat(i) * 66, y: 10, width: 60, height: 36)
+            content.addSubview(b)
+        }
 
-        start.setImage(UIImage(systemName: "play.fill"), for: .normal)
-        start.setTitle(" START", for: .normal)
-        start.setTitleColor(.white, for: .normal)
-        start.tintColor = .white
-        start.titleLabel?.font = .systemFont(ofSize: 17, weight: .bold)
-        start.layer.cornerRadius = 16
-        start.addTarget(self, action: #selector(startTapped), for: .touchUpInside)
-        addSubview(start)
-        startStyle()
+        statusLabel.textColor = .white
+        statusLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        statusLabel.text = "IDLE"
+        countLabel.textColor = .white
+        countLabel.font = .systemFont(ofSize: 13)
+        countLabel.text = "TAP: 0"
+        pointLabel.textColor = .white
+        pointLabel.font = .systemFont(ofSize: 13)
+        pointLabel.text = "POINT: 0"
+        [statusLabel, countLabel, pointLabel].enumerated().forEach { i, l in
+            l.frame = CGRect(x: 14, y: 60 + CGFloat(i) * 24, width: 240, height: 20)
+            content.addSubview(l)
+        }
 
-        speedTitle.text = "SPEED"
-        speedTitle.textColor = UIColor.white.withAlphaComponent(0.72)
-        speedTitle.font = .systemFont(ofSize: 12, weight: .bold)
-        addSubview(speedTitle)
+        speedSlider.minimumValue = 0.05
+        speedSlider.maximumValue = 5.0
+        speedSlider.value = Float(speed)
+        speedSlider.addTarget(self, action: #selector(speedChanged), for: .valueChanged)
+        content.addSubview(speedSlider)
 
-        speedValue.textColor = UIColor(red: 0.28, green: 0.65, blue: 1, alpha: 1)
-        speedValue.font = .monospacedSystemFont(ofSize: 13, weight: .bold)
-        speedValue.textAlignment = .right
-        addSubview(speedValue)
+        startButton = button("START")
+        startButton.addTarget(self, action: #selector(startStop), for: .touchUpInside)
+        content.addSubview(startButton)
 
-        slider.minimumValue = 0.05
-        slider.maximumValue = 5
-        slider.value = Float(speed)
-        slider.minimumTrackTintColor = UIColor(red: 0.22, green: 0.60, blue: 1, alpha: 1)
-        slider.addTarget(self, action: #selector(speedChanged(_:)), for: .valueChanged)
-        addSubview(slider)
-        updateSpeed()
+        resizeHandle.backgroundColor = UIColor.white.withAlphaComponent(0.35)
+        resizeHandle.layer.cornerRadius = 4
+        addSubview(resizeHandle)
 
-        status.textColor = UIColor.white.withAlphaComponent(0.88)
-        status.backgroundColor = UIColor.white.withAlphaComponent(0.07)
-        status.layer.cornerRadius = 12
-        status.textAlignment = .center
-        status.font = .systemFont(ofSize: 12, weight: .semibold)
-        status.adjustsFontSizeToFitWidth = true
-        status.minimumScaleFactor = 0.65
-        addSubview(status)
-
-        resize.text = "↘"
-        resize.textColor = UIColor.white.withAlphaComponent(0.45)
-        resize.textAlignment = .center
-        resize.isUserInteractionEnabled = true
-        addSubview(resize)
-        resize.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(resizePanned(_:))))
-
-        header.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(movePanned(_:))))
-        updateMode()
-        updateStatus()
-    }
-
-    private func configure(_ button: UIButton, _ icon: String, _ colors: [UIColor], _ action: Selector) {
-        let config = UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
-        button.setImage(UIImage(systemName: icon, withConfiguration: config), for: .normal)
-        button.tintColor = .white
-        TPIOSPanelStyle.applyGradientFill(to: button, colors: colors, cornerRadius: 18)
-        button.addTarget(self, action: action, for: .touchUpInside)
-    }
-
-    private func caption(_ label: UILabel, _ text: String) {
-        label.text = text
-        label.textColor = .white
-        label.font = .systemFont(ofSize: 11.5, weight: .semibold)
-        label.textAlignment = .center
-        label.adjustsFontSizeToFitWidth = true
-        label.minimumScaleFactor = 0.7
+        addSubview(content)
+        setupPan()
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        header.frame = CGRect(x: 0, y: 0, width: bounds.width, height: 54)
-        back.frame = CGRect(x: 3, y: 3, width: 40, height: 42)
-        title.frame = CGRect(x: 45, y: 0, width: max(0, bounds.width - 90), height: 54)
-        close.frame = CGRect(x: bounds.width - 46, y: 7, width: 36, height: 36)
-
-        let side: CGFloat = 14
-        let gap: CGFloat = 10
-        let width = bounds.width - side * 2
-        let col = (width - gap * 3) / 4
-        let icon = min(58, col)
-        let y = CGFloat(68)
-        let buttons = [tap, seq, point, clear]
-        let labels = [tapLabel, seqLabel, pointLabel, clearLabel]
-        for i in 0..<4 {
-            let x = side + CGFloat(i) * (col + gap) + max(0, (col - icon) / 2)
-            buttons[i].frame = CGRect(x: x, y: y, width: icon, height: icon)
-            buttons[i].layer.cornerRadius = icon * 0.28
-            TPIOSPanelStyle.syncFrames(in: buttons[i])
-            labels[i].frame = CGRect(x: side + CGFloat(i) * (col + gap), y: y + icon + 5, width: col, height: 16)
+        header.frame = CGRect(x: 0, y: 0, width: bounds.width, height: 44)
+        if let title = viewWithTag(1001) as? UILabel {
+            title.frame = CGRect(x: 52, y: 6, width: bounds.width - 104, height: 32)
         }
-
-        let actionY = y + icon + 34
-        start.frame = CGRect(x: side, y: actionY, width: width, height: 54)
-        TPIOSPanelStyle.syncFrames(in: start)
-        speedTitle.frame = CGRect(x: side, y: actionY + 70, width: 70, height: 18)
-        speedValue.frame = CGRect(x: bounds.width - side - 82, y: actionY + 70, width: 82, height: 18)
-        slider.frame = CGRect(x: side, y: actionY + 93, width: width, height: 28)
-        status.frame = CGRect(x: side, y: bounds.height - 52, width: width, height: 38)
-        resize.frame = CGRect(x: bounds.width - 32, y: bounds.height - 32, width: 32, height: 32)
+        content.frame = CGRect(x: 0, y: 44, width: bounds.width, height: bounds.height - 44)
+        speedSlider.frame = CGRect(x: 14, y: 138, width: bounds.width - 28, height: 30)
+        startButton.frame = CGRect(x: 14, y: 180, width: bounds.width - 28, height: 42)
+        resizeHandle.frame = CGRect(x: bounds.width - 20, y: bounds.height - 20, width: 14, height: 14)
+        if let last = markers.last { _ = last }
     }
 
-    @objc private func tapTapped() { guard !running else { return }; mode = .tap; updateMode() }
-    @objc private func seqTapped() { guard !running else { return }; mode = .sequence; updateMode() }
-    @objc private func pointTapped() { guard !running else { return }; beginPicker() }
-    @objc private func clearTapped() {
-        guard !running else { return }
-        points.forEach { $0.marker.removeFromSuperview() }
-        points.removeAll()
-        tapCount = 0
-        sequenceIndex = 0
-        updateStatus()
+    private func setupPan() {
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(movePanel(_:)))
+        header.addGestureRecognizer(pan)
+        let resize = UIPanGestureRecognizer(target: self, action: #selector(resizePanel(_:)))
+        resizeHandle.addGestureRecognizer(resize)
     }
 
-    @objc private func startTapped() {
+    @objc private func movePanel(_ g: UIPanGestureRecognizer) {
+        guard let s = superview else { return }
+        let t = g.translation(in: s)
+        center = CGPoint(x: center.x + t.x, y: center.y + t.y)
+        g.setTranslation(.zero, in: s)
+        center.x = min(max(center.x, bounds.width / 2), s.bounds.width - bounds.width / 2)
+        center.y = min(max(center.y, bounds.height / 2), s.bounds.height - bounds.height / 2)
+    }
+
+    @objc private func resizePanel(_ g: UIPanGestureRecognizer) {
+        guard let s = superview else { return }
+        let t = g.translation(in: s)
+        let w = min(max(260, bounds.width + t.x), s.bounds.width - frame.minX)
+        let h = min(max(360, bounds.height + t.y), s.bounds.height - frame.minY)
+        frame.size = CGSize(width: w, height: h)
+        g.setTranslation(.zero, in: s)
+    }
+
+    @objc private func backTap() { onBack?() }
+    @objc private func closeTap() { onClose?() }
+    @objc private func tapMode() { mode = .tap; sequenceIndex = 0 }
+    @objc private func seqMode() { mode = .sequence; sequenceIndex = 0 }
+    @objc private func pointMode() { showPicker() }
+    @objc private func clearPoints() { points.removeAll(); markers.forEach { $0.removeFromSuperview() }; markers.removeAll(); updateLabels() }
+    @objc private func speedChanged() { speed = TimeInterval(speedSlider.value); if running { restartTimer() } }
+
+    @objc private func startStop() {
         if running { stop(); return }
-        guard !points.isEmpty else { status.text = "● CHƯA CÓ ĐIỂM — bấm POINT"; return }
+        guard !points.isEmpty else { return }
         running = true
-        tapCount = 0
-        sequenceIndex = 0
-        startStyle()
-        performTap()
-        scheduleTimer()
-        updateStatus()
+        statusLabel.text = "RUNNING"
+        startButton.setTitle("STOP", for: .normal)
+        restartTimer()
     }
 
-    @objc private func speedChanged(_ sender: UISlider) {
-        speed = Double(sender.value)
-        updateSpeed()
-        if running { scheduleTimer() }
-    }
-
-    private func scheduleTimer() {
-        timer?.setEventHandler {}
+    private func restartTimer() {
         timer?.cancel()
-        let source = DispatchSource.makeTimerSource(queue: .main)
-        source.schedule(deadline: .now() + speed, repeating: speed, leeway: .milliseconds(5))
-        source.setEventHandler { [weak self] in self?.performTap() }
-        source.resume()
-        timer = source
-    }
-
-    private func performTap() {
-        guard running, !points.isEmpty else { return }
-        let target: CGPoint
-        switch mode {
-        case .tap: target = points[0].location
-        case .sequence:
-            target = points[sequenceIndex % points.count].location
-            sequenceIndex = (sequenceIndex + 1) % points.count
-        }
-        if TPIOSAutoClickEngine.shared.tap(at: target) { tapCount += 1 }
-        updateStatus()
+        let t = DispatchSource.makeTimerSource(queue: .main)
+        t.schedule(deadline: .now() + speed, repeating: speed, leeway: .milliseconds(5))
+        t.setEventHandler { [weak self] in self?.performTap() }
+        t.resume()
+        timer = t
     }
 
     func stop() {
-        running = false
-        timer?.setEventHandler {}
         timer?.cancel()
         timer = nil
-        picker?.removeFromSuperview()
-        picker = nil
-        startStyle()
-        updateStatus()
+        running = false
+        statusLabel.text = "IDLE"
+        startButton.setTitle("START", for: .normal)
     }
 
-    private func startStyle() {
-        if running {
-            start.setImage(UIImage(systemName: "stop.fill"), for: .normal)
-            start.setTitle(" STOP", for: .normal)
-            TPIOSPanelStyle.applyGradientFill(to: start, colors: [UIColor(red: 1, green: 0.35, blue: 0.27, alpha: 1), UIColor(red: 0.64, green: 0.06, blue: 0.06, alpha: 1)], cornerRadius: 16)
-        } else {
-            start.setImage(UIImage(systemName: "play.fill"), for: .normal)
-            start.setTitle(" START", for: .normal)
-            TPIOSPanelStyle.applyGradientFill(to: start, colors: [UIColor(red: 0.20, green: 0.65, blue: 1, alpha: 1), UIColor(red: 0.06, green: 0.36, blue: 0.92, alpha: 1)], cornerRadius: 16)
+    private func performTap() {
+        guard !points.isEmpty else { return }
+        let p: CGPoint
+        switch mode {
+        case .tap: p = points[0]
+        case .sequence:
+            p = points[sequenceIndex % points.count]
+            sequenceIndex += 1
         }
-        start.tintColor = .white
+        if TPIOSAutoClickEngine.shared.tap(at: p) {
+            tapCount += 1
+            countLabel.text = "TAP: \(tapCount)"
+        }
     }
 
-    private func updateMode() {
-        tap.layer.borderWidth = mode == .tap ? 2 : 1
-        seq.layer.borderWidth = mode == .sequence ? 2 : 1
-        tap.layer.borderColor = (mode == .tap ? UIColor.white : UIColor.white.withAlphaComponent(0.28)).cgColor
-        seq.layer.borderColor = (mode == .sequence ? UIColor.white : UIColor.white.withAlphaComponent(0.28)).cgColor
-    }
+    private func updateLabels() { pointLabel.text = "POINT: \(points.count)" }
 
-    private func updateSpeed() { speedValue.text = String(format: "%.3fs", speed) }
-    private func updateStatus() {
-        status.text = "\(running ? "● RUNNING" : "● IDLE")     \(tapCount) taps     \(points.count) pts"
-    }
-
-    // MARK: Point picker
-
-    private func beginPicker() {
-        picker?.removeFromSuperview()
-        guard let host = window else { return }
-        let overlay = UIView(frame: host.bounds)
-        overlay.backgroundColor = UIColor.black.withAlphaComponent(0.01)
-        overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-
-        let hint = UILabel(frame: CGRect(x: 16, y: host.safeAreaInsets.top + 10, width: host.bounds.width - 112, height: 40))
-        hint.text = "Chạm màn hình để thêm điểm"
-        hint.textColor = .white
-        hint.backgroundColor = UIColor.black.withAlphaComponent(0.78)
-        hint.textAlignment = .center
-        hint.font = .systemFont(ofSize: 13, weight: .semibold)
-        hint.layer.cornerRadius = 12
-        hint.clipsToBounds = true
-        overlay.addSubview(hint)
-
-        let done = UIButton(type: .system)
-        done.frame = CGRect(x: host.bounds.width - 88, y: host.safeAreaInsets.top + 10, width: 68, height: 40)
-        done.setTitle("Xong", for: .normal)
-        done.setTitleColor(.white, for: .normal)
-        done.backgroundColor = UIColor(red: 0.20, green: 0.65, blue: 1, alpha: 1)
-        done.layer.cornerRadius = 12
-        done.addTarget(self, action: #selector(donePicker), for: .touchUpInside)
-        overlay.addSubview(done)
-
-        overlay.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(pickerTapped(_:))))
-        host.addSubview(overlay)
-        host.bringSubviewToFront(overlay)
-        picker = overlay
-    }
-
-    @objc private func pickerTapped(_ gesture: UITapGestureRecognizer) {
-        guard let overlay = picker else { return }
-        let p = gesture.location(in: overlay)
-        if p.y < 60 && p.x > overlay.bounds.width - 110 { return }
-        addPoint(p)
-    }
-
-    @objc private func donePicker() {
-        picker?.removeFromSuperview()
-        picker = nil
-    }
-
-    private func addPoint(_ p: CGPoint) {
-        guard let host = window else { return }
-        let n = points.count + 1
-        let size: CGFloat = 30
-        let marker = UIView(frame: CGRect(x: p.x - size / 2, y: p.y - size / 2, width: size, height: size))
-        marker.backgroundColor = UIColor(red: 0.20, green: 0.65, blue: 1, alpha: 1)
-        marker.layer.cornerRadius = size / 2
-        marker.layer.borderWidth = 2
-        marker.layer.borderColor = UIColor.white.cgColor
-        marker.isUserInteractionEnabled = true
-        let label = UILabel(frame: marker.bounds)
-        label.text = "\(n)"
-        label.textColor = .white
-        label.font = .systemFont(ofSize: 12, weight: .bold)
+    private func showPicker() {
+        guard let window = TPIOSAutoClickEngine.appWindow(), picker == nil else { return }
+        let v = UIView(frame: window.bounds)
+        v.backgroundColor = UIColor.black.withAlphaComponent(0.18)
+        let label = UILabel(frame: CGRect(x: 20, y: 70, width: window.bounds.width - 40, height: 40))
+        label.text = "Chạm màn hình để thêm điểm"
         label.textAlignment = .center
-        marker.addSubview(label)
-        marker.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(markerPanned(_:))))
-        host.addSubview(marker)
-        host.bringSubviewToFront(marker)
-        points.append(Point(location: p, marker: marker))
-        updateStatus()
+        label.textColor = .white
+        label.font = .systemFont(ofSize: 16, weight: .semibold)
+        v.addSubview(label)
+        let done = button("Xong")
+        done.frame = CGRect(x: window.bounds.width - 90, y: 70, width: 70, height: 36)
+        done.addTarget(self, action: #selector(closePicker), for: .touchUpInside)
+        v.addSubview(done)
+        let tap = UITapGestureRecognizer(target: self, action: #selector(pickerTap(_:)))
+        v.addGestureRecognizer(tap)
+        window.addSubview(v)
+        picker = v
     }
 
-    @objc private func markerPanned(_ gesture: UIPanGestureRecognizer) {
-        guard let marker = gesture.view,
-              let index = points.firstIndex(where: { $0.marker === marker }),
-              let host = window else { return }
-        let p = gesture.location(in: host)
-        let r = marker.bounds.width / 2
-        let x = max(r, min(p.x, host.bounds.width - r))
-        let y = max(r, min(p.y, host.bounds.height - r))
-        let location = CGPoint(x: x, y: y)
-        marker.center = location
-        points[index].location = location
+    @objc private func pickerTap(_ g: UITapGestureRecognizer) {
+        guard let window = picker?.superview else { return }
+        let p = g.location(in: window)
+        if p.y < 120 { return }
+        points.append(p)
+        addMarker(at: p)
+        updateLabels()
     }
 
-    // MARK: Move / resize
+    @objc private func closePicker() { picker?.removeFromSuperview(); picker = nil }
 
-    @objc private func movePanned(_ gesture: UIPanGestureRecognizer) {
-        guard let parent = superview, gesture.state == .began || gesture.state == .changed else { return }
-        let d = gesture.translation(in: parent)
-        var f = frame
-        f.origin.x = max(0, min(f.origin.x + d.x, max(0, parent.bounds.width - f.width)))
-        f.origin.y = max(0, min(f.origin.y + d.y, max(0, parent.bounds.height - f.height)))
-        frame = f
-        gesture.setTranslation(.zero, in: parent)
+    private func addMarker(at point: CGPoint) {
+        guard let window = picker?.superview else { return }
+        let marker = UILabel(frame: CGRect(x: point.x - 16, y: point.y - 16, width: 32, height: 32))
+        marker.text = "\(points.count)"
+        marker.textAlignment = .center
+        marker.textColor = .white
+        marker.backgroundColor = .black.withAlphaComponent(0.65)
+        marker.layer.cornerRadius = 16
+        marker.clipsToBounds = true
+        marker.isUserInteractionEnabled = true
+        marker.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(moveMarker(_:))))
+        window.addSubview(marker)
+        markers.append(marker)
     }
 
-    @objc private func resizePanned(_ gesture: UIPanGestureRecognizer) {
-        guard let parent = superview else { return }
-        switch gesture.state {
-        case .began:
-            resizeFrame = frame
-            resizePoint = gesture.location(in: parent)
-        case .changed:
-            let p = gesture.location(in: parent)
-            let w = max(270, min(resizeFrame.width + p.x - resizePoint.x, parent.bounds.width - resizeFrame.origin.x))
-            let h = max(390, min(resizeFrame.height + p.y - resizePoint.y, parent.bounds.height - resizeFrame.origin.y))
-            frame = CGRect(x: resizeFrame.origin.x, y: resizeFrame.origin.y, width: w, height: h)
-        default: break
-        }
+    @objc private func moveMarker(_ g: UIPanGestureRecognizer) {
+        guard let marker = g.view, let window = marker.superview, let index = markers.firstIndex(of: marker) else { return }
+        let t = g.translation(in: window)
+        marker.center = CGPoint(x: marker.center.x + t.x, y: marker.center.y + t.y)
+        g.setTranslation(.zero, in: window)
+        points[index] = marker.center
     }
-
-    @objc private func backTapped() { onBack?() }
-    @objc private func closeTapped() { onClose?() }
 }
 
-// MARK: IOHID touch engine
-
-private final class TPIOSAutoClickEngine {
+final class TPIOSAutoClickEngine {
     static let shared = TPIOSAutoClickEngine()
+    private init() {}
 
-    private typealias CreateDigitizer = @convention(c) (
-        UnsafeRawPointer?, UInt64, UInt32, UInt32, UInt32, UInt32, UInt32,
-        Double, Double, Double, Double, Double, DarwinBoolean, DarwinBoolean, UInt32
-    ) -> OpaquePointer?
-    private typealias CreateFinger = @convention(c) (
-        UnsafeRawPointer?, UInt64, UInt32, UInt32, UInt32,
-        Double, Double, Double, Double, Double, DarwinBoolean, DarwinBoolean, UInt32
-    ) -> OpaquePointer?
-    private typealias CreateClient = @convention(c) (UnsafeRawPointer?) -> OpaquePointer?
+    private typealias CreateDigitizer = @convention(c) (CFAllocator?, UInt64, UInt32, UInt32, UInt32, UInt32, UInt32, Double, Double, Double, Double, Double, DarwinBoolean, DarwinBoolean, UInt32) -> OpaquePointer?
+    private typealias CreateFinger = @convention(c) (CFAllocator?, UInt64, UInt32, UInt32, UInt32, Double, Double, Double, Double, Double, DarwinBoolean, DarwinBoolean, UInt32) -> OpaquePointer?
+    private typealias CreateClient = @convention(c) (CFAllocator?, UInt32) -> OpaquePointer?
     private typealias Append = @convention(c) (OpaquePointer, OpaquePointer, UInt32) -> Void
     private typealias SetInteger = @convention(c) (OpaquePointer, UInt32, Int64) -> Void
     private typealias SetSender = @convention(c) (OpaquePointer, UInt64) -> Void
     private typealias Dispatch = @convention(c) (OpaquePointer, OpaquePointer) -> Void
-    private typealias SetDigitizerInfo = @convention(c) (
-        OpaquePointer, UInt32, DarwinBoolean, DarwinBoolean, CFString?, CFTimeInterval, Float
-    ) -> Void
+    private typealias SetDigitizerInfo = @convention(c) (OpaquePointer, UInt32, DarwinBoolean, DarwinBoolean, UnsafeMutableRawPointer?, UInt32, UInt32) -> Void
 
+    private var handle: UnsafeMutableRawPointer?
+    private var client: OpaquePointer?
     private var createDigitizer: CreateDigitizer?
     private var createFinger: CreateFinger?
     private var createClient: CreateClient?
@@ -459,24 +312,19 @@ private final class TPIOSAutoClickEngine {
     private var setSender: SetSender?
     private var dispatch: Dispatch?
     private var setInfo: SetDigitizerInfo?
-    private var client: OpaquePointer?
     private var prepared = false
     private let lock = NSLock()
 
     private let range: UInt32 = 1 << 0
     private let touch: UInt32 = 1 << 1
     private let identity: UInt32 = 1 << 5
-    private let displayIntegrated: UInt32 = (11 << 16) + 25
+    private let displayIntegrated: Int64 = (11 << 16) + 25
     private let senderID: UInt64 = 0x8000000817319375
 
-    private init() {}
-
     func tap(at point: CGPoint) -> Bool {
-        guard prepare(), let client, let window = appWindow() else { return false }
-        let w = max(window.bounds.width, 1)
-        let h = max(window.bounds.height, 1)
-        let x = max(0, min(1, Double(point.x / w)))
-        let y = max(0, min(1, Double(point.y / h)))
+        guard prepare(), let client, let window = Self.appWindow() else { return false }
+        let x = max(0, min(Double(window.bounds.width), Double(point.x)))
+        let y = max(0, min(Double(window.bounds.height), Double(point.y)))
         guard send(client, window, x, y, true) else { return false }
         usleep(2000)
         return send(client, window, x, y, false)
@@ -498,8 +346,8 @@ private final class TPIOSAutoClickEngine {
             setInfo(parent, context, DarwinBoolean(false), DarwinBoolean(false), nil, 0, 0)
         }
         dispatch(client, parent)
-        CFRelease(child)
-        CFRelease(parent)
+        CFRelease(unsafeBitCast(child, to: CFTypeRef.self))
+        CFRelease(unsafeBitCast(parent, to: CFTypeRef.self))
         return true
     }
 
@@ -508,35 +356,29 @@ private final class TPIOSAutoClickEngine {
         defer { lock.unlock() }
         if prepared { return client != nil && dispatch != nil }
         prepared = true
-
-        guard let ioKit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW | RTLD_GLOBAL)
-                ?? dlopen("/System/Library/PrivateFrameworks/IOKit.framework/IOKit", RTLD_NOW | RTLD_GLOBAL) else { return false }
-
-        createDigitizer = load("IOHIDEventCreateDigitizerEvent", ioKit)
-        createFinger = load("IOHIDEventCreateDigitizerFingerEvent", ioKit)
-        createClient = load("IOHIDEventSystemClientCreate", ioKit)
-        append = load("IOHIDEventAppendEvent", ioKit)
-        setInteger = load("IOHIDEventSetIntegerValue", ioKit)
-        setSender = load("IOHIDEventSetSenderID", ioKit)
-        dispatch = load("IOHIDEventSystemClientDispatchEvent", ioKit)
-
-        if let bks = dlopen("/System/Library/PrivateFrameworks/BackBoardServices.framework/BackBoardServices", RTLD_NOW | RTLD_GLOBAL) {
-            setInfo = load("BKSHIDEventSetDigitizerInfo", bks)
+        guard let h = dlopen("/System/Library/PrivateFrameworks/IOKit.framework/IOKit", RTLD_NOW) else { return false }
+        handle = h
+        func sym<T>(_ name: String, _: T.Type) -> T? {
+            guard let p = dlsym(h, name) else { return nil }
+            return unsafeBitCast(p, to: T.self)
         }
-        client = createClient?(nil)
-        return createDigitizer != nil && createFinger != nil && append != nil && setInteger != nil && setSender != nil && dispatch != nil && client != nil
+        createDigitizer = sym("IOHIDEventCreateDigitizerEvent", CreateDigitizer.self)
+        createFinger = sym("IOHIDEventCreateDigitizerFingerEvent", CreateFinger.self)
+        createClient = sym("IOHIDEventSystemClientCreate", CreateClient.self)
+        append = sym("IOHIDEventAppendEvent", Append.self)
+        setInteger = sym("IOHIDEventSetIntegerValue", SetInteger.self)
+        setSender = sym("IOHIDEventSetSenderID", SetSender.self)
+        dispatch = sym("IOHIDEventSystemClientDispatchEvent", Dispatch.self)
+        setInfo = sym("BKSHIDEventSetDigitizerInfo", SetDigitizerInfo.self)
+        guard let createClient, let c = createClient(nil, 0) else { return false }
+        client = c
+        return createDigitizer != nil && createFinger != nil && append != nil && dispatch != nil
     }
 
-    private func load<T>(_ name: String, _ handle: UnsafeMutableRawPointer) -> T? {
-        guard let symbol = dlsym(handle, name) else { return nil }
-        return unsafeBitCast(symbol, to: T.self)
-    }
-
-    private func appWindow() -> UIWindow? {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-            .filter { !$0.isHidden && $0.rootViewController != nil && !NSStringFromClass(type(of: $0)).contains("TPIOS") }
-            .first(where: { $0.windowLevel == .normal })
+    static func appWindow() -> UIWindow? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        return scenes.flatMap { $0.windows }
+            .filter { !$0.isHidden && $0.alpha > 0 && $0.windowLevel == .normal && $0.rootViewController != nil }
+            .first(where: { !NSStringFromClass(type(of: $0)).contains("TPIOS") })
     }
 }
