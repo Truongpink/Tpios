@@ -67,6 +67,9 @@ final class TPIOSAutoClickPanel: UIView {
         let config = UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
         button.setImage(UIImage(systemName: icon, withConfiguration: config), for: .normal)
         button.tintColor = .white
+        button.accessibilityLabel = icon
+        button.showsTouchWhenHighlighted = true
+        button.adjustsImageWhenHighlighted = true
         TPIOSPanelStyle.applyGradientFill(to: button, colors: colors, cornerRadius: 18)
         button.layer.cornerRadius = 18
         button.addTarget(self, action: action, for: .touchUpInside)
@@ -265,28 +268,46 @@ final class TPIOSAutoClickPanel: UIView {
     @objc private func closeTap() { onClose?() }
 
     @objc private func tapMode() {
-        statusLabel.text = "TAP MODE"
+        guard let point = points.first else {
+            statusLabel.text = "CHƯA CÓ ĐIỂM"
+            return
+        }
+        if TPIOSAutoClickEngine.shared.tap(at: point) {
+            tapCount += 1
+            countLabel.text = "TAP: \(tapCount)"
+            statusLabel.text = "ĐÃ CHẠM"
+        } else {
+            statusLabel.text = "CHẠM LỖI"
+        }
     }
 
-    @objc private func pointMode() { showPicker() }
+    @objc private func pointMode() {
+        statusLabel.text = "CHỌN ĐIỂM"
+        showPicker()
+    }
 
     @objc private func clearPoints() {
         stop()
         points.removeAll()
         markers.forEach { $0.removeFromSuperview() }
         markers.removeAll()
+        tapCount = 0
+        countLabel.text = "TAP: 0"
         pointLabel.text = "POINT: 0"
+        statusLabel.text = "ĐÃ XÓA"
     }
 
     @objc private func speedChanged() {
         speed = TimeInterval(speedSlider.value)
         speedLabel.text = String(format: "Tốc độ  %.2fs", speed)
+        statusLabel.text = String(format: "TỐC ĐỘ %.2fs", speed)
         if running { restartTimer() }
     }
 
     @objc private func startStop() {
         if running {
             stop()
+            statusLabel.text = "ĐÃ DỪNG"
             return
         }
         guard !points.isEmpty else {
@@ -294,7 +315,7 @@ final class TPIOSAutoClickPanel: UIView {
             return
         }
         running = true
-        statusLabel.text = "RUNNING"
+        statusLabel.text = "ĐANG CHẠM"
         startButton.setImage(UIImage(systemName: "stop.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)), for: .normal)
         restartTimer()
     }
@@ -360,6 +381,7 @@ final class TPIOSAutoClickPanel: UIView {
         points.append(point)
         addMarker(at: point)
         pointLabel.text = "POINT: \(points.count)"
+        statusLabel.text = "ĐÃ CHỌN \(points.count)"
     }
 
     @objc private func closePicker() {
@@ -390,6 +412,7 @@ final class TPIOSAutoClickPanel: UIView {
         marker.center.y += translation.y
         points[index] = marker.center
         gesture.setTranslation(.zero, in: window)
+        statusLabel.text = "ĐÃ DI CHUYỂN"
     }
 }
 
