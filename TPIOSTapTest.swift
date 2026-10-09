@@ -39,14 +39,14 @@ final class TPIOSAutoClickPanel: UIView {
     private var running = false
     private var speed: TimeInterval = 2.0
     private var picker: UIView?
-    private var header = UIView()
-    private var content = UIView()
-    private var statusLabel = UILabel()
-    private var countLabel = UILabel()
-    private var pointLabel = UILabel()
-    private var speedSlider = UISlider()
-    private var startButton = UIButton(type: .system)
-    private var resizeHandle = UIView()
+    private let header = UIView()
+    private let content = UIView()
+    private let statusLabel = UILabel()
+    private let countLabel = UILabel()
+    private let pointLabel = UILabel()
+    private let speedSlider = UISlider()
+    private let startButton = UIButton(type: .system)
+    private let resizeHandle = UIView()
     var onBack: (() -> Void)?
     var onClose: (() -> Void)?
 
@@ -62,9 +62,7 @@ final class TPIOSAutoClickPanel: UIView {
         b.setTitle(title, for: .normal)
         b.setTitleColor(.white, for: .normal)
         b.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
-        b.layer.cornerRadius = 12
-        b.clipsToBounds = true
-        TPIOSPanelStyle.applyGradientFill(to: b)
+        TPIOSPanelStyle.applyGradientFill(to: b, colors: [.systemBlue, .systemIndigo], cornerRadius: 12)
         return b
     }
 
@@ -73,7 +71,6 @@ final class TPIOSAutoClickPanel: UIView {
         clipsToBounds = true
         TPIOSPanelStyle.applyGlassBackground(to: self)
 
-        header.backgroundColor = .clear
         addSubview(header)
         let back = button("‹")
         back.frame = CGRect(x: 8, y: 6, width: 40, height: 32)
@@ -85,11 +82,10 @@ final class TPIOSAutoClickPanel: UIView {
         title.textColor = .white
         title.font = .systemFont(ofSize: 15, weight: .bold)
         title.textAlignment = .center
-        header.addSubview(title)
         title.tag = 1001
+        header.addSubview(title)
 
         let close = button("×")
-        close.frame = CGRect(x: 8, y: 6, width: 40, height: 32)
         close.addTarget(self, action: #selector(closeTap), for: .touchUpInside)
         header.addSubview(close)
         close.translatesAutoresizingMaskIntoConstraints = false
@@ -122,9 +118,9 @@ final class TPIOSAutoClickPanel: UIView {
         pointLabel.textColor = .white
         pointLabel.font = .systemFont(ofSize: 13)
         pointLabel.text = "POINT: 0"
-        [statusLabel, countLabel, pointLabel].enumerated().forEach { i, l in
-            l.frame = CGRect(x: 14, y: 60 + CGFloat(i) * 24, width: 240, height: 20)
-            content.addSubview(l)
+        [statusLabel, countLabel, pointLabel].enumerated().forEach { i, label in
+            label.frame = CGRect(x: 14, y: 60 + CGFloat(i) * 24, width: 240, height: 20)
+            content.addSubview(label)
         }
 
         speedSlider.minimumValue = 0.05
@@ -133,16 +129,19 @@ final class TPIOSAutoClickPanel: UIView {
         speedSlider.addTarget(self, action: #selector(speedChanged), for: .valueChanged)
         content.addSubview(speedSlider)
 
-        startButton = button("START")
+        startButton.setTitle("START", for: .normal)
+        startButton.setTitleColor(.white, for: .normal)
+        TPIOSPanelStyle.applyGradientFill(to: startButton, colors: [.systemBlue, .systemIndigo], cornerRadius: 12)
         startButton.addTarget(self, action: #selector(startStop), for: .touchUpInside)
         content.addSubview(startButton)
 
         resizeHandle.backgroundColor = UIColor.white.withAlphaComponent(0.35)
         resizeHandle.layer.cornerRadius = 4
         addSubview(resizeHandle)
-
         addSubview(content)
-        setupPan()
+
+        header.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(movePanel(_:))))
+        resizeHandle.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(resizePanel(_:))))
     }
 
     override func layoutSubviews() {
@@ -155,32 +154,26 @@ final class TPIOSAutoClickPanel: UIView {
         speedSlider.frame = CGRect(x: 14, y: 138, width: bounds.width - 28, height: 30)
         startButton.frame = CGRect(x: 14, y: 180, width: bounds.width - 28, height: 42)
         resizeHandle.frame = CGRect(x: bounds.width - 20, y: bounds.height - 20, width: 14, height: 14)
-        if let last = markers.last { _ = last }
+        TPIOSPanelStyle.syncFrames(in: self)
     }
 
-    private func setupPan() {
-        let pan = UIPanGestureRecognizer(target: self, action: #selector(movePanel(_:)))
-        header.addGestureRecognizer(pan)
-        let resize = UIPanGestureRecognizer(target: self, action: #selector(resizePanel(_:)))
-        resizeHandle.addGestureRecognizer(resize)
+    @objc private func movePanel(_ gesture: UIPanGestureRecognizer) {
+        guard let superview else { return }
+        let translation = gesture.translation(in: superview)
+        center.x += translation.x
+        center.y += translation.y
+        gesture.setTranslation(.zero, in: superview)
+        center.x = min(max(center.x, bounds.width / 2), superview.bounds.width - bounds.width / 2)
+        center.y = min(max(center.y, bounds.height / 2), superview.bounds.height - bounds.height / 2)
     }
 
-    @objc private func movePanel(_ g: UIPanGestureRecognizer) {
-        guard let s = superview else { return }
-        let t = g.translation(in: s)
-        center = CGPoint(x: center.x + t.x, y: center.y + t.y)
-        g.setTranslation(.zero, in: s)
-        center.x = min(max(center.x, bounds.width / 2), s.bounds.width - bounds.width / 2)
-        center.y = min(max(center.y, bounds.height / 2), s.bounds.height - bounds.height / 2)
-    }
-
-    @objc private func resizePanel(_ g: UIPanGestureRecognizer) {
-        guard let s = superview else { return }
-        let t = g.translation(in: s)
-        let w = min(max(260, bounds.width + t.x), s.bounds.width - frame.minX)
-        let h = min(max(360, bounds.height + t.y), s.bounds.height - frame.minY)
-        frame.size = CGSize(width: w, height: h)
-        g.setTranslation(.zero, in: s)
+    @objc private func resizePanel(_ gesture: UIPanGestureRecognizer) {
+        guard let superview else { return }
+        let translation = gesture.translation(in: superview)
+        let width = min(max(260, bounds.width + translation.x), superview.bounds.width - frame.minX)
+        let height = min(max(360, bounds.height + translation.y), superview.bounds.height - frame.minY)
+        frame.size = CGSize(width: width, height: height)
+        gesture.setTranslation(.zero, in: superview)
     }
 
     @objc private func backTap() { onBack?() }
@@ -188,8 +181,16 @@ final class TPIOSAutoClickPanel: UIView {
     @objc private func tapMode() { mode = .tap; sequenceIndex = 0 }
     @objc private func seqMode() { mode = .sequence; sequenceIndex = 0 }
     @objc private func pointMode() { showPicker() }
-    @objc private func clearPoints() { points.removeAll(); markers.forEach { $0.removeFromSuperview() }; markers.removeAll(); updateLabels() }
-    @objc private func speedChanged() { speed = TimeInterval(speedSlider.value); if running { restartTimer() } }
+    @objc private func clearPoints() {
+        points.removeAll()
+        markers.forEach { $0.removeFromSuperview() }
+        markers.removeAll()
+        pointLabel.text = "POINT: 0"
+    }
+    @objc private func speedChanged() {
+        speed = TimeInterval(speedSlider.value)
+        if running { restartTimer() }
+    }
 
     @objc private func startStop() {
         if running { stop(); return }
@@ -202,11 +203,11 @@ final class TPIOSAutoClickPanel: UIView {
 
     private func restartTimer() {
         timer?.cancel()
-        let t = DispatchSource.makeTimerSource(queue: .main)
-        t.schedule(deadline: .now() + speed, repeating: speed, leeway: .milliseconds(5))
-        t.setEventHandler { [weak self] in self?.performTap() }
-        t.resume()
-        timer = t
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + speed, repeating: speed, leeway: .milliseconds(5))
+        timer.setEventHandler { [weak self] in self?.performTap() }
+        timer.resume()
+        self.timer = timer
     }
 
     func stop() {
@@ -219,51 +220,52 @@ final class TPIOSAutoClickPanel: UIView {
 
     private func performTap() {
         guard !points.isEmpty else { return }
-        let p: CGPoint
+        let point: CGPoint
         switch mode {
-        case .tap: p = points[0]
+        case .tap:
+            point = points[0]
         case .sequence:
-            p = points[sequenceIndex % points.count]
+            point = points[sequenceIndex % points.count]
             sequenceIndex += 1
         }
-        if TPIOSAutoClickEngine.shared.tap(at: p) {
+        if TPIOSAutoClickEngine.shared.tap(at: point) {
             tapCount += 1
             countLabel.text = "TAP: \(tapCount)"
         }
     }
 
-    private func updateLabels() { pointLabel.text = "POINT: \(points.count)" }
-
     private func showPicker() {
         guard let window = TPIOSAutoClickEngine.appWindow(), picker == nil else { return }
-        let v = UIView(frame: window.bounds)
-        v.backgroundColor = UIColor.black.withAlphaComponent(0.18)
+        let overlay = UIView(frame: window.bounds)
+        overlay.backgroundColor = UIColor.black.withAlphaComponent(0.18)
         let label = UILabel(frame: CGRect(x: 20, y: 70, width: window.bounds.width - 40, height: 40))
         label.text = "Chạm màn hình để thêm điểm"
         label.textAlignment = .center
         label.textColor = .white
         label.font = .systemFont(ofSize: 16, weight: .semibold)
-        v.addSubview(label)
+        overlay.addSubview(label)
         let done = button("Xong")
         done.frame = CGRect(x: window.bounds.width - 90, y: 70, width: 70, height: 36)
         done.addTarget(self, action: #selector(closePicker), for: .touchUpInside)
-        v.addSubview(done)
-        let tap = UITapGestureRecognizer(target: self, action: #selector(pickerTap(_:)))
-        v.addGestureRecognizer(tap)
-        window.addSubview(v)
-        picker = v
+        overlay.addSubview(done)
+        overlay.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(pickerTap(_:))))
+        window.addSubview(overlay)
+        picker = overlay
     }
 
-    @objc private func pickerTap(_ g: UITapGestureRecognizer) {
+    @objc private func pickerTap(_ gesture: UITapGestureRecognizer) {
         guard let window = picker?.superview else { return }
-        let p = g.location(in: window)
-        if p.y < 120 { return }
-        points.append(p)
-        addMarker(at: p)
-        updateLabels()
+        let point = gesture.location(in: window)
+        guard point.y >= 120 else { return }
+        points.append(point)
+        addMarker(at: point)
+        pointLabel.text = "POINT: \(points.count)"
     }
 
-    @objc private func closePicker() { picker?.removeFromSuperview(); picker = nil }
+    @objc private func closePicker() {
+        picker?.removeFromSuperview()
+        picker = nil
+    }
 
     private func addMarker(at point: CGPoint) {
         guard let window = picker?.superview else { return }
@@ -280,12 +282,13 @@ final class TPIOSAutoClickPanel: UIView {
         markers.append(marker)
     }
 
-    @objc private func moveMarker(_ g: UIPanGestureRecognizer) {
-        guard let marker = g.view, let window = marker.superview, let index = markers.firstIndex(of: marker) else { return }
-        let t = g.translation(in: window)
-        marker.center = CGPoint(x: marker.center.x + t.x, y: marker.center.y + t.y)
-        g.setTranslation(.zero, in: window)
+    @objc private func moveMarker(_ gesture: UIPanGestureRecognizer) {
+        guard let marker = gesture.view, let window = marker.superview, let index = markers.firstIndex(of: marker) else { return }
+        let translation = gesture.translation(in: window)
+        marker.center.x += translation.x
+        marker.center.y += translation.y
         points[index] = marker.center
+        gesture.setTranslation(.zero, in: window)
     }
 }
 
@@ -318,7 +321,7 @@ final class TPIOSAutoClickEngine {
     private let range: UInt32 = 1 << 0
     private let touch: UInt32 = 1 << 1
     private let identity: UInt32 = 1 << 5
-    private let displayIntegrated: Int64 = (11 << 16) + 25
+    private let displayIntegrated: UInt32 = (11 << 16) + 25
     private let senderID: UInt64 = 0x8000000817319375
 
     func tap(at point: CGPoint) -> Bool {
@@ -346,8 +349,6 @@ final class TPIOSAutoClickEngine {
             setInfo(parent, context, DarwinBoolean(false), DarwinBoolean(false), nil, 0, 0)
         }
         dispatch(client, parent)
-        CFRelease(unsafeBitCast(child, to: CFTypeRef.self))
-        CFRelease(unsafeBitCast(parent, to: CFTypeRef.self))
         return true
     }
 
@@ -358,10 +359,12 @@ final class TPIOSAutoClickEngine {
         prepared = true
         guard let h = dlopen("/System/Library/PrivateFrameworks/IOKit.framework/IOKit", RTLD_NOW) else { return false }
         handle = h
+
         func sym<T>(_ name: String, _: T.Type) -> T? {
-            guard let p = dlsym(h, name) else { return nil }
-            return unsafeBitCast(p, to: T.self)
+            guard let pointer = dlsym(h, name) else { return nil }
+            return unsafeBitCast(pointer, to: T.self)
         }
+
         createDigitizer = sym("IOHIDEventCreateDigitizerEvent", CreateDigitizer.self)
         createFinger = sym("IOHIDEventCreateDigitizerFingerEvent", CreateFinger.self)
         createClient = sym("IOHIDEventSystemClientCreate", CreateClient.self)
@@ -370,15 +373,24 @@ final class TPIOSAutoClickEngine {
         setSender = sym("IOHIDEventSetSenderID", SetSender.self)
         dispatch = sym("IOHIDEventSystemClientDispatchEvent", Dispatch.self)
         setInfo = sym("BKSHIDEventSetDigitizerInfo", SetDigitizerInfo.self)
-        guard let createClient, let c = createClient(nil, 0) else { return false }
-        client = c
+
+        guard let createClient, let createdClient = createClient(nil, 0) else { return false }
+        client = createdClient
         return createDigitizer != nil && createFinger != nil && append != nil && dispatch != nil
     }
 
     static func appWindow() -> UIWindow? {
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        return scenes.flatMap { $0.windows }
-            .filter { !$0.isHidden && $0.alpha > 0 && $0.windowLevel == .normal && $0.rootViewController != nil }
-            .first(where: { !NSStringFromClass(type(of: $0)).contains("TPIOS") })
+        let scenes: [UIWindowScene] = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        var windows: [UIWindow] = []
+        for scene in scenes {
+            windows.append(contentsOf: scene.windows)
+        }
+        for window in windows {
+            let className = NSStringFromClass(type(of: window))
+            if !window.isHidden && window.alpha > 0 && window.windowLevel == .normal && window.rootViewController != nil && !className.contains("TPIOS") {
+                return window
+            }
+        }
+        return nil
     }
 }
