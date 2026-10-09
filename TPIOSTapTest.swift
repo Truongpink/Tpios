@@ -13,9 +13,15 @@ final class TPIOSTapTest: NSObject {
     private var pickOverlay: UIView?
     private var dots: [UIView] = []
 
+    // Gọi khi bước thử kết thúc (hoặc không bắt đầu được) để menu hiện lại.
+    var onFinish: (() -> Void)?
+
     func start() {
         clearDots()
-        guard let host = keyWindow() else { return }
+        guard let host = keyWindow() else {
+            onFinish?()
+            return
+        }
 
         let overlay = UIView(frame: host.bounds)
         overlay.backgroundColor = UIColor.black.withAlphaComponent(0.001)
@@ -48,6 +54,7 @@ final class TPIOSTapTest: NSObject {
         let target = appWindow() ?? host
         showDot(at: point, in: target)
         test(point: point, in: target)
+        onFinish?()
     }
 
     private func test(point: CGPoint, in host: UIWindow) {
