@@ -11,7 +11,7 @@ final class TPIOSTapTest {
 
     func start() {
         guard panel == nil, let window = TPIOSAutoClickEngine.appWindow() else { return }
-        let size = CGSize(width: min(320, window.bounds.width - 24), height: min(500, window.bounds.height - 80))
+        let size = CGSize(width: 240, height: 350)
         let frame = CGRect(x: (window.bounds.width - size.width) / 2, y: (window.bounds.height - size.height) / 2, width: size.width, height: size.height)
         let p = TPIOSAutoClickPanel(frame: frame)
         p.onBack = { [weak self] in self?.finish() }
@@ -29,24 +29,30 @@ final class TPIOSTapTest {
 }
 
 final class TPIOSAutoClickPanel: UIView {
-    private enum Mode { case tap, sequence }
-    private var mode: Mode = .tap
     private var points: [CGPoint] = []
     private var markers: [UIView] = []
     private var timer: DispatchSourceTimer?
-    private var sequenceIndex = 0
     private var tapCount = 0
     private var running = false
     private var speed: TimeInterval = 2.0
     private var picker: UIView?
+
     private let header = UIView()
     private let content = UIView()
     private let statusLabel = UILabel()
     private let countLabel = UILabel()
     private let pointLabel = UILabel()
+    private let speedLabel = UILabel()
     private let speedSlider = UISlider()
+    private let tapButton = UIButton(type: .system)
+    private let pointButton = UIButton(type: .system)
+    private let clearButton = UIButton(type: .system)
     private let startButton = UIButton(type: .system)
-    private let resizeHandle = UIView()
+    private let resizeHandle = UILabel()
+
+    private var resizeStartFrame = CGRect.zero
+    private var resizeStartPoint = CGPoint.zero
+
     var onBack: (() -> Void)?
     var onClose: (() -> Void)?
 
@@ -57,71 +63,87 @@ final class TPIOSAutoClickPanel: UIView {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    private func button(_ title: String) -> UIButton {
-        let b = UIButton(type: .system)
-        b.setTitle(title, for: .normal)
-        b.setTitleColor(.white, for: .normal)
-        b.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
-        TPIOSPanelStyle.applyGradientFill(to: b, colors: [.systemBlue, .systemIndigo], cornerRadius: 12)
-        return b
+    private func iconButton(_ button: UIButton, icon: String, colors: [UIColor], action: Selector) {
+        let config = UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
+        button.setImage(UIImage(systemName: icon, withConfiguration: config), for: .normal)
+        button.tintColor = .white
+        TPIOSPanelStyle.applyGradientFill(to: button, colors: colors, cornerRadius: 18)
+        button.layer.cornerRadius = 18
+        button.addTarget(self, action: action, for: .touchUpInside)
+        content.addSubview(button)
+    }
+
+    private func caption(_ label: UILabel, text: String) {
+        label.text = text
+        label.textColor = .white
+        label.font = .systemFont(ofSize: 13, weight: .semibold)
+        label.textAlignment = .center
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.7
+        content.addSubview(label)
     }
 
     private func setup() {
-        layer.cornerRadius = 18
+        TPIOSPanelStyle.applyGlassBackground(to: self, cornerRadius: 24)
         clipsToBounds = true
-        TPIOSPanelStyle.applyGlassBackground(to: self)
 
+        header.backgroundColor = UIColor(red: 0.075, green: 0.085, blue: 0.105, alpha: 1)
+        header.layer.cornerRadius = 24
+        header.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
         addSubview(header)
-        let back = button("‹")
-        back.frame = CGRect(x: 8, y: 6, width: 40, height: 32)
+
+        let back = UIButton(type: .system)
+        back.setImage(UIImage(systemName: "chevron.left"), for: .normal)
+        back.tintColor = UIColor.white.withAlphaComponent(0.75)
+        back.backgroundColor = UIColor.white.withAlphaComponent(0.07)
+        back.layer.cornerRadius = 17
         back.addTarget(self, action: #selector(backTap), for: .touchUpInside)
         header.addSubview(back)
 
         let title = UILabel()
-        title.text = "AUTO CLICKER"
+        title.text = "CHẠM"
         title.textColor = .white
-        title.font = .systemFont(ofSize: 15, weight: .bold)
+        title.font = .systemFont(ofSize: 19, weight: .bold)
         title.textAlignment = .center
         title.tag = 1001
         header.addSubview(title)
 
-        let close = button("×")
+        let close = UIButton(type: .system)
+        close.setImage(UIImage(systemName: "xmark"), for: .normal)
+        close.tintColor = UIColor.white.withAlphaComponent(0.75)
+        close.backgroundColor = UIColor.white.withAlphaComponent(0.07)
+        close.layer.cornerRadius = 17
         close.addTarget(self, action: #selector(closeTap), for: .touchUpInside)
         header.addSubview(close)
-        close.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            close.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -8),
-            close.topAnchor.constraint(equalTo: header.topAnchor, constant: 6),
-            close.widthAnchor.constraint(equalToConstant: 40),
-            close.heightAnchor.constraint(equalToConstant: 32)
-        ])
 
-        let tap = button("TAP")
-        tap.addTarget(self, action: #selector(tapMode), for: .touchUpInside)
-        let seq = button("SEQ")
-        seq.addTarget(self, action: #selector(seqMode), for: .touchUpInside)
-        let point = button("POINT")
-        point.addTarget(self, action: #selector(pointMode), for: .touchUpInside)
-        let clear = button("CLEAR")
-        clear.addTarget(self, action: #selector(clearPoints), for: .touchUpInside)
-        [tap, seq, point, clear].enumerated().forEach { i, b in
-            b.frame = CGRect(x: 12 + CGFloat(i) * 66, y: 10, width: 60, height: 36)
-            content.addSubview(b)
-        }
+        iconButton(tapButton, icon: "hand.tap.fill", colors: [UIColor(red: 0.95, green: 0.30, blue: 0.60, alpha: 1), UIColor(red: 0.55, green: 0.10, blue: 0.45, alpha: 1)], action: #selector(tapMode))
+        iconButton(pointButton, icon: "scope", colors: [UIColor(red: 0.36, green: 0.71, blue: 1.00, alpha: 1), UIColor(red: 0.09, green: 0.39, blue: 0.80, alpha: 1)], action: #selector(pointMode))
+        iconButton(clearButton, icon: "trash.fill", colors: [UIColor(red: 1.00, green: 0.35, blue: 0.27, alpha: 1), UIColor(red: 0.64, green: 0.06, blue: 0.06, alpha: 1)], action: #selector(clearPoints))
+        iconButton(startButton, icon: "play.fill", colors: [UIColor(red: 0.36, green: 0.88, blue: 0.55, alpha: 1), UIColor(red: 0.06, green: 0.52, blue: 0.33, alpha: 1)], action: #selector(startStop))
 
-        statusLabel.textColor = .white
-        statusLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        let tapLabel = UILabel()
+        let pointCaption = UILabel()
+        let clearLabel = UILabel()
+        let startLabel = UILabel()
+        caption(tapLabel, text: "Chạm")
+        caption(pointCaption, text: "Điểm")
+        caption(clearLabel, text: "Xóa")
+        caption(startLabel, text: "Bắt đầu")
+
         statusLabel.text = "IDLE"
-        countLabel.textColor = .white
-        countLabel.font = .systemFont(ofSize: 13)
         countLabel.text = "TAP: 0"
-        pointLabel.textColor = .white
-        pointLabel.font = .systemFont(ofSize: 13)
         pointLabel.text = "POINT: 0"
-        [statusLabel, countLabel, pointLabel].enumerated().forEach { i, label in
-            label.frame = CGRect(x: 14, y: 60 + CGFloat(i) * 24, width: 240, height: 20)
+        for label in [statusLabel, countLabel, pointLabel] {
+            label.textColor = UIColor.white.withAlphaComponent(0.82)
+            label.font = .systemFont(ofSize: 11, weight: .medium)
             content.addSubview(label)
         }
+
+        speedLabel.text = "Tốc độ  2.0s"
+        speedLabel.textColor = UIColor.white.withAlphaComponent(0.82)
+        speedLabel.font = .systemFont(ofSize: 11, weight: .semibold)
+        speedLabel.textAlignment = .center
+        content.addSubview(speedLabel)
 
         speedSlider.minimumValue = 0.05
         speedSlider.maximumValue = 5.0
@@ -129,16 +151,14 @@ final class TPIOSAutoClickPanel: UIView {
         speedSlider.addTarget(self, action: #selector(speedChanged), for: .valueChanged)
         content.addSubview(speedSlider)
 
-        startButton.setTitle("START", for: .normal)
-        startButton.setTitleColor(.white, for: .normal)
-        TPIOSPanelStyle.applyGradientFill(to: startButton, colors: [.systemBlue, .systemIndigo], cornerRadius: 12)
-        startButton.addTarget(self, action: #selector(startStop), for: .touchUpInside)
-        content.addSubview(startButton)
-
-        resizeHandle.backgroundColor = UIColor.white.withAlphaComponent(0.35)
-        resizeHandle.layer.cornerRadius = 4
-        addSubview(resizeHandle)
         addSubview(content)
+
+        resizeHandle.text = "↘"
+        resizeHandle.textColor = UIColor.white.withAlphaComponent(0.42)
+        resizeHandle.font = .systemFont(ofSize: 19, weight: .medium)
+        resizeHandle.textAlignment = .center
+        resizeHandle.isUserInteractionEnabled = true
+        addSubview(resizeHandle)
 
         header.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(movePanel(_:))))
         resizeHandle.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(resizePanel(_:))))
@@ -146,15 +166,71 @@ final class TPIOSAutoClickPanel: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        header.frame = CGRect(x: 0, y: 0, width: bounds.width, height: 44)
-        if let title = viewWithTag(1001) as? UILabel {
-            title.frame = CGRect(x: 52, y: 6, width: bounds.width - 104, height: 32)
+
+        let scale = min(bounds.width / 240, bounds.height / 350)
+        let headerHeight = 66 * scale
+        header.frame = CGRect(x: 0, y: 0, width: bounds.width, height: headerHeight)
+        content.frame = CGRect(x: 0, y: headerHeight, width: bounds.width, height: max(0, bounds.height - headerHeight))
+
+        let backSize = 34 * scale
+        let closeSize = 34 * scale
+        let side = 16 * scale
+        if let back = header.subviews.first(where: { $0 is UIButton }) as? UIButton {
+            back.frame = CGRect(x: side, y: 16 * scale, width: backSize, height: backSize)
         }
-        content.frame = CGRect(x: 0, y: 44, width: bounds.width, height: bounds.height - 44)
-        speedSlider.frame = CGRect(x: 14, y: 138, width: bounds.width - 28, height: 30)
-        startButton.frame = CGRect(x: 14, y: 180, width: bounds.width - 28, height: 42)
-        resizeHandle.frame = CGRect(x: bounds.width - 20, y: bounds.height - 20, width: 14, height: 14)
-        TPIOSPanelStyle.syncFrames(in: self)
+        if let close = header.subviews.compactMap({ $0 as? UIButton }).last {
+            close.frame = CGRect(x: bounds.width - side - closeSize, y: 16 * scale, width: closeSize, height: closeSize)
+        }
+        if let title = header.viewWithTag(1001) as? UILabel {
+            title.frame = CGRect(x: 56 * scale, y: 12 * scale, width: max(0, bounds.width - 112 * scale), height: 42 * scale)
+            title.font = .systemFont(ofSize: max(12, 19 * scale), weight: .bold)
+        }
+
+        let sidePadding = 14 * scale
+        let columnGap = 10 * scale
+        let contentWidth = max(0, bounds.width - sidePadding * 2)
+        let columnWidth = max(0, (contentWidth - columnGap * 2) / 3)
+        let iconSize = min(columnWidth, 58 * scale)
+        let iconInset = max(0, (columnWidth - iconSize) / 2)
+        let labelHeight = 15 * scale
+        let iconLabelGap = 3 * scale
+        let rowHeight = iconSize + iconLabelGap + labelHeight
+        let rowGap = 7 * scale
+        let top = 10 * scale
+
+        let buttons = [tapButton, pointButton, clearButton]
+        let labels = content.subviews.compactMap { $0 as? UILabel }.filter { $0 !== statusLabel && $0 !== countLabel && $0 !== pointLabel && $0 !== speedLabel }
+        for index in 0..<buttons.count {
+            let x = sidePadding + CGFloat(index) * (columnWidth + columnGap) + iconInset
+            buttons[index].frame = CGRect(x: x, y: top, width: iconSize, height: iconSize)
+            buttons[index].layer.cornerRadius = iconSize * 0.28
+            TPIOSPanelStyle.syncFrames(in: buttons[index])
+            if index < labels.count {
+                labels[index].frame = CGRect(x: sidePadding + CGFloat(index) * (columnWidth + columnGap), y: top + iconSize + iconLabelGap, width: columnWidth, height: labelHeight)
+                labels[index].font = .systemFont(ofSize: max(8, 13 * scale), weight: .semibold)
+            }
+        }
+
+        let secondY = top + rowHeight + rowGap
+        let startIndex = 3
+        startButton.frame = CGRect(x: sidePadding + iconInset, y: secondY, width: iconSize, height: iconSize)
+        startButton.layer.cornerRadius = iconSize * 0.28
+        TPIOSPanelStyle.syncFrames(in: startButton)
+        if labels.count > startIndex {
+            labels[startIndex].frame = CGRect(x: sidePadding, y: secondY + iconSize + iconLabelGap, width: columnWidth, height: labelHeight)
+            labels[startIndex].font = .systemFont(ofSize: max(8, 13 * scale), weight: .semibold)
+        }
+
+        let infoY = secondY + rowHeight + 3 * scale
+        statusLabel.frame = CGRect(x: sidePadding, y: infoY, width: bounds.width - sidePadding * 2, height: 15 * scale)
+        countLabel.frame = CGRect(x: sidePadding, y: infoY + 16 * scale, width: (bounds.width - sidePadding * 2) / 2 - 4 * scale, height: 15 * scale)
+        pointLabel.frame = CGRect(x: bounds.midX + 4 * scale, y: infoY + 16 * scale, width: (bounds.width - sidePadding * 2) / 2 - 4 * scale, height: 15 * scale)
+        speedLabel.frame = CGRect(x: sidePadding, y: infoY + 35 * scale, width: bounds.width - sidePadding * 2, height: 15 * scale)
+        speedLabel.font = .systemFont(ofSize: max(8, 11 * scale), weight: .semibold)
+        speedSlider.frame = CGRect(x: sidePadding, y: infoY + 48 * scale, width: bounds.width - sidePadding * 2, height: 24 * scale)
+
+        resizeHandle.frame = CGRect(x: bounds.width - 44 * scale, y: bounds.height - 44 * scale, width: 44 * scale, height: 44 * scale)
+        resizeHandle.font = .systemFont(ofSize: 19 * scale, weight: .medium)
     }
 
     @objc private func movePanel(_ gesture: UIPanGestureRecognizer) {
@@ -169,35 +245,57 @@ final class TPIOSAutoClickPanel: UIView {
 
     @objc private func resizePanel(_ gesture: UIPanGestureRecognizer) {
         guard let superview else { return }
-        let translation = gesture.translation(in: superview)
-        let width = min(max(260, bounds.width + translation.x), superview.bounds.width - frame.minX)
-        let height = min(max(360, bounds.height + translation.y), superview.bounds.height - frame.minY)
-        frame.size = CGSize(width: width, height: height)
-        gesture.setTranslation(.zero, in: superview)
+        switch gesture.state {
+        case .began:
+            resizeStartFrame = frame
+            resizeStartPoint = gesture.location(in: superview)
+        case .changed:
+            let point = gesture.location(in: superview)
+            let dx = point.x - resizeStartPoint.x
+            let dy = point.y - resizeStartPoint.y
+            let width = min(max(240, resizeStartFrame.width + dx), superview.bounds.width - resizeStartFrame.minX)
+            let height = min(max(330, resizeStartFrame.height + dy), superview.bounds.height - resizeStartFrame.minY)
+            frame = CGRect(x: resizeStartFrame.minX, y: resizeStartFrame.minY, width: width, height: height)
+        default:
+            break
+        }
     }
 
     @objc private func backTap() { onBack?() }
     @objc private func closeTap() { onClose?() }
-    @objc private func tapMode() { mode = .tap; sequenceIndex = 0 }
-    @objc private func seqMode() { mode = .sequence; sequenceIndex = 0 }
+
+    @objc private func tapMode() {
+        statusLabel.text = "TAP MODE"
+    }
+
     @objc private func pointMode() { showPicker() }
+
     @objc private func clearPoints() {
+        stop()
         points.removeAll()
         markers.forEach { $0.removeFromSuperview() }
         markers.removeAll()
         pointLabel.text = "POINT: 0"
     }
+
     @objc private func speedChanged() {
         speed = TimeInterval(speedSlider.value)
+        speedLabel.text = String(format: "Tốc độ  %.2fs", speed)
         if running { restartTimer() }
     }
 
     @objc private func startStop() {
-        if running { stop(); return }
-        guard !points.isEmpty else { return }
+        if running {
+            stop()
+            return
+        }
+        guard !points.isEmpty else {
+            statusLabel.text = "CHƯA CÓ ĐIỂM"
+            return
+        }
         running = true
         statusLabel.text = "RUNNING"
-        startButton.setTitle("STOP", for: .normal)
+        startButton.setImage(UIImage(systemName: "stop.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)), for: .normal)
         restartTimer()
     }
 
@@ -215,20 +313,15 @@ final class TPIOSAutoClickPanel: UIView {
         timer = nil
         running = false
         statusLabel.text = "IDLE"
-        startButton.setTitle("START", for: .normal)
+        startButton.setImage(UIImage(systemName: "play.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)), for: .normal)
     }
 
     private func performTap() {
-        guard !points.isEmpty else { return }
-        let point: CGPoint
-        switch mode {
-        case .tap:
-            point = points[0]
-        case .sequence:
-            point = points[sequenceIndex % points.count]
-            sequenceIndex += 1
+        guard !points.isEmpty else {
+            stop()
+            return
         }
-        if TPIOSAutoClickEngine.shared.tap(at: point) {
+        if TPIOSAutoClickEngine.shared.tap(at: points[0]) {
             tapCount += 1
             countLabel.text = "TAP: \(tapCount)"
         }
@@ -238,16 +331,23 @@ final class TPIOSAutoClickPanel: UIView {
         guard let window = TPIOSAutoClickEngine.appWindow(), picker == nil else { return }
         let overlay = UIView(frame: window.bounds)
         overlay.backgroundColor = UIColor.black.withAlphaComponent(0.18)
+
         let label = UILabel(frame: CGRect(x: 20, y: 70, width: window.bounds.width - 40, height: 40))
         label.text = "Chạm màn hình để thêm điểm"
         label.textAlignment = .center
         label.textColor = .white
         label.font = .systemFont(ofSize: 16, weight: .semibold)
         overlay.addSubview(label)
-        let done = button("Xong")
+
+        let done = UIButton(type: .system)
+        done.setTitle("Xong", for: .normal)
+        done.setTitleColor(.white, for: .normal)
+        done.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
+        TPIOSPanelStyle.applyGradientFill(to: done, colors: [.systemBlue, .systemIndigo], cornerRadius: 18)
         done.frame = CGRect(x: window.bounds.width - 90, y: 70, width: 70, height: 36)
         done.addTarget(self, action: #selector(closePicker), for: .touchUpInside)
         overlay.addSubview(done)
+
         overlay.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(pickerTap(_:))))
         window.addSubview(overlay)
         picker = overlay
@@ -265,6 +365,7 @@ final class TPIOSAutoClickPanel: UIView {
     @objc private func closePicker() {
         picker?.removeFromSuperview()
         picker = nil
+        statusLabel.text = points.isEmpty ? "CHƯA CÓ ĐIỂM" : "POINT READY"
     }
 
     private func addMarker(at point: CGPoint) {
