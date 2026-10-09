@@ -71,6 +71,7 @@ Menu chính là **UI reference duy nhất**. Mọi menu con và nút bên trong 
 **Quy tắc:**
 - Menu con mở lên phải dùng cùng kích thước/logic scale, corner radius, header, padding, grid, spacing, resize và cách căn của Menu chính.
 - Nút dùng dạng icon vuông bo góc như Menu chính; giữ cùng hệ gradient/style, không tự đổi kiểu.
+- **Mọi nút chức năng phải có một icon bên trong nút phù hợp, dễ nhận biết và thể hiện đúng chức năng; không tạo nút chức năng chỉ có chữ hoặc icon không liên quan.**
 - Icon, font, label và khoảng cách phải theo chuẩn trên; tên đặt ngoài icon, ngắn gọn nhưng dễ hiểu.
 - Resize phải scale đồng bộ icon, chữ, spacing và layout; không tràn, cắt hoặc chồng nội dung; giữ minimum size hợp lý.
 - Menu phải kéo bằng header và clamp trong màn hình; có Back và X/Close khi phù hợp.
