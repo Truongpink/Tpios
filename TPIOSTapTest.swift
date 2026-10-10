@@ -385,8 +385,9 @@ final class TPIOSAutoClickPanel: UIView {
 
     @objc private func pickerTap(_ gesture: UITapGestureRecognizer) {
         guard let overlay = picker, let window = overlay.superview as? UIWindow else { return }
-        let point = gesture.location(in: window)
-        guard point.x >= 0, point.y >= 0, point.x <= window.bounds.width, point.y <= window.bounds.height else { return }
+        let localPoint = gesture.location(in: overlay)
+        let point = overlay.convert(localPoint, to: window)
+        guard window.bounds.contains(point) else { return }
 
         points.append(point)
         let index = points.count
