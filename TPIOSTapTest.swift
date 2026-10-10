@@ -438,45 +438,67 @@ final class TPIOSAutoClickEngine {
     static let shared = TPIOSAutoClickEngine()
     private init() {}
 
-    private typealias CreateFinger = @convention(c) (CFAllocator?, UInt64, UInt32, UInt32, UInt32, UInt32, Double, Double, Double, Double, Double, DarwinBoolean, DarwinBoolean, UInt32) -> OpaquePointer?
+    private typealias CreateDigitizer = @convention(c) (CFAllocator?, UInt64, UInt32, UInt32, UInt32, UInt32, UInt32, Double, Double, Double, Double, Double, DarwinBoolean, DarwinBoolean, UInt32) -> OpaquePointer?
+    private typealias CreateFinger = @convention(c) (CFAllocator?, UInt64, UInt32, UInt32, UInt32, Double, Double, Double, Double, Double, DarwinBoolean, DarwinBoolean, UInt32) -> OpaquePointer?
     private typealias CreateClient = @convention(c) (CFAllocator?, UInt32) -> OpaquePointer?
+    private typealias Append = @convention(c) (OpaquePointer, OpaquePointer, UInt32) -> Void
+    private typealias SetInteger = @convention(c) (OpaquePointer, UInt32, Int64) -> Void
+    private typealias SetSender = @convention(c) (OpaquePointer, UInt64) -> Void
     private typealias Dispatch = @convention(c) (OpaquePointer, OpaquePointer) -> Void
+    private typealias SetDigitizerInfo = @convention(c) (OpaquePointer, UInt32, DarwinBoolean, DarwinBoolean, UnsafeMutableRawPointer?, UInt32, UInt32) -> Void
 
     private var handle: UnsafeMutableRawPointer?
     private var client: OpaquePointer?
+    private var createDigitizer: CreateDigitizer?
     private var createFinger: CreateFinger?
     private var createClient: CreateClient?
+    private var append: Append?
+    private var setInteger: SetInteger?
+    private var setSender: SetSender?
     private var dispatch: Dispatch?
+    private var setInfo: SetDigitizerInfo?
     private var prepared = false
     private let lock = NSLock()
 
-    private let touch: UInt32 = 1 << 0
+    private let range: UInt32 = 1 << 0
+    private let touch: UInt32 = 1 << 1
+    private let identity: UInt32 = 1 << 5
+    private let displayIntegrated: UInt32 = (11 << 16) + 25
+    private let senderID: UInt64 = 0x8000000817319375
 
     func tap(at point: CGPoint) -> Bool {
-        guard prepare(), let client else { return false }
-
-        let timestamp = mach_absolute_time()
-        guard let down = createFinger?(nil, timestamp, 1, 2, touch, 0, Double(point.x), Double(point.y), 0, 1.0, 0, DarwinBoolean(true), DarwinBoolean(true), 0) else {
-            return false
-        }
-        dispatch?(client, down)
-
+        guard prepare(), let client, let window = Self.appWindow() else { return false }
+        let x = max(0, min(Double(window.bounds.width), Double(point.x)))
+        let y = max(0, min(Double(window.bounds.height), Double(point.y)))
+        guard send(client, window, x, y, true) else { return false }
         usleep(2000)
+        return send(client, window, x, y, false)
+    }
 
-        let upTimestamp = mach_absolute_time()
-        guard let up = createFinger?(nil, upTimestamp, 1, 2, 0, 0, Double(point.x), Double(point.y), 0, 0, 0, DarwinBoolean(false), DarwinBoolean(false), 0) else {
-            return false
+    private func send(_ client: OpaquePointer, _ window: UIWindow, _ x: Double, _ y: Double, _ touching: Bool) -> Bool {
+        let mask = touching ? (touch | identity) : (range | touch | identity)
+        guard let parent = createDigitizer?(nil, mach_absolute_time(), 3, 0, 0, mask, 0, 0, 0, 0, 0, 0, DarwinBoolean(false), DarwinBoolean(touching), 0),
+              let child = createFinger?(nil, mach_absolute_time(), 1, 2, range | touch, x, y, 0, 0, 0, DarwinBoolean(touching), DarwinBoolean(touching), 0),
+              let append,
+              let dispatch else { return false }
+
+        setInteger?(parent, displayIntegrated, 1)
+        setSender?(parent, senderID)
+        append(parent, child, 0)
+
+        if let setInfo {
+            let context = (window.value(forKey: "_contextId") as? NSNumber)?.uint32Value ?? 0
+            setInfo(parent, context, DarwinBoolean(false), DarwinBoolean(false), nil, 0, 0)
         }
-        dispatch?(client, up)
+        dispatch(client, parent)
         return true
     }
 
     private func prepare() -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        if prepared { return client != nil && createFinger != nil && dispatch != nil }
+        if prepared { return client != nil && dispatch != nil }
         prepared = true
-
         guard let h = dlopen("/System/Library/PrivateFrameworks/IOKit.framework/IOKit", RTLD_NOW) else { return false }
         handle = h
 
@@ -485,13 +507,18 @@ final class TPIOSAutoClickEngine {
             return unsafeBitCast(pointer, to: T.self)
         }
 
+        createDigitizer = sym("IOHIDEventCreateDigitizerEvent", CreateDigitizer.self)
         createFinger = sym("IOHIDEventCreateDigitizerFingerEvent", CreateFinger.self)
         createClient = sym("IOHIDEventSystemClientCreate", CreateClient.self)
+        append = sym("IOHIDEventAppendEvent", Append.self)
+        setInteger = sym("IOHIDEventSetIntegerValue", SetInteger.self)
+        setSender = sym("IOHIDEventSetSenderID", SetSender.self)
         dispatch = sym("IOHIDEventSystemClientDispatchEvent", Dispatch.self)
+        setInfo = sym("BKSHIDEventSetDigitizerInfo", SetDigitizerInfo.self)
 
         guard let createClient, let createdClient = createClient(nil, 0) else { return false }
         client = createdClient
-        return createFinger != nil && dispatch != nil
+        return createDigitizer != nil && createFinger != nil && append != nil && dispatch != nil
     }
 
     static func appWindow() -> UIWindow? {
