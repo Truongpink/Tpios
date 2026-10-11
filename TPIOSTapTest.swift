@@ -50,6 +50,8 @@ final class TPIOSAutoClickPanel: UIView {
     private let pointLabel = UILabel()
     private let speedLabel = UILabel()
     private let speedSlider = UISlider()
+    private let speedMinusButton = UIButton(type: .system)
+    private let speedPlusButton = UIButton(type: .system)
     private let tapButton = UIButton(type: .system)
     private let pointButton = UIButton(type: .system)
     private let clearButton = UIButton(type: .system)
@@ -82,6 +84,18 @@ final class TPIOSAutoClickPanel: UIView {
         button.adjustsImageWhenHighlighted = true
         TPIOSPanelStyle.applyGradientFill(to: button, colors: colors, cornerRadius: 18)
         button.layer.cornerRadius = 18
+        button.addTarget(self, action: action, for: .touchUpInside)
+        content.addSubview(button)
+    }
+
+    private func speedButton(_ button: UIButton, icon: String, action: Selector) {
+        let config = UIImage.SymbolConfiguration(pointSize: 13, weight: .bold)
+        button.setTitle(nil, for: .normal)
+        button.setImage(UIImage(systemName: icon, withConfiguration: config), for: .normal)
+        button.setPreferredSymbolConfiguration(config, forImageIn: .normal)
+        button.tintColor = UIColor.white.withAlphaComponent(0.9)
+        button.backgroundColor = UIColor.white.withAlphaComponent(0.10)
+        button.layer.cornerRadius = 10
         button.addTarget(self, action: action, for: .touchUpInside)
         content.addSubview(button)
     }
@@ -164,6 +178,9 @@ final class TPIOSAutoClickPanel: UIView {
         speedSlider.addTarget(self, action: #selector(speedChanged), for: .valueChanged)
         content.addSubview(speedSlider)
 
+        speedButton(speedMinusButton, icon: "chevron.left", action: #selector(decreaseSpeed))
+        speedButton(speedPlusButton, icon: "chevron.right", action: #selector(increaseSpeed))
+
         addSubview(content)
 
         resizeHandle.text = "↘"
@@ -239,7 +256,16 @@ final class TPIOSAutoClickPanel: UIView {
         pointLabel.frame = CGRect(x: bounds.midX + 4 * scale, y: infoY + 16 * scale, width: (bounds.width - sidePadding * 2) / 2 - 4 * scale, height: 15 * scale)
         speedLabel.frame = CGRect(x: sidePadding, y: infoY + 35 * scale, width: bounds.width - sidePadding * 2, height: 15 * scale)
         speedLabel.font = .systemFont(ofSize: max(8, 11 * scale), weight: .semibold)
-        speedSlider.frame = CGRect(x: sidePadding, y: infoY + 48 * scale, width: bounds.width - sidePadding * 2, height: 24 * scale)
+
+        let controlY = infoY + 48 * scale
+        let controlHeight = 24 * scale
+        let arrowSize = 26 * scale
+        let arrowGap = 4 * scale
+        speedMinusButton.frame = CGRect(x: sidePadding, y: controlY, width: arrowSize, height: controlHeight)
+        speedPlusButton.frame = CGRect(x: bounds.width - sidePadding - arrowSize, y: controlY, width: arrowSize, height: controlHeight)
+        speedMinusButton.layer.cornerRadius = 10 * scale
+        speedPlusButton.layer.cornerRadius = 10 * scale
+        speedSlider.frame = CGRect(x: sidePadding + arrowSize + arrowGap, y: controlY, width: max(20, bounds.width - sidePadding * 2 - (arrowSize + arrowGap) * 2), height: controlHeight)
 
         resizeHandle.frame = CGRect(x: bounds.width - 44 * scale, y: bounds.height - 44 * scale, width: 44 * scale, height: 44 * scale)
         resizeHandle.font = .systemFont(ofSize: 19 * scale, weight: .medium)
@@ -314,6 +340,20 @@ final class TPIOSAutoClickPanel: UIView {
         if running { restartTimer() }
     }
 
+    private func changeSpeed(by delta: TimeInterval) {
+        let value = min(5.0, max(0.05, speed + delta))
+        speedSlider.setValue(Float(value), animated: true)
+        speedChanged()
+    }
+
+    @objc private func decreaseSpeed() {
+        changeSpeed(by: -0.05)
+    }
+
+    @objc private func increaseSpeed() {
+        changeSpeed(by: 0.05)
+    }
+
     @objc private func startStop() {
         if running {
             stop()
@@ -328,11 +368,15 @@ final class TPIOSAutoClickPanel: UIView {
         currentPointIndex = 0
         statusLabel.text = "ĐANG CHẠM"
         setStartIcon("stop.fill")
-        performTap()
-        restartTimer()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.running else { return }
+            self.performTap()
+            self.restartTimer()
+        }
     }
 
     private func restartTimer() {
+        guard running, !points.isEmpty else { return }
         timer?.cancel()
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + speed, repeating: speed, leeway: .milliseconds(5))
@@ -362,14 +406,16 @@ final class TPIOSAutoClickPanel: UIView {
             stop()
             return
         }
-        let point = points[currentPointIndex]
+        let index = currentPointIndex
+        let point = points[index]
         if TPIOSAutoClickEngine.shared.tap(at: point) {
             tapCount += 1
             countLabel.text = "TAP: \(tapCount)"
+            statusLabel.text = "ĐÃ CHẠM \(index + 1)"
+            currentPointIndex = (index + 1) % points.count
         } else {
             statusLabel.text = "CHẠM LỖI"
         }
-        currentPointIndex = (currentPointIndex + 1) % points.count
     }
 
     private func showPicker() {
