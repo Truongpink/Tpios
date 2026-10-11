@@ -515,29 +515,24 @@ final class TPIOSAutoClickEngine {
 
     func tap(at point: CGPoint) -> Bool {
         guard prepare(), let client, let window = Self.appWindow() else { return false }
-        let x = max(0, min(Double(window.bounds.width), Double(point.x)))
-        let y = max(0, min(Double(window.bounds.height), Double(point.y)))
-        guard send(client, window, x, y, true) else { return false }
+        let width = max(1.0, window.bounds.width)
+        let height = max(1.0, window.bounds.height)
+        let x = min(max(Double(point.x) / Double(width), 0), 1)
+        let y = min(max(Double(point.y) / Double(height), 0), 1)
+        guard send(client, x, y, true) else { return false }
         usleep(2000)
-        return send(client, window, x, y, false)
+        return send(client, x, y, false)
     }
 
-    private func send(_ client: OpaquePointer, _ window: UIWindow, _ x: Double, _ y: Double, _ touching: Bool) -> Bool {
-        let mask = touching ? (touch | identity) : (range | touch | identity)
-        guard let parent = createDigitizer?(nil, mach_absolute_time(), 3, 0, 0, mask, 0, 0, 0, 0, 0, 0, DarwinBoolean(false), DarwinBoolean(touching), 0),
-              let child = createFinger?(nil, mach_absolute_time(), 1, 2, range | touch, x, y, 0, 0, 0, DarwinBoolean(touching), DarwinBoolean(touching), 0),
-              let append,
+    private func send(_ client: OpaquePointer, _ x: Double, _ y: Double, _ touching: Bool) -> Bool {
+        let mask: UInt32 = touching ? (range | touch) : range
+        guard let event = createFinger?(nil, mach_absolute_time(), 1, 2, mask,
+                                        0, x, y, 0, touching ? 1.0 : 0.0, 0,
+                                        DarwinBoolean(touching), DarwinBoolean(touching), 0),
               let dispatch else { return false }
-
-        setInteger?(parent, displayIntegrated, 1)
-        setSender?(parent, senderID)
-        append(parent, child, 0)
-
-        if let setInfo {
-            let context = (window.value(forKey: "_contextId") as? NSNumber)?.uint32Value ?? 0
-            setInfo(parent, context, DarwinBoolean(false), DarwinBoolean(false), nil, 0, 0)
-        }
-        dispatch(client, parent)
+        setInteger?(event, displayIntegrated, 1)
+        setSender?(event, senderID)
+        dispatch(client, event)
         return true
     }
 
@@ -559,7 +554,7 @@ final class TPIOSAutoClickEngine {
         createClient = sym("IOHIDEventSystemClientCreate", CreateClient.self)
         append = sym("IOHIDEventAppendEvent", Append.self)
         setInteger = sym("IOHIDEventSetIntegerValue", SetInteger.self)
-        setSender = sym("IOHIDEventSetSenderID", SetSender.self)
+        setSender = sym("IOHIDEventSetSenderID", SetSenderID.self)
         dispatch = sym("IOHIDEventSystemClientDispatchEvent", Dispatch.self)
         setInfo = sym("BKSHIDEventSetDigitizerInfo", SetDigitizerInfo.self)
 
