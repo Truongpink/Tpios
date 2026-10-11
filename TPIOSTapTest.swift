@@ -346,13 +346,8 @@ final class TPIOSAutoClickPanel: UIView {
         speedChanged()
     }
 
-    @objc private func decreaseSpeed() {
-        changeSpeed(by: -0.05)
-    }
-
-    @objc private func increaseSpeed() {
-        changeSpeed(by: 0.05)
-    }
+    @objc private func decreaseSpeed() { changeSpeed(by: -0.05) }
+    @objc private func increaseSpeed() { changeSpeed(by: 0.05) }
 
     @objc private func startStop() {
         if running {
@@ -402,10 +397,7 @@ final class TPIOSAutoClickPanel: UIView {
     }
 
     private func performTap() {
-        guard running, !points.isEmpty else {
-            stop()
-            return
-        }
+        guard running, !points.isEmpty else { stop(); return }
         let index = currentPointIndex
         let point = points[index]
         if TPIOSAutoClickEngine.shared.tap(at: point) {
@@ -434,12 +426,10 @@ final class TPIOSAutoClickPanel: UIView {
         let localPoint = gesture.location(in: overlay)
         let point = overlay.convert(localPoint, to: window)
         guard window.bounds.contains(point) else { return }
-
         points.append(point)
         let index = points.count
         addMarker(at: point, number: index, in: window)
         pointLabel.text = "POINT: \(points.count)"
-
         overlay.removeFromSuperview()
         picker = nil
         isHidden = false
@@ -454,7 +444,6 @@ final class TPIOSAutoClickPanel: UIView {
         marker.layer.borderColor = UIColor.white.cgColor
         marker.clipsToBounds = true
         marker.isUserInteractionEnabled = true
-
         let numberLabel = UILabel(frame: marker.bounds)
         numberLabel.text = "\(number)"
         numberLabel.textColor = .white
@@ -462,7 +451,6 @@ final class TPIOSAutoClickPanel: UIView {
         numberLabel.textAlignment = .center
         numberLabel.isUserInteractionEnabled = false
         marker.addSubview(numberLabel)
-
         marker.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(moveMarker(_:))))
         window.addSubview(marker)
         window.bringSubviewToFront(marker)
@@ -515,28 +503,35 @@ final class TPIOSAutoClickEngine {
 
     func tap(at point: CGPoint) -> Bool {
         guard prepare(), let client, let window = Self.appWindow() else { return false }
-        let x = max(0, min(Double(window.bounds.width), Double(point.x)))
-        let y = max(0, min(Double(window.bounds.height), Double(point.y)))
-        guard send(client, window, x, y, true) else { return false }
-        usleep(2000)
-        return send(client, window, x, y, false)
+        let screenPoint = window.convert(point, to: nil)
+        let screen = window.screen?.bounds ?? UIScreen.main.bounds
+        let x = min(max(Double(screenPoint.x / max(screen.width, 1)), 0), 1)
+        let y = min(max(Double(screenPoint.y / max(screen.height, 1)), 0), 1)
+        guard send(client, x: x, y: y, touching: true) else { return false }
+        usleep(12000)
+        return send(client, x: x, y: y, touching: false)
     }
 
-    private func send(_ client: OpaquePointer, _ window: UIWindow, _ x: Double, _ y: Double, _ touching: Bool) -> Bool {
-        let mask = touching ? (touch | identity) : (range | touch | identity)
-        guard let parent = createDigitizer?(nil, mach_absolute_time(), 3, 0, 0, mask, 0, 0, 0, 0, 0, 0, DarwinBoolean(false), DarwinBoolean(touching), 0),
-              let child = createFinger?(nil, mach_absolute_time(), 1, 2, range | touch, x, y, 0, 0, 0, DarwinBoolean(touching), DarwinBoolean(touching), 0),
-              let append,
-              let dispatch else { return false }
+    private func send(_ client: OpaquePointer, x: Double, y: Double, touching: Bool) -> Bool {
+        let mask: UInt32 = touching ? (range | touch) : range
+        guard let createDigitizer, let createFinger, let append, let dispatch else { return false }
+
+        guard let parent = createDigitizer(nil, mach_absolute_time(), 2, 1, 2, mask, 0,
+                                          x, y, 0, touching ? 1.0 : 0.0, 0,
+                                          DarwinBoolean(true), DarwinBoolean(touching), 0) else { return false }
+
+        guard let child = createFinger(nil, mach_absolute_time(), 1, 2, mask,
+                                       x, y, 0, touching ? 1.0 : 0.0, 0,
+                                       DarwinBoolean(true), DarwinBoolean(touching), 0) else { return false }
 
         setInteger?(parent, displayIntegrated, 1)
         setSender?(parent, senderID)
         append(parent, child, 0)
 
         if let setInfo {
-            let context = (window.value(forKey: "_contextId") as? NSNumber)?.uint32Value ?? 0
-            setInfo(parent, context, DarwinBoolean(false), DarwinBoolean(false), nil, 0, 0)
+            setInfo(parent, 0, DarwinBoolean(false), DarwinBoolean(false), nil, 0, 0)
         }
+
         dispatch(client, parent)
         return true
     }
@@ -546,6 +541,7 @@ final class TPIOSAutoClickEngine {
         defer { lock.unlock() }
         if prepared { return client != nil && dispatch != nil }
         prepared = true
+
         guard let h = dlopen("/System/Library/PrivateFrameworks/IOKit.framework/IOKit", RTLD_NOW) else { return false }
         handle = h
 
