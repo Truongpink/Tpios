@@ -34,27 +34,56 @@ final class TPIOSAutoClickEngine {
     private let senderID: UInt64 = 0x8000000817319375
 
     func tap(at point: CGPoint) -> Bool {
-        guard prepare(), let client, let window = Self.appWindow() else { return false }
+        TPIOSLog.shared.log("TapEngine: request point=\(point)")
+        guard prepare() else {
+            TPIOSLog.shared.log("TapEngine: prepare FAILED")
+            return false
+        }
+        guard let client else {
+            TPIOSLog.shared.log("TapEngine: client=nil")
+            return false
+        }
+        guard let window = Self.appWindow() else {
+            TPIOSLog.shared.log("TapEngine: appWindow=nil")
+            return false
+        }
+
         let screenPoint = window.convert(point, to: nil)
         let screen = window.screen.bounds
         let x = min(max(Double(screenPoint.x / max(screen.width, 1)), 0), 1)
         let y = min(max(Double(screenPoint.y / max(screen.height, 1)), 0), 1)
-        guard send(client, x: x, y: y, touching: true) else { return false }
+        TPIOSLog.shared.log("TapEngine: window=\(NSStringFromClass(type(of: window))) screenPoint=\(screenPoint) screen=\(screen.size) normalized=(\(x),\(y))")
+
+        guard send(client, x: x, y: y, touching: true) else {
+            TPIOSLog.shared.log("TapEngine: DOWN FAILED")
+            return false
+        }
         usleep(12000)
-        return send(client, x: x, y: y, touching: false)
+        let upOK = send(client, x: x, y: y, touching: false)
+        TPIOSLog.shared.log("TapEngine: UP \(upOK ? "OK" : "FAILED")")
+        return upOK
     }
 
     private func send(_ client: OpaquePointer, x: Double, y: Double, touching: Bool) -> Bool {
         let mask: UInt32 = touching ? (range | touch) : range
-        guard let createDigitizer, let createFinger, let append, let dispatch else { return false }
+        guard let createDigitizer, let createFinger, let append, let dispatch else {
+            TPIOSLog.shared.log("TapEngine: missing HID function touching=\(touching)")
+            return false
+        }
 
         guard let parent = createDigitizer(nil, mach_absolute_time(), 2, 1, 2, mask, 0,
                                           x, y, 0, touching ? 1.0 : 0.0, 0,
-                                          DarwinBoolean(true), DarwinBoolean(touching), 0) else { return false }
+                                          DarwinBoolean(true), DarwinBoolean(touching), 0) else {
+            TPIOSLog.shared.log("TapEngine: parent event CREATE FAILED touching=\(touching)")
+            return false
+        }
 
         guard let child = createFinger(nil, mach_absolute_time(), 1, 2, mask,
                                        x, y, 0, touching ? 1.0 : 0.0, 0,
-                                       DarwinBoolean(true), DarwinBoolean(touching), 0) else { return false }
+                                       DarwinBoolean(true), DarwinBoolean(touching), 0) else {
+            TPIOSLog.shared.log("TapEngine: finger event CREATE FAILED touching=\(touching)")
+            return false
+        }
 
         setInteger?(parent, displayIntegrated, 1)
         setSender?(parent, senderID)
@@ -65,6 +94,7 @@ final class TPIOSAutoClickEngine {
         }
 
         dispatch(client, parent)
+        TPIOSLog.shared.log("TapEngine: DISPATCH touching=\(touching) mask=\(mask) sender=0x\(String(senderID, radix: 16))")
         return true
     }
 
@@ -74,11 +104,18 @@ final class TPIOSAutoClickEngine {
         if prepared { return client != nil && dispatch != nil }
         prepared = true
 
-        guard let h = dlopen("/System/Library/PrivateFrameworks/IOKit.framework/IOKit", RTLD_NOW) else { return false }
+        guard let h = dlopen("/System/Library/PrivateFrameworks/IOKit.framework/IOKit", RTLD_NOW) else {
+            TPIOSLog.shared.log("TapEngine: dlopen IOKit FAILED")
+            return false
+        }
         handle = h
 
         func sym<T>(_ name: String, _: T.Type) -> T? {
-            guard let pointer = dlsym(h, name) else { return nil }
+            guard let pointer = dlsym(h, name) else {
+                TPIOSLog.shared.log("TapEngine: symbol missing \(name)")
+                return nil
+            }
+            TPIOSLog.shared.log("TapEngine: symbol OK \(name)")
             return unsafeBitCast(pointer, to: T.self)
         }
 
@@ -91,9 +128,14 @@ final class TPIOSAutoClickEngine {
         dispatch = sym("IOHIDEventSystemClientDispatchEvent", Dispatch.self)
         setInfo = sym("BKSHIDEventSetDigitizerInfo", SetDigitizerInfo.self)
 
-        guard let createClient, let createdClient = createClient(nil, 0) else { return false }
+        guard let createClient, let createdClient = createClient(nil, 0) else {
+            TPIOSLog.shared.log("TapEngine: IOHIDEventSystemClientCreate FAILED")
+            return false
+        }
         client = createdClient
-        return createDigitizer != nil && createFinger != nil && append != nil && dispatch != nil
+        let ready = createDigitizer != nil && createFinger != nil && append != nil && dispatch != nil
+        TPIOSLog.shared.log("TapEngine: prepare READY=\(ready) setInfo=\(setInfo != nil) sender=\(setSender != nil)")
+        return ready
     }
 
     static func appWindow() -> UIWindow? {
@@ -128,6 +170,7 @@ final class TPIOSTapTest {
         }
         window.addSubview(p)
         panel = p
+        TPIOSLog.shared.log("TapPanel: opened")
     }
 
     private func finish(restoreMenu: Bool) {
@@ -137,6 +180,7 @@ final class TPIOSTapTest {
         let completion = onFinish
         onFinish = nil
         if restoreMenu { completion?() }
+        TPIOSLog.shared.log("TapPanel: closed restoreMenu=\(restoreMenu)")
     }
 }
 
@@ -376,8 +420,15 @@ final class TPIOSAutoClickPanel: UIView {
     @objc private func closeTap() { onClose?() }
 
     @objc private func tapMode() {
-        guard let point = points.first else { statusLabel.text = "CHƯA CÓ ĐIỂM"; return }
-        statusLabel.text = TPIOSAutoClickEngine.shared.tap(at: point) ? "TAPPED" : "TAP LỖI"
+        guard let point = points.first else {
+            statusLabel.text = "CHƯA CÓ ĐIỂM"
+            TPIOSLog.shared.log("TapPanel: manual tap rejected - no point")
+            return
+        }
+        TPIOSLog.shared.log("TapPanel: manual tap point=\(point)")
+        let ok = TPIOSAutoClickEngine.shared.tap(at: point)
+        statusLabel.text = ok ? "TAPPED" : "TAP LỖI"
+        TPIOSLog.shared.log("TapPanel: manual tap result=\(ok)")
     }
 
     @objc private func pointMode() {
@@ -389,16 +440,21 @@ final class TPIOSAutoClickPanel: UIView {
         superview?.addSubview(overlay)
         picker = overlay
         isHidden = true
+        TPIOSLog.shared.log("TapPanel: point picker opened")
     }
 
     @objc private func pickerTap(_ gesture: UITapGestureRecognizer) {
-        guard let overlay = picker, let window = overlay.superview as? UIWindow else { return }
+        guard let overlay = picker, let window = overlay.superview as? UIWindow else {
+            TPIOSLog.shared.log("TapPanel: picker failed - overlay/window missing")
+            return
+        }
         let point = gesture.location(in: overlay)
         let windowPoint = overlay.convert(point, to: window)
         points = [windowPoint]
         addMarker(at: windowPoint)
         pointLabel.text = "POINT: 1"
         picker?.removeFromSuperview(); picker = nil; isHidden = false
+        TPIOSLog.shared.log("TapPanel: point saved local=\(point) window=\(windowPoint)")
     }
 
     private func addMarker(at point: CGPoint) {
@@ -420,17 +476,20 @@ final class TPIOSAutoClickPanel: UIView {
         let location = gesture.location(in: window)
         marker.center = location
         points = [location]
+        TPIOSLog.shared.log("TapPanel: marker moved point=\(location)")
     }
 
     @objc private func clearPoints() {
         stop()
         points.removeAll(); markers.forEach { $0.removeFromSuperview() }; markers.removeAll()
         pointLabel.text = "POINT: 0"; countLabel.text = "TAP: 0"; statusLabel.text = "IDLE"
+        TPIOSLog.shared.log("TapPanel: points cleared")
     }
 
     @objc private func speedChanged() {
         speed = TimeInterval(speedSlider.value)
         speedLabel.text = String(format: "Tốc độ  %.2fs", speed)
+        TPIOSLog.shared.log(String(format: "TapPanel: speed=%.2fs", speed))
     }
 
     @objc private func decreaseSpeed() {
@@ -444,11 +503,20 @@ final class TPIOSAutoClickPanel: UIView {
     }
 
     @objc private func startStop() {
-        guard !points.isEmpty else { statusLabel.text = "CHƯA CÓ ĐIỂM"; return }
-        if running { stop(); return }
+        guard !points.isEmpty else {
+            statusLabel.text = "CHƯA CÓ ĐIỂM"
+            TPIOSLog.shared.log("TapPanel: auto start rejected - no point")
+            return
+        }
+        if running {
+            TPIOSLog.shared.log("TapPanel: auto stop requested")
+            stop()
+            return
+        }
         running = true; currentPointIndex = 0
         startButton.setImage(UIImage(systemName: "stop.fill"), for: .normal)
         statusLabel.text = "RUNNING"
+        TPIOSLog.shared.log("TapPanel: auto START points=\(points.count) speed=\(speed)")
         performTap()
         let source = DispatchSource.makeTimerSource(queue: DispatchQueue.main)
         source.schedule(deadline: .now() + speed, repeating: speed, leeway: .milliseconds(5))
@@ -460,10 +528,15 @@ final class TPIOSAutoClickPanel: UIView {
         guard running, !points.isEmpty else { return }
         let index = currentPointIndex % points.count
         let point = points[index]
-        if TPIOSAutoClickEngine.shared.tap(at: point) {
+        TPIOSLog.shared.log("TapPanel: performTap index=\(index) point=\(point)")
+        let ok = TPIOSAutoClickEngine.shared.tap(at: point)
+        if ok {
             tapCount += 1
             countLabel.text = "TAP: \(tapCount)"
             currentPointIndex = (currentPointIndex + 1) % points.count
+            TPIOSLog.shared.log("TapPanel: performTap SUCCESS count=\(tapCount)")
+        } else {
+            TPIOSLog.shared.log("TapPanel: performTap FAILED")
         }
     }
 
@@ -472,5 +545,6 @@ final class TPIOSAutoClickPanel: UIView {
         timer?.cancel(); timer = nil
         startButton.setImage(UIImage(systemName: "play.fill"), for: .normal)
         statusLabel.text = "STOPPED"
+        TPIOSLog.shared.log("TapPanel: stopped")
     }
 }
