@@ -6,136 +6,32 @@ final class TPIOSAutoClickEngine {
     static let shared = TPIOSAutoClickEngine()
     private init() {}
 
-    private typealias CreateDigitizer = @convention(c) (CFAllocator?, UInt64, UInt32, UInt32, UInt32, UInt32, UInt32, Double, Double, Double, Double, Double, DarwinBoolean, DarwinBoolean, UInt32) -> OpaquePointer?
-    private typealias CreateFinger = @convention(c) (CFAllocator?, UInt64, UInt32, UInt32, UInt32, Double, Double, Double, Double, Double, DarwinBoolean, DarwinBoolean, UInt32) -> OpaquePointer?
-    private typealias CreateClient = @convention(c) (CFAllocator?, UInt32) -> OpaquePointer?
-    private typealias Append = @convention(c) (OpaquePointer, OpaquePointer, UInt32) -> Void
-    private typealias SetInteger = @convention(c) (OpaquePointer, UInt32, Int64) -> Void
-    private typealias SetSender = @convention(c) (OpaquePointer, UInt64) -> Void
-    private typealias Dispatch = @convention(c) (OpaquePointer, OpaquePointer) -> Void
-    private typealias SetDigitizerInfo = @convention(c) (OpaquePointer, UInt32, DarwinBoolean, DarwinBoolean, UnsafeMutableRawPointer?, UInt32, UInt32) -> Void
-
-    private var handle: UnsafeMutableRawPointer?
-    private var client: OpaquePointer?
-    private var createDigitizer: CreateDigitizer?
-    private var createFinger: CreateFinger?
-    private var createClient: CreateClient?
-    private var append: Append?
-    private var setInteger: SetInteger?
-    private var setSender: SetSender?
-    private var dispatch: Dispatch?
-    private var setInfo: SetDigitizerInfo?
-    private var prepared = false
-    private let lock = NSLock()
-
-    private let range: UInt32 = 1 << 0
-    private let touch: UInt32 = 1 << 1
-    private let displayIntegrated: UInt32 = (11 << 16) + 25
-    private let senderID: UInt64 = 0x8000000817319375
-
     func tap(at point: CGPoint) -> Bool {
         TPIOSLog.shared.log("TapEngine: request point=\(point)")
-        guard prepare() else {
-            TPIOSLog.shared.log("TapEngine: prepare FAILED")
-            return false
-        }
-        guard let client else {
-            TPIOSLog.shared.log("TapEngine: client=nil")
-            return false
-        }
         guard let window = Self.appWindow() else {
             TPIOSLog.shared.log("TapEngine: appWindow=nil")
             return false
         }
 
-        let screenPoint = window.convert(point, to: nil)
-        let screen = window.screen.bounds
-        let x = min(max(Double(screenPoint.x / max(screen.width, 1)), 0), 1)
-        let y = min(max(Double(screenPoint.y / max(screen.height, 1)), 0), 1)
-        TPIOSLog.shared.log("TapEngine: window=\(NSStringFromClass(type(of: window))) screenPoint=\(screenPoint) screen=\(screen.size) normalized=(\(x),\(y))")
-
-        guard send(client, x: x, y: y, touching: true) else {
-            TPIOSLog.shared.log("TapEngine: DOWN FAILED")
-            return false
-        }
-        usleep(12000)
-        let upOK = send(client, x: x, y: y, touching: false)
-        TPIOSLog.shared.log("TapEngine: UP \(upOK ? "OK" : "FAILED")")
-        return upOK
-    }
-
-    private func send(_ client: OpaquePointer, x: Double, y: Double, touching: Bool) -> Bool {
-        let mask: UInt32 = touching ? (range | touch) : range
-        guard let createDigitizer, let createFinger, let append, let dispatch else {
-            TPIOSLog.shared.log("TapEngine: missing HID function touching=\(touching)")
+        let windowPoint = window.convert(point, from: window)
+        guard let hit = window.hitTest(windowPoint, with: nil) else {
+            TPIOSLog.shared.log("TapEngine: hitTest=nil point=\(windowPoint)")
             return false
         }
 
-        guard let parent = createDigitizer(nil, mach_absolute_time(), 2, 1, 2, mask, 0,
-                                          x, y, 0, touching ? 1.0 : 0.0, 0,
-                                          DarwinBoolean(true), DarwinBoolean(touching), 0) else {
-            TPIOSLog.shared.log("TapEngine: parent event CREATE FAILED touching=\(touching)")
-            return false
-        }
-
-        guard let child = createFinger(nil, mach_absolute_time(), 1, 2, mask,
-                                       x, y, 0, touching ? 1.0 : 0.0, 0,
-                                       DarwinBoolean(true), DarwinBoolean(touching), 0) else {
-            TPIOSLog.shared.log("TapEngine: finger event CREATE FAILED touching=\(touching)")
-            return false
-        }
-
-        setInteger?(parent, displayIntegrated, 1)
-        setSender?(parent, senderID)
-        append(parent, child, 0)
-
-        if let setInfo {
-            setInfo(parent, 0, DarwinBoolean(false), DarwinBoolean(false), nil, 0, 0)
-        }
-
-        dispatch(client, parent)
-        TPIOSLog.shared.log("TapEngine: DISPATCH touching=\(touching) mask=\(mask) sender=0x\(String(senderID, radix: 16))")
-        return true
-    }
-
-    private func prepare() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        if prepared { return client != nil && dispatch != nil }
-        prepared = true
-
-        guard let h = dlopen("/System/Library/PrivateFrameworks/IOKit.framework/IOKit", RTLD_NOW) else {
-            TPIOSLog.shared.log("TapEngine: dlopen IOKit FAILED")
-            return false
-        }
-        handle = h
-
-        func sym<T>(_ name: String, _: T.Type) -> T? {
-            guard let pointer = dlsym(h, name) else {
-                TPIOSLog.shared.log("TapEngine: symbol missing \(name)")
-                return nil
+        var view: UIView? = hit
+        while let current = view {
+            if let control = current as? UIControl, control.isEnabled, !control.isHidden, control.alpha > 0 {
+                TPIOSLog.shared.log("TapEngine: UIControl=\(NSStringFromClass(type(of: control))) frame=\(control.frame)")
+                control.sendActions(for: .touchUpInside)
+                TPIOSLog.shared.log("TapEngine: UIControl action dispatched")
+                return true
             }
-            TPIOSLog.shared.log("TapEngine: symbol OK \(name)")
-            return unsafeBitCast(pointer, to: T.self)
+            view = current.superview
         }
 
-        createDigitizer = sym("IOHIDEventCreateDigitizerEvent", CreateDigitizer.self)
-        createFinger = sym("IOHIDEventCreateDigitizerFingerEvent", CreateFinger.self)
-        createClient = sym("IOHIDEventSystemClientCreate", CreateClient.self)
-        append = sym("IOHIDEventAppendEvent", Append.self)
-        setInteger = sym("IOHIDEventSetIntegerValue", SetInteger.self)
-        setSender = sym("IOHIDEventSetSenderID", SetSender.self)
-        dispatch = sym("IOHIDEventSystemClientDispatchEvent", Dispatch.self)
-        setInfo = sym("BKSHIDEventSetDigitizerInfo", SetDigitizerInfo.self)
-
-        guard let createClient, let createdClient = createClient(nil, 0) else {
-            TPIOSLog.shared.log("TapEngine: IOHIDEventSystemClientCreate FAILED")
-            return false
-        }
-        client = createdClient
-        let ready = createDigitizer != nil && createFinger != nil && append != nil && dispatch != nil
-        TPIOSLog.shared.log("TapEngine: prepare READY=\(ready) setInfo=\(setInfo != nil) sender=\(setSender != nil)")
-        return ready
+        TPIOSLog.shared.log("TapEngine: no UIControl at point hit=\(NSStringFromClass(type(of: hit)))")
+        return false
     }
 
     static func appWindow() -> UIWindow? {
