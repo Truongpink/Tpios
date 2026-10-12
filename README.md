@@ -78,24 +78,6 @@ Menu chính là **UI reference duy nhất**. Mọi menu con và nút bên trong 
 - Ô nhập liệu phải co giãn theo khung và có X xóa nhanh.
 - Không tự đặt size, màu, font, spacing hoặc layout khác cho từng menu. Muốn đổi chuẩn chung phải sửa UI RULE trước.
 
-### 5.3. Quy chuẩn sản phẩm Sale và biến thể
-
-- Link Shopee có thể là link ngắn dạng https://vn.shp.ee/... hoặc link sản phẩm đầy đủ.
-- Không được giả định link ngắn chứa trực tiếp shopID/itemID; phải resolve/chuyển hướng link để xác định listing sản phẩm trước khi phân tích.
-- Một listing Shopee có thể có nhiều **biến thể/SKU** như màu sắc, khối lượng, kích thước, phiên bản... và mỗi biến thể có thể có giá/tồn kho khác nhau.
-- **Không được lấy giá của listing chung làm giá của biến thể người dùng muốn mua.**
-- Sau khi xác định listing, TPIOS phải lấy danh sách biến thể/SKU nếu dữ liệu Shopee cung cấp.
-- Người dùng phải có bước **chọn chính xác biến thể cần mua** (ví dụ: Màu Đen + 500g).
-- TPIOS lưu **variant/SKU ID và các thuộc tính đã chọn** cùng sản phẩm theo dõi.
-- Các lần “Kiểm tra ngay” sau đó phải phân tích đúng **SKU/biến thể đã chọn**, không tự đổi sang biến thể khác chỉ vì biến thể đó rẻ hơn.
-- Nếu sản phẩm thay đổi cấu trúc biến thể hoặc SKU không còn tồn tại, TPIOS phải báo người dùng chọn lại thay vì tự đoán.
-- Giá tốt nhất phải tính trên **đúng biến thể đã chọn + voucher hợp lệ cho biến thể đó + các điều kiện mua tương ứng**.
-
-- Chức năng mới ưu tiên một file chính; chỉ tách file phụ khi thực sự cần.
-- Không gom các chức năng không liên quan vào `TPIOSController.swift` hoặc `TPIOSMenu.swift`.
-- Chức năng mới phải hạn chế ảnh hưởng đến chức năng cũ.
-- Nếu có thể bật/tắt độc lập thì nên thiết kế độc lập.
-
 ### 6. Không chạy tác vụ nặng liên tục
 
 Đặc biệt tránh:
@@ -259,91 +241,9 @@ Menu còn hiển thị:
 
 ## FILE HIỆN TẠI VÀ CHỨC NĂNG
 
-### Core / khởi động
 
-| File | Chức năng |
-|---|---|
-| `TPIOSBootstrap.m` | Constructor khởi động dylib; cài GAD presentation hook, Web diagnostics và gọi `TPIOSStart`. |
-| `TPIOSEntry.swift` | Export `TPIOSStart` và `TPIOSStop`. |
-| `TPIOSController.swift` | Quản lý overlay window, Floating Button, mở/đóng menu, kéo nút và vòng đời UI chính. |
-| `FloatingButton.swift` | UI và style của nút nổi TPIOS. |
-| `TPIOSMenu.swift` | Menu chính, các nút chức năng, move/resize và mở các module con. |
 
-### Vị trí
 
-| File | Chức năng |
-|---|---|
-| `TPIOSLocation.swift` | Giao diện Vị trí: bản đồ, chọn tọa độ, tìm kiếm/reverse geocode, latitude/longitude/altitude/address, lưu nhiều vị trí, chọn/xóa vị trí, move/resize UI và công tắc spoof. |
-| `TPIOSLocationSpoofHook.swift` | Module hook Core Location; cung cấp cơ chế hook các lời gọi location manager và trả về location đã chọn khi hook được cài. |
-
-### Sale
-
-| File | Chức năng |
-|---|---|
-| `TPIOSSale.swift` | Toàn bộ module Sale: UI, link parser, dữ liệu sản phẩm, lịch sử snapshot và lưu trữ. |
-
-### Log / diagnostics
-
-| File | Chức năng |
-|---|---|
-| `TPIOSLog.swift` | Hệ thống log nội bộ, hiển thị/xóa log và cửa sổ log có thể di chuyển. |
-| `TPIOSNetworkLog.swift` | Module network/runtime logging hook. |
-| `TPIOSWebDiagnostics.swift` | Theo dõi WKWebView, URL/frame, native view tree và một số resource/DOM node liên quan quảng cáo để phục vụ nghiên cứu/debug. |
-
-### Quảng cáo
-
-| File | Chức năng |
-|---|---|
-| `TPIOSAdBlock.swift` | Giao diện và cơ chế học/lưu profile quảng cáo; áp dụng profile đã lưu, rescan khi cần, theo dõi runtime/view tree và các cơ chế quảng cáo liên quan. |
-| `TPIOSGADPresentationBlocker.m` | Hook `presentViewController` để chặn các fullscreen controller cụ thể của Google Mobile Ads. |
-| `TPIOSModelFilter.m` | Runtime hook cho model/class được cấu hình để loại bỏ object phù hợp với predicate đã xác định. |
-
-### Refresh / đồng hồ
-
-| File | Chức năng |
-|---|---|
-| `TPIOSReload.swift` | Tìm refresh control/component trong app, WebView, ScrollView hoặc controller phù hợp và kích hoạt refresh trang. |
-| `TPIOSSaleClock.swift` | Đồng hồ thời gian thực HH:MM:SS + phần mười giây, có move/resize. |
-
-### Workflow
-
-| File | Chức năng |
-|---|---|
-| `.github/workflows/build.yml` | GitHub Actions build dylib và tạo artifact. |
-
----
-
-## KIẾN TRÚC CHỨC NĂNG
-
-Luồng chính:
-
-```
-TPIOSBootstrap.m
-        ↓
-TPIOSEntry.swift
-        ↓
-TPIOSController
-        ↓
-FloatingButton
-        ↓
-TPIOSMenu
-   ├── Vị trí       → TPIOSLocation
-   │                    └── TPIOSLocationSpoofHook
-   ├── Sale         → TPIOSSale
-   ├── Xem log      → TPIOSLog
-   ├── Tắt QC       → TPIOSAdBlock
-   │                    ├── TPIOSModelFilter.m
-   │                    └── TPIOSGADPresentationBlocker.m
-   ├── Đồng hồ      → TPIOSSaleClock
-   └── Tải lại trang → TPIOSReload
-```
-
-Các module hỗ trợ:
-
-- `TPIOSNetworkLog.swift`
-- `TPIOSWebDiagnostics.swift`
-
----
 
 ## NGUYÊN TẮC BẢO TOÀN CHỨC NĂNG
 
@@ -368,22 +268,6 @@ Mỗi lần người dùng yêu cầu **"backup hiện tại"**, thêm một m�
 
 **Trạng thái:** Đã build/test OK.
 
-**Đã có:**
-- ...
-- ...
-
-**Chức năng mới hoàn thành từ backup trước:**
-- ...
-
-**File thay đổi liên quan:**
-- ...
-
-**Chưa hoàn thành / đang nghiên cứu:**
-- ...
-
-Không sửa hoặc xóa các mục backup cũ.
-
----
 
 ## NGUYÊN TẮC QUAN TRỌNG NHẤT
 
