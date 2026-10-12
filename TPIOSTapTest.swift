@@ -1,52 +1,182 @@
+// TPIOSTapTest.swift
+// Fixed version — replaces sendActions() with real IOHIDEvent injection.
+// Adds missing TPIOSLog, TPIOSPanelStyle, Notification.tpiosCloseMenu stubs.
+// Fixes picker overlay frame (full window, not panel bounds).
+
 import UIKit
 import Foundation
-import Darwin
+
+// ─────────────────────────────────────────────
+// MARK: - Missing stubs (nếu đã có ở file khác thì xóa phần này)
+// ─────────────────────────────────────────────
+
+extension Notification.Name {
+    static let tpiosCloseMenu = Notification.Name("tpiosCloseMenu")
+}
+
+final class TPIOSLog {
+    static let shared = TPIOSLog()
+    private init() {}
+    func log(_ msg: String) {
+        NSLog("[TPIOS] %@", msg)
+    }
+}
+
+enum TPIOSPanelStyle {
+    static func applyGlassBackground(to view: UIView, cornerRadius: CGFloat) {
+        view.backgroundColor = UIColor(red: 0.09, green: 0.10, blue: 0.13, alpha: 0.92)
+        view.layer.cornerRadius = cornerRadius
+        view.layer.borderWidth = 0.5
+        view.layer.borderColor = UIColor.white.withAlphaComponent(0.12).cgColor
+        view.layer.shadowColor = UIColor.black.cgColor
+        view.layer.shadowOpacity = 0.55
+        view.layer.shadowRadius = 14
+        view.layer.shadowOffset = CGSize(width: 0, height: 4)
+    }
+
+    static func applyGradientFill(to button: UIButton, colors: [UIColor], cornerRadius: CGFloat) {
+        button.layer.sublayers?.filter { $0 is CAGradientLayer }.forEach { $0.removeFromSuperlayer() }
+        let grad = CAGradientLayer()
+        grad.colors = colors.map { $0.cgColor }
+        grad.startPoint = CGPoint(x: 0, y: 0)
+        grad.endPoint   = CGPoint(x: 1, y: 1)
+        grad.cornerRadius = cornerRadius
+        grad.frame = button.bounds.isEmpty ? CGRect(x: 0, y: 0, width: 58, height: 58) : button.bounds
+        button.layer.insertSublayer(grad, at: 0)
+    }
+
+    /// Sync gradient layer frame to button bounds after layout.
+    static func syncFrames(in button: UIButton) {
+        button.layer.sublayers?
+            .compactMap { $0 as? CAGradientLayer }
+            .forEach { $0.frame = button.bounds }
+    }
+}
+
+// ─────────────────────────────────────────────
+// MARK: - IOHIDEvent private API
+// ─────────────────────────────────────────────
+
+private typealias IOHIDEventRef             = OpaquePointer
+private typealias IOHIDEventSystemClientRef = OpaquePointer
+
+private let kIOHIDDigitizerEventRange:    UInt32 = 0x00000001
+private let kIOHIDDigitizerEventTouch:    UInt32 = 0x00000002
+private let kIOHIDDigitizerEventPosition: UInt32 = 0x00000004
+private let kIOHIDEventFieldDigitizerIsDisplayIntegrated: Int32 = 0x000B0028
+
+@_silgen_name("IOHIDEventCreateDigitizerEvent")
+private func IOHIDEventCreateDigitizerEvent(
+    _ allocator: OpaquePointer?, _ timeStamp: UInt64,
+    _ transducerType: UInt32, _ index: UInt32, _ identity: UInt32,
+    _ eventMask: UInt32, _ buttonMask: UInt32,
+    _ x: Double, _ y: Double, _ z: Double,
+    _ tipPressure: Double, _ twist: Double,
+    _ range: Bool, _ touch: Bool, _ options: UInt32
+) -> IOHIDEventRef
+
+@_silgen_name("IOHIDEventCreateDigitizerFingerEvent")
+private func IOHIDEventCreateDigitizerFingerEvent(
+    _ allocator: OpaquePointer?, _ timeStamp: UInt64,
+    _ index: UInt32, _ identity: UInt32, _ eventMask: UInt32,
+    _ x: Double, _ y: Double, _ z: Double,
+    _ tipPressure: Double, _ twist: Double,
+    _ range: Bool, _ touch: Bool, _ options: UInt32
+) -> IOHIDEventRef
+
+@_silgen_name("IOHIDEventAppendEvent")
+private func IOHIDEventAppendEvent(_ event: IOHIDEventRef, _ child: IOHIDEventRef, _ options: UInt32)
+
+@_silgen_name("IOHIDEventSetIntegerValue")
+private func IOHIDEventSetIntegerValue(_ event: IOHIDEventRef, _ field: Int32, _ value: Int32)
+
+@_silgen_name("IOHIDEventSetSenderID")
+private func IOHIDEventSetSenderID(_ event: IOHIDEventRef, _ sender: UInt64)
+
+@_silgen_name("IOHIDEventSystemClientCreate")
+private func IOHIDEventSystemClientCreate(_ allocator: OpaquePointer?) -> IOHIDEventSystemClientRef
+
+@_silgen_name("IOHIDEventSystemClientDispatchEvent")
+private func IOHIDEventSystemClientDispatchEvent(_ client: IOHIDEventSystemClientRef, _ event: IOHIDEventRef)
+
+@_silgen_name("mach_absolute_time")
+private func mach_absolute_time() -> UInt64
+
+// ─────────────────────────────────────────────
+// MARK: - Tap Engine (IOHIDEvent — works on any view/app)
+// ─────────────────────────────────────────────
+// FIX: replaced sendActions(for:) which only triggers UIControl.
+// IOHIDEvent injects a real hardware-level touch — hits SwiftUI, gesture
+// recognizers, WebView, game engines, everything.
 
 final class TPIOSAutoClickEngine {
     static let shared = TPIOSAutoClickEngine()
-    private init() {}
+    private let client: IOHIDEventSystemClientRef
+    private let senderID: UInt64 = 0x0000000300000002
+    private init() { client = IOHIDEventSystemClientCreate(nil) }
 
+    /// Tap at a point given in UIWindow coordinate space.
+    @discardableResult
     func tap(at point: CGPoint) -> Bool {
-        TPIOSLog.shared.log("TapEngine: request point=\(point)")
         guard let window = Self.appWindow() else {
             TPIOSLog.shared.log("TapEngine: appWindow=nil")
             return false
         }
+        let screen = UIScreen.main.bounds
+        guard screen.width > 0, screen.height > 0 else { return false }
 
-        let windowPoint = window.convert(point, from: window)
-        guard let hit = window.hitTest(windowPoint, with: nil) else {
-            TPIOSLog.shared.log("TapEngine: hitTest=nil point=\(windowPoint)")
-            return false
-        }
+        // Normalize to 0–1 range expected by IOHIDEvent
+        let nx = Double(point.x / screen.width)
+        let ny = Double(point.y / screen.height)
+        let mask = kIOHIDDigitizerEventRange | kIOHIDDigitizerEventTouch | kIOHIDDigitizerEventPosition
 
-        var view: UIView? = hit
-        while let current = view {
-            if let control = current as? UIControl, control.isEnabled, !control.isHidden, control.alpha > 0 {
-                TPIOSLog.shared.log("TapEngine: UIControl=\(NSStringFromClass(type(of: control))) frame=\(control.frame)")
-                control.sendActions(for: .touchUpInside)
-                TPIOSLog.shared.log("TapEngine: UIControl action dispatched")
-                return true
-            }
-            view = current.superview
-        }
+        TPIOSLog.shared.log("TapEngine: IOHIDTap point=\(point) nx=\(String(format:"%.3f",nx)) ny=\(String(format:"%.3f",ny))")
+        _ = window // suppress unused warning; window validated above
 
-        TPIOSLog.shared.log("TapEngine: no UIControl at point hit=\(NSStringFromClass(type(of: hit)))")
-        return false
+        let ts = mach_absolute_time()
+
+        // touch-down
+        let downP = IOHIDEventCreateDigitizerEvent(
+            nil, ts, 0, 0, 1, mask, 0, nx, ny, 0, 1.0, 0, true, true, 0)
+        let downF = IOHIDEventCreateDigitizerFingerEvent(
+            nil, ts, 1, 1, mask, nx, ny, 0, 1.0, 0, true, true, 0)
+        IOHIDEventSetIntegerValue(downF, kIOHIDEventFieldDigitizerIsDisplayIntegrated, 1)
+        IOHIDEventAppendEvent(downP, downF, 0)
+        IOHIDEventSetSenderID(downP, senderID)
+        IOHIDEventSystemClientDispatchEvent(client, downP)
+
+        // touch-up (80 ms later)
+        let upTS = ts + 80_000_000
+        let upP = IOHIDEventCreateDigitizerEvent(
+            nil, upTS, 0, 0, 1, mask, 0, nx, ny, 0, 0, 0, false, false, 0)
+        let upF = IOHIDEventCreateDigitizerFingerEvent(
+            nil, upTS, 1, 1, mask, nx, ny, 0, 0, 0, false, false, 0)
+        IOHIDEventSetIntegerValue(upF, kIOHIDEventFieldDigitizerIsDisplayIntegrated, 1)
+        IOHIDEventAppendEvent(upP, upF, 0)
+        IOHIDEventSetSenderID(upP, senderID)
+        IOHIDEventSystemClientDispatchEvent(client, upP)
+
+        TPIOSLog.shared.log("TapEngine: IOHIDTap dispatched")
+        return true
     }
 
     static func appWindow() -> UIWindow? {
-        let scenes: [UIWindowScene] = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        var windows: [UIWindow] = []
-        for scene in scenes { windows.append(contentsOf: scene.windows) }
-        for window in windows {
-            let className = NSStringFromClass(type(of: window))
-            if !window.isHidden && window.alpha > 0 && window.windowLevel == .normal && window.rootViewController != nil && !className.contains("TPIOS") {
-                return window
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first {
+                !$0.isHidden &&
+                $0.alpha > 0 &&
+                $0.windowLevel == .normal &&
+                $0.rootViewController != nil &&
+                !NSStringFromClass(type(of: $0)).contains("TPIOS")
             }
-        }
-        return nil
     }
 }
+
+// ─────────────────────────────────────────────
+// MARK: - TPIOSTapTest (controller)
+// ─────────────────────────────────────────────
 
 final class TPIOSTapTest {
     static let shared = TPIOSTapTest()
@@ -57,9 +187,14 @@ final class TPIOSTapTest {
     func start() {
         guard panel == nil, let window = TPIOSAutoClickEngine.appWindow() else { return }
         let size = CGSize(width: 230, height: 320)
-        let frame = CGRect(x: (window.bounds.width - size.width) / 2, y: (window.bounds.height - size.height) / 2, width: size.width, height: size.height)
+        let frame = CGRect(
+            x: (window.bounds.width  - size.width)  / 2,
+            y: (window.bounds.height - size.height) / 2,
+            width:  size.width,
+            height: size.height
+        )
         let p = TPIOSAutoClickPanel(frame: frame)
-        p.onBack = { [weak self] in self?.finish(restoreMenu: true) }
+        p.onBack  = { [weak self] in self?.finish(restoreMenu: true)  }
         p.onClose = { [weak self] in
             self?.finish(restoreMenu: false)
             NotificationCenter.default.post(name: .tpiosCloseMenu, object: nil)
@@ -80,6 +215,10 @@ final class TPIOSTapTest {
     }
 }
 
+// ─────────────────────────────────────────────
+// MARK: - TPIOSAutoClickPanel (UI)
+// ─────────────────────────────────────────────
+
 final class TPIOSAutoClickPanel: UIView {
     private var points: [CGPoint] = []
     private var markers: [UIView] = []
@@ -90,16 +229,16 @@ final class TPIOSAutoClickPanel: UIView {
     private var picker: UIView?
     private var currentPointIndex = 0
 
-    private let header = UIView()
-    private let content = UIView()
+    private let header     = UIView()
+    private let content    = UIView()
     private let statusLabel = UILabel()
-    private let countLabel = UILabel()
-    private let pointLabel = UILabel()
-    private let speedLabel = UILabel()
+    private let countLabel  = UILabel()
+    private let pointLabel  = UILabel()
+    private let speedLabel  = UILabel()
     private let speedSlider = UISlider()
     private let speedMinusButton = UIButton(type: .system)
-    private let speedPlusButton = UIButton(type: .system)
-    private let tapButton = UIButton(type: .system)
+    private let speedPlusButton  = UIButton(type: .system)
+    private let tapButton   = UIButton(type: .system)
     private let pointButton = UIButton(type: .system)
     private let clearButton = UIButton(type: .system)
     private let startButton = UIButton(type: .system)
@@ -108,15 +247,16 @@ final class TPIOSAutoClickPanel: UIView {
     private var resizeStartFrame = CGRect.zero
     private var resizeStartPoint = CGPoint.zero
 
-    var onBack: (() -> Void)?
+    var onBack:  (() -> Void)?
     var onClose: (() -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         setup()
     }
-
     required init?(coder: NSCoder) { fatalError() }
+
+    // ── Helpers ───────────────────────────────
 
     private func iconButton(_ button: UIButton, icon: String, colors: [UIColor], action: Selector) {
         let config = UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
@@ -160,6 +300,7 @@ final class TPIOSAutoClickPanel: UIView {
     private func setup() {
         TPIOSPanelStyle.applyGlassBackground(to: self, cornerRadius: 24)
         clipsToBounds = true
+
         header.backgroundColor = UIColor(red: 0.075, green: 0.085, blue: 0.105, alpha: 1)
         header.layer.cornerRadius = 24
         header.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
@@ -189,25 +330,37 @@ final class TPIOSAutoClickPanel: UIView {
         close.addTarget(self, action: #selector(closeTap), for: .touchUpInside)
         header.addSubview(close)
 
-        iconButton(tapButton, icon: "hand.tap.fill", colors: [UIColor(red: 0.95, green: 0.30, blue: 0.60, alpha: 1), UIColor(red: 0.55, green: 0.10, blue: 0.45, alpha: 1)], action: #selector(tapMode))
-        iconButton(pointButton, icon: "scope", colors: [UIColor(red: 0.36, green: 0.71, blue: 1.00, alpha: 1), UIColor(red: 0.09, green: 0.39, blue: 0.80, alpha: 1)], action: #selector(pointMode))
-        iconButton(clearButton, icon: "trash.fill", colors: [UIColor(red: 1.00, green: 0.35, blue: 0.27, alpha: 1), UIColor(red: 0.64, green: 0.06, blue: 0.06, alpha: 1)], action: #selector(clearPoints))
-        iconButton(startButton, icon: "play.fill", colors: [UIColor(red: 0.36, green: 0.88, blue: 0.55, alpha: 1), UIColor(red: 0.06, green: 0.52, blue: 0.33, alpha: 1)], action: #selector(startStop))
+        iconButton(tapButton,   icon: "hand.tap.fill",
+                   colors: [UIColor(red: 0.95, green: 0.30, blue: 0.60, alpha: 1),
+                             UIColor(red: 0.55, green: 0.10, blue: 0.45, alpha: 1)],
+                   action: #selector(tapMode))
+        iconButton(pointButton, icon: "scope",
+                   colors: [UIColor(red: 0.36, green: 0.71, blue: 1.00, alpha: 1),
+                             UIColor(red: 0.09, green: 0.39, blue: 0.80, alpha: 1)],
+                   action: #selector(pointMode))
+        iconButton(clearButton, icon: "trash.fill",
+                   colors: [UIColor(red: 1.00, green: 0.35, blue: 0.27, alpha: 1),
+                             UIColor(red: 0.64, green: 0.06, blue: 0.06, alpha: 1)],
+                   action: #selector(clearPoints))
+        iconButton(startButton, icon: "play.fill",
+                   colors: [UIColor(red: 0.36, green: 0.88, blue: 0.55, alpha: 1),
+                             UIColor(red: 0.06, green: 0.52, blue: 0.33, alpha: 1)],
+                   action: #selector(startStop))
 
         let tapLabel = UILabel(), pointCaption = UILabel(), clearLabel = UILabel(), startLabel = UILabel()
-        caption(tapLabel, text: "Chạm")
+        caption(tapLabel,     text: "Chạm")
         caption(pointCaption, text: "Điểm")
-        caption(clearLabel, text: "Xóa")
-        caption(startLabel, text: "Bắt đầu")
+        caption(clearLabel,   text: "Xóa")
+        caption(startLabel,   text: "Bắt đầu")
 
-        statusLabel.text = "IDLE"
-        countLabel.text = "TAP: 0"
-        pointLabel.text = "POINT: 0"
         for label in [statusLabel, countLabel, pointLabel] {
             label.textColor = UIColor.white.withAlphaComponent(0.82)
             label.font = .systemFont(ofSize: 11, weight: .medium)
             content.addSubview(label)
         }
+        statusLabel.text = "IDLE"
+        countLabel.text  = "TAP: 0"
+        pointLabel.text  = "POINT: 0"
 
         speedLabel.text = "Tốc độ  0.15s"
         speedLabel.textColor = UIColor.white.withAlphaComponent(0.82)
@@ -220,8 +373,8 @@ final class TPIOSAutoClickPanel: UIView {
         speedSlider.value = Float(speed)
         speedSlider.addTarget(self, action: #selector(speedChanged), for: .valueChanged)
         content.addSubview(speedSlider)
-        speedButton(speedMinusButton, icon: "chevron.left", action: #selector(decreaseSpeed))
-        speedButton(speedPlusButton, icon: "chevron.right", action: #selector(increaseSpeed))
+        speedButton(speedMinusButton, icon: "chevron.left",  action: #selector(decreaseSpeed))
+        speedButton(speedPlusButton,  icon: "chevron.right", action: #selector(increaseSpeed))
         addSubview(content)
 
         resizeHandle.text = "↘"
@@ -230,89 +383,127 @@ final class TPIOSAutoClickPanel: UIView {
         resizeHandle.textAlignment = .center
         resizeHandle.isUserInteractionEnabled = true
         addSubview(resizeHandle)
-        header.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(movePanel(_:))))
-        resizeHandle.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(resizePanel(_:))))
+
+        header.addGestureRecognizer(
+            UIPanGestureRecognizer(target: self, action: #selector(movePanel(_:))))
+        resizeHandle.addGestureRecognizer(
+            UIPanGestureRecognizer(target: self, action: #selector(resizePanel(_:))))
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let scale = min(bounds.width / 240, bounds.height / 350)
+        let scale        = min(bounds.width / 240, bounds.height / 350)
         let headerHeight = 66 * scale
-        header.frame = CGRect(x: 0, y: 0, width: bounds.width, height: headerHeight)
-        content.frame = CGRect(x: 0, y: headerHeight, width: bounds.width, height: max(0, bounds.height - headerHeight))
-        let backSize = 34 * scale, closeSize = 34 * scale, side = 16 * scale
-        if let back = header.subviews.first(where: { $0 is UIButton }) as? UIButton { back.frame = CGRect(x: side, y: 16 * scale, width: backSize, height: backSize) }
-        if let close = header.subviews.compactMap({ $0 as? UIButton }).last { close.frame = CGRect(x: bounds.width - side - closeSize, y: 16 * scale, width: closeSize, height: closeSize) }
+        header.frame  = CGRect(x: 0, y: 0, width: bounds.width, height: headerHeight)
+        content.frame = CGRect(x: 0, y: headerHeight, width: bounds.width,
+                               height: max(0, bounds.height - headerHeight))
+
+        let backSize = 34 * scale, side = 16 * scale
+        if let back = header.subviews.first(where: { $0 is UIButton }) as? UIButton {
+            back.frame = CGRect(x: side, y: 16 * scale, width: backSize, height: backSize)
+        }
+        if let close = header.subviews.compactMap({ $0 as? UIButton }).last {
+            close.frame = CGRect(x: bounds.width - side - backSize, y: 16 * scale,
+                                 width: backSize, height: backSize)
+        }
         if let title = header.viewWithTag(1001) as? UILabel {
-            title.frame = CGRect(x: 56 * scale, y: 12 * scale, width: max(0, bounds.width - 112 * scale), height: 42 * scale)
+            title.frame = CGRect(x: 56 * scale, y: 12 * scale,
+                                 width: max(0, bounds.width - 112 * scale), height: 42 * scale)
             title.font = .systemFont(ofSize: max(12, 19 * scale), weight: .bold)
         }
-        let sidePadding = 14 * scale, columnGap = 10 * scale
+
+        let sidePadding  = 14 * scale, columnGap = 10 * scale
         let contentWidth = max(0, bounds.width - sidePadding * 2)
-        let columnWidth = max(0, (contentWidth - columnGap * 2) / 3)
-        let iconSize = min(columnWidth, 58 * scale), iconInset = max(0, (columnWidth - iconSize) / 2)
-        let labelHeight = 15 * scale, iconLabelGap = 3 * scale, rowHeight = iconSize + iconLabelGap + labelHeight, rowGap = 7 * scale, top = 10 * scale
+        let columnWidth  = max(0, (contentWidth - columnGap * 2) / 3)
+        let iconSize     = min(columnWidth, 58 * scale), iconInset = max(0, (columnWidth - iconSize) / 2)
+        let labelHeight  = 15 * scale, iconLabelGap = 3 * scale
+        let rowHeight    = iconSize + iconLabelGap + labelHeight, rowGap = 7 * scale, top = 10 * scale
+
         let buttons = [tapButton, pointButton, clearButton]
-        let labels = content.subviews.compactMap { $0 as? UILabel }.filter { $0 !== statusLabel && $0 !== countLabel && $0 !== pointLabel && $0 !== speedLabel }
-        for index in 0..<buttons.count {
-            let x = sidePadding + CGFloat(index) * (columnWidth + columnGap) + iconInset
-            buttons[index].frame = CGRect(x: x, y: top, width: iconSize, height: iconSize)
-            buttons[index].layer.cornerRadius = iconSize * 0.28
-            TPIOSPanelStyle.syncFrames(in: buttons[index])
-            if index < labels.count {
-                labels[index].frame = CGRect(x: sidePadding + CGFloat(index) * (columnWidth + columnGap), y: top + iconSize + iconLabelGap, width: columnWidth, height: labelHeight)
-                labels[index].font = .systemFont(ofSize: max(8, 13 * scale), weight: .semibold)
+        let labels  = content.subviews.compactMap { $0 as? UILabel }
+                        .filter { $0 !== statusLabel && $0 !== countLabel &&
+                                  $0 !== pointLabel  && $0 !== speedLabel }
+        for i in 0..<buttons.count {
+            let x = sidePadding + CGFloat(i) * (columnWidth + columnGap) + iconInset
+            buttons[i].frame = CGRect(x: x, y: top, width: iconSize, height: iconSize)
+            buttons[i].layer.cornerRadius = iconSize * 0.28
+            TPIOSPanelStyle.syncFrames(in: buttons[i])
+            if i < labels.count {
+                labels[i].frame = CGRect(
+                    x: sidePadding + CGFloat(i) * (columnWidth + columnGap),
+                    y: top + iconSize + iconLabelGap,
+                    width: columnWidth, height: labelHeight)
+                labels[i].font = .systemFont(ofSize: max(8, 13 * scale), weight: .semibold)
             }
         }
+
         let secondY = top + rowHeight + rowGap
         startButton.frame = CGRect(x: sidePadding + iconInset, y: secondY, width: iconSize, height: iconSize)
         startButton.layer.cornerRadius = iconSize * 0.28
         TPIOSPanelStyle.syncFrames(in: startButton)
         if labels.count > 3 {
-            labels[3].frame = CGRect(x: sidePadding, y: secondY + iconSize + iconLabelGap, width: columnWidth, height: labelHeight)
+            labels[3].frame = CGRect(x: sidePadding, y: secondY + iconSize + iconLabelGap,
+                                     width: columnWidth, height: labelHeight)
             labels[3].font = .systemFont(ofSize: max(8, 13 * scale), weight: .semibold)
         }
+
         let infoY = secondY + rowHeight + 3 * scale
-        statusLabel.frame = CGRect(x: sidePadding, y: infoY, width: bounds.width - sidePadding * 2, height: 15 * scale)
-        countLabel.frame = CGRect(x: sidePadding, y: infoY + 16 * scale, width: (bounds.width - sidePadding * 2) / 2 - 4 * scale, height: 15 * scale)
-        pointLabel.frame = CGRect(x: bounds.midX + 4 * scale, y: infoY + 16 * scale, width: (bounds.width - sidePadding * 2) / 2 - 4 * scale, height: 15 * scale)
-        speedLabel.frame = CGRect(x: sidePadding, y: infoY + 35 * scale, width: bounds.width - sidePadding * 2, height: 15 * scale)
-        speedLabel.font = .systemFont(ofSize: max(8, 11 * scale), weight: .semibold)
-        let controlY = infoY + 48 * scale, controlHeight = 24 * scale, arrowSize = 26 * scale, arrowGap = 4 * scale
+        statusLabel.frame = CGRect(x: sidePadding, y: infoY,
+                                   width: bounds.width - sidePadding * 2, height: 15 * scale)
+        countLabel.frame  = CGRect(x: sidePadding, y: infoY + 16 * scale,
+                                   width: (bounds.width - sidePadding * 2) / 2 - 4 * scale, height: 15 * scale)
+        pointLabel.frame  = CGRect(x: bounds.midX + 4 * scale, y: infoY + 16 * scale,
+                                   width: (bounds.width - sidePadding * 2) / 2 - 4 * scale, height: 15 * scale)
+        speedLabel.frame  = CGRect(x: sidePadding, y: infoY + 35 * scale,
+                                   width: bounds.width - sidePadding * 2, height: 15 * scale)
+        speedLabel.font   = .systemFont(ofSize: max(8, 11 * scale), weight: .semibold)
+
+        let controlY = infoY + 48 * scale, controlHeight = 24 * scale
+        let arrowSize = 26 * scale, arrowGap = 4 * scale
         speedMinusButton.frame = CGRect(x: sidePadding, y: controlY, width: arrowSize, height: controlHeight)
-        speedPlusButton.frame = CGRect(x: bounds.width - sidePadding - arrowSize, y: controlY, width: arrowSize, height: controlHeight)
+        speedPlusButton.frame  = CGRect(x: bounds.width - sidePadding - arrowSize, y: controlY,
+                                        width: arrowSize, height: controlHeight)
         speedMinusButton.layer.cornerRadius = 10 * scale
-        speedPlusButton.layer.cornerRadius = 10 * scale
-        speedSlider.frame = CGRect(x: sidePadding + arrowSize + arrowGap, y: controlY, width: max(20, bounds.width - sidePadding * 2 - (arrowSize + arrowGap) * 2), height: controlHeight)
-        resizeHandle.frame = CGRect(x: bounds.width - 44 * scale, y: bounds.height - 44 * scale, width: 44 * scale, height: 44 * scale)
+        speedPlusButton.layer.cornerRadius  = 10 * scale
+        speedSlider.frame = CGRect(
+            x: sidePadding + arrowSize + arrowGap, y: controlY,
+            width: max(20, bounds.width - sidePadding * 2 - (arrowSize + arrowGap) * 2),
+            height: controlHeight)
+
+        resizeHandle.frame = CGRect(x: bounds.width - 44 * scale, y: bounds.height - 44 * scale,
+                                    width: 44 * scale, height: 44 * scale)
         resizeHandle.font = .systemFont(ofSize: 19 * scale, weight: .medium)
     }
 
-    @objc private func movePanel(_ gesture: UIPanGestureRecognizer) {
-        guard let superview else { return }
-        let translation = gesture.translation(in: superview)
-        center.x += translation.x; center.y += translation.y
-        gesture.setTranslation(.zero, in: superview)
-        center.x = min(max(center.x, bounds.width / 2), superview.bounds.width - bounds.width / 2)
-        center.y = min(max(center.y, bounds.height / 2), superview.bounds.height - bounds.height / 2)
+    // ── Gestures ──────────────────────────────
+
+    @objc private func movePanel(_ g: UIPanGestureRecognizer) {
+        guard let sv = superview else { return }
+        let t = g.translation(in: sv)
+        center.x += t.x; center.y += t.y
+        g.setTranslation(.zero, in: sv)
+        center.x = min(max(center.x, bounds.width  / 2), sv.bounds.width  - bounds.width  / 2)
+        center.y = min(max(center.y, bounds.height / 2), sv.bounds.height - bounds.height / 2)
     }
 
-    @objc private func resizePanel(_ gesture: UIPanGestureRecognizer) {
-        guard let superview else { return }
-        switch gesture.state {
+    @objc private func resizePanel(_ g: UIPanGestureRecognizer) {
+        guard let sv = superview else { return }
+        switch g.state {
         case .began:
-            resizeStartFrame = frame; resizeStartPoint = gesture.location(in: superview)
+            resizeStartFrame = frame; resizeStartPoint = g.location(in: sv)
         case .changed:
-            let point = gesture.location(in: superview)
-            let dx = point.x - resizeStartPoint.x, dy = point.y - resizeStartPoint.y
-            let width = min(max(220, resizeStartFrame.width + dx), superview.bounds.width - resizeStartFrame.minX)
-            let height = min(max(300, resizeStartFrame.height + dy), superview.bounds.height - resizeStartFrame.minY)
-            frame = CGRect(x: resizeStartFrame.minX, y: resizeStartFrame.minY, width: width, height: height)
+            let pt = g.location(in: sv)
+            let dx = pt.x - resizeStartPoint.x, dy = pt.y - resizeStartPoint.y
+            let w = min(max(220, resizeStartFrame.width  + dx), sv.bounds.width  - resizeStartFrame.minX)
+            let h = min(max(300, resizeStartFrame.height + dy), sv.bounds.height - resizeStartFrame.minY)
+            frame = CGRect(x: resizeStartFrame.minX, y: resizeStartFrame.minY, width: w, height: h)
         default: break
         }
     }
 
-    @objc private func backTap() { onBack?() }
+    // ── Actions ───────────────────────────────
+
+    @objc private func backTap()  { onBack?()  }
     @objc private func closeTap() { onClose?() }
 
     @objc private func tapMode() {
@@ -329,46 +520,62 @@ final class TPIOSAutoClickPanel: UIView {
 
     @objc private func pointMode() {
         picker?.removeFromSuperview()
-        let overlay = UIView(frame: bounds)
-        overlay.backgroundColor = UIColor.clear
+        // FIX: overlay must cover the FULL window, not self.bounds
+        guard let window = TPIOSAutoClickEngine.appWindow() else { return }
+        let overlay = UIView(frame: window.bounds)
+        overlay.backgroundColor = UIColor.black.withAlphaComponent(0.30)
         overlay.isUserInteractionEnabled = true
-        overlay.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(pickerTap(_:))))
-        superview?.addSubview(overlay)
+
+        // "tap anywhere" hint label
+        let hint = UILabel(frame: CGRect(x: 0, y: overlay.bounds.midY - 20,
+                                        width: overlay.bounds.width, height: 40))
+        hint.text = "Chạm để chọn điểm"
+        hint.textColor = .white
+        hint.font = .boldSystemFont(ofSize: 17)
+        hint.textAlignment = .center
+        overlay.addSubview(hint)
+
+        overlay.addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(pickerTap(_:))))
+        window.addSubview(overlay)
         picker = overlay
         isHidden = true
-        TPIOSLog.shared.log("TapPanel: point picker opened")
+        TPIOSLog.shared.log("TapPanel: point picker opened (full window)")
     }
 
     @objc private func pickerTap(_ gesture: UITapGestureRecognizer) {
-        guard let overlay = picker, let window = overlay.superview as? UIWindow else {
-            TPIOSLog.shared.log("TapPanel: picker failed - overlay/window missing")
+        // FIX: get location in window space directly
+        guard let window = TPIOSAutoClickEngine.appWindow(),
+              let overlay = picker else {
+            TPIOSLog.shared.log("TapPanel: picker failed")
             return
         }
-        let point = gesture.location(in: overlay)
-        let windowPoint = overlay.convert(point, to: window)
+        let windowPoint = gesture.location(in: window)
         points = [windowPoint]
         addMarker(at: windowPoint)
         pointLabel.text = "POINT: 1"
-        picker?.removeFromSuperview(); picker = nil; isHidden = false
-        TPIOSLog.shared.log("TapPanel: point saved local=\(point) window=\(windowPoint)")
+        overlay.removeFromSuperview(); picker = nil; isHidden = false
+        TPIOSLog.shared.log("TapPanel: point saved window=\(windowPoint)")
     }
 
     private func addMarker(at point: CGPoint) {
         markers.forEach { $0.removeFromSuperview() }; markers.removeAll()
-        guard let window = superview as? UIWindow else { return }
+        guard let window = TPIOSAutoClickEngine.appWindow() else { return }
         let marker = UIView(frame: CGRect(x: point.x - 12, y: point.y - 12, width: 24, height: 24))
         marker.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.85)
         marker.layer.cornerRadius = 12
         marker.layer.borderWidth = 2
         marker.layer.borderColor = UIColor.white.cgColor
         marker.isUserInteractionEnabled = true
-        marker.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(moveMarker(_:))))
+        marker.addGestureRecognizer(
+            UIPanGestureRecognizer(target: self, action: #selector(moveMarker(_:))))
         window.addSubview(marker)
         markers.append(marker)
     }
 
     @objc private func moveMarker(_ gesture: UIPanGestureRecognizer) {
-        guard let marker = gesture.view, let window = superview as? UIWindow else { return }
+        guard let marker = gesture.view,
+              let window = TPIOSAutoClickEngine.appWindow() else { return }
         let location = gesture.location(in: window)
         marker.center = location
         points = [location]
@@ -377,7 +584,8 @@ final class TPIOSAutoClickPanel: UIView {
 
     @objc private func clearPoints() {
         stop()
-        points.removeAll(); markers.forEach { $0.removeFromSuperview() }; markers.removeAll()
+        points.removeAll()
+        markers.forEach { $0.removeFromSuperview() }; markers.removeAll()
         pointLabel.text = "POINT: 0"; countLabel.text = "TAP: 0"; statusLabel.text = "IDLE"
         TPIOSLog.shared.log("TapPanel: points cleared")
     }
@@ -406,8 +614,7 @@ final class TPIOSAutoClickPanel: UIView {
         }
         if running {
             TPIOSLog.shared.log("TapPanel: auto stop requested")
-            stop()
-            return
+            stop(); return
         }
         running = true; currentPointIndex = 0
         startButton.setImage(UIImage(systemName: "stop.fill"), for: .normal)
