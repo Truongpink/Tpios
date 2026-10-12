@@ -88,10 +88,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: "TPIOS-${{ steps.version.outputs.version }}"
-          path: "package/tpios${{ steps.version.outputs.version }}.dylib"
+          path: "package/tpios${VERSION}.dylib"
 
       - name: Backup source sang GitLab
         if: always()
+        continue-on-error: true
         run: |
           git remote add backup "https://oauth2:${{ secrets.GITLAB_TOKEN }}@gitlab.com/tpios-group1/truongpink-tpios.git"
           git push backup "HEAD:refs/heads/auto/${GITHUB_REPOSITORY#*/}" --force
