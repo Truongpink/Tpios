@@ -115,16 +115,17 @@ final class TPIOSAutoClickEngine {
     }
 
     static func appWindow() -> UIWindow? {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-            .first {
-                !$0.isHidden &&
-                $0.alpha > 0 &&
-                $0.windowLevel == .normal &&
-                $0.rootViewController != nil &&
-                !NSStringFromClass(type(of: $0)).contains("TPIOS")
-            }
+        // Broken into steps — swiftc type-checker times out on long chained closures
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        var all: [UIWindow] = []
+        for scene in scenes { all.append(contentsOf: scene.windows) }
+        for w in all {
+            guard !w.isHidden, w.alpha > 0, w.windowLevel == .normal,
+                  w.rootViewController != nil,
+                  !NSStringFromClass(type(of: w)).contains("TPIOS") else { continue }
+            return w
+        }
+        return nil
     }
 }
 
