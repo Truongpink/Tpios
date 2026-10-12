@@ -6,7 +6,12 @@
 
 import UIKit
 import Foundation
-import ObjectiveC.runtime
+
+// objc_msgSend is marked unavailable in Swift on newer SDKs — redeclare via silgen.
+@_silgen_name("objc_msgSend")
+private func msgSendInt(_ obj: AnyObject, _ sel: Selector, _ arg: Int) -> Void
+@_silgen_name("objc_msgSend")
+private func msgSendDouble(_ obj: AnyObject, _ sel: Selector, _ arg: Double) -> Void
 
 // ─────────────────────────────────────────────
 // MARK: - IOHIDEvent private API
@@ -128,23 +133,15 @@ final class TPIOSAutoClickEngine {
         objSet(touch, "setLocationInWindow:",         NSValue(cgPoint: point))
         objSet(touch, "setPreviousLocationInWindow:", NSValue(cgPoint: point))
 
-        // Primitive setters via objc_msgSend (fp: id, SEL, primitive)
-        typealias MsgSendInt    = @convention(c) (AnyObject, Selector, Int) -> Void
-        typealias MsgSendDouble = @convention(c) (AnyObject, Selector, Double) -> Void
-        let msgSend = unsafeBitCast(objc_msgSend as Any,
-                                    to: MsgSendInt.self)
-        let msgSendD = unsafeBitCast(objc_msgSend as Any,
-                                     to: MsgSendDouble.self)
-
         func intSet(_ obj: AnyObject, _ sel: String, _ v: Int) {
             let s = NSSelectorFromString(sel)
             guard obj.responds(to: s) else { return }
-            msgSend(obj, s, v)
+            msgSendInt(obj, s, v)
         }
         func dblSet(_ obj: AnyObject, _ sel: String, _ v: Double) {
             let s = NSSelectorFromString(sel)
             guard obj.responds(to: s) else { return }
-            msgSendD(obj, s, v)
+            msgSendDouble(obj, s, v)
         }
 
         intSet(touch, "setTapCount:", 1)
