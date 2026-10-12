@@ -11,23 +11,7 @@ import Foundation
 // MARK: - IOHIDEvent private API
 // ─────────────────────────────────────────────
 
-private typealias IOHIDEventRef             = OpaquePointer
-private typealias IOHIDEventSystemClientRef = OpaquePointer
-
-private let kIOHIDDigitizerEventRange:    UInt32 = 0x00000001
-private let kIOHIDDigitizerEventTouch:    UInt32 = 0x00000002
-private let kIOHIDDigitizerEventPosition: UInt32 = 0x00000004
-private let kIOHIDEventFieldDigitizerIsDisplayIntegrated: Int32 = 0x000B0028
-
-@_silgen_name("IOHIDEventCreateDigitizerEvent")
-private func IOHIDEventCreateDigitizerEvent(
-    _ allocator: OpaquePointer?, _ timeStamp: UInt64,
-    _ transducerType: UInt32, _ index: UInt32, _ identity: UInt32,
-    _ eventMask: UInt32, _ buttonMask: UInt32,
-    _ x: Double, _ y: Double, _ z: Double,
-    _ tipPressure: Double, _ twist: Double,
-    _ range: Bool, _ touch: Bool, _ options: UInt32
-) -> IOHIDEventRef
+private typealias IOHIDEventRef = OpaquePointer
 
 @_silgen_name("IOHIDEventCreateDigitizerFingerEvent")
 private func IOHIDEventCreateDigitizerFingerEvent(
@@ -38,84 +22,170 @@ private func IOHIDEventCreateDigitizerFingerEvent(
     _ range: Bool, _ touch: Bool, _ options: UInt32
 ) -> IOHIDEventRef
 
-@_silgen_name("IOHIDEventAppendEvent")
-private func IOHIDEventAppendEvent(_ event: IOHIDEventRef, _ child: IOHIDEventRef, _ options: UInt32)
-
-@_silgen_name("IOHIDEventSetIntegerValue")
-private func IOHIDEventSetIntegerValue(_ event: IOHIDEventRef, _ field: Int32, _ value: Int32)
-
-@_silgen_name("IOHIDEventSetSenderID")
-private func IOHIDEventSetSenderID(_ event: IOHIDEventRef, _ sender: UInt64)
-
-@_silgen_name("IOHIDEventSystemClientCreate")
-private func IOHIDEventSystemClientCreate(_ allocator: OpaquePointer?) -> IOHIDEventSystemClientRef
-
-@_silgen_name("IOHIDEventSystemClientDispatchEvent")
-private func IOHIDEventSystemClientDispatchEvent(_ client: IOHIDEventSystemClientRef, _ event: IOHIDEventRef)
-
 @_silgen_name("mach_absolute_time")
 private func mach_absolute_time() -> UInt64
 
 // ─────────────────────────────────────────────
-// MARK: - Tap Engine (IOHIDEvent — works on any view/app)
+// MARK: - Tap Engine
 // ─────────────────────────────────────────────
-// FIX: replaced sendActions(for:) which only triggers UIControl.
-// IOHIDEvent injects a real hardware-level touch — hits SwiftUI, gesture
-// recognizers, WebView, game engines, everything.
+// Three-tier approach, most reliable first:
+//   1. IOHIDEvent → UIApplication._enqueueHIDEvent: (bypasses HID client sandbox;
+//      app's own UIApplication processes it as a real hardware touch)
+//   2. UITouch KVC + UIApplication.sendEvent (plain UIEvent with synthesized touch)
+//   3. hitTest → UIControl.sendActions / gesture recognizer state injection
 
 final class TPIOSAutoClickEngine {
     static let shared = TPIOSAutoClickEngine()
-    private let client: IOHIDEventSystemClientRef
-    private let senderID: UInt64 = 0x0000000300000002
-    private init() { client = IOHIDEventSystemClientCreate(nil) }
+    private init() {}
 
-    /// Tap at a point given in UIWindow coordinate space.
     @discardableResult
     func tap(at point: CGPoint) -> Bool {
         guard let window = Self.appWindow() else {
             TPIOSLog.shared.log("TapEngine: appWindow=nil")
             return false
         }
-        let screen = UIScreen.main.bounds
-        guard screen.width > 0, screen.height > 0 else { return false }
+        TPIOSLog.shared.log("TapEngine: tap point=\(point)")
 
-        // Normalize to 0–1 range expected by IOHIDEvent
-        let nx = Double(point.x / screen.width)
-        let ny = Double(point.y / screen.height)
-        let mask = kIOHIDDigitizerEventRange | kIOHIDDigitizerEventTouch | kIOHIDDigitizerEventPosition
+        // ── Tier 1: IOHIDEvent via UIApplication._enqueueHIDEvent: ──────────
+        // _enqueueHIDEvent: is accessible within the same process — no sandbox block.
+        // The HID client dispatch that IS blocked is the inter-process call;
+        // feeding events directly into the app's event queue works fine.
+        if tierOneHID(point: point, window: window) {
+            TPIOSLog.shared.log("TapEngine: tier1 HID enqueue OK")
+            return true
+        }
 
-        TPIOSLog.shared.log("TapEngine: IOHIDTap point=\(point) nx=\(String(format:"%.3f",nx)) ny=\(String(format:"%.3f",ny))")
-        _ = window // suppress unused warning; window validated above
+        // ── Tier 2: Synthesized UITouch via KVC ──────────────────────────────
+        if tierTwoUITouch(point: point, window: window) {
+            TPIOSLog.shared.log("TapEngine: tier2 UITouch OK")
+            return true
+        }
 
+        // ── Tier 3: hitTest fallback ─────────────────────────────────────────
+        return tierThreeFallback(point: point, window: window)
+    }
+
+    // ── Tier 1 ───────────────────────────────────────────────────────────────
+    private func tierOneHID(point: CGPoint, window: UIWindow) -> Bool {
+        let enqueueHIDSel = NSSelectorFromString("_enqueueHIDEvent:")
+        let app = UIApplication.shared
+        guard app.responds(to: enqueueHIDSel) else { return false }
+
+        let screenBounds = UIScreen.main.bounds
+        let nx = Double(point.x / screenBounds.width)
+        let ny = Double(point.y / screenBounds.height)
         let ts = mach_absolute_time()
 
-        // touch-down
-        let downP = IOHIDEventCreateDigitizerEvent(
-            nil, ts, 0, 0, 1, mask, 0, nx, ny, 0, 1.0, 0, true, true, 0)
-        let downF = IOHIDEventCreateDigitizerFingerEvent(
-            nil, ts, 1, 1, mask, nx, ny, 0, 1.0, 0, true, true, 0)
-        IOHIDEventSetIntegerValue(downF, kIOHIDEventFieldDigitizerIsDisplayIntegrated, 1)
-        IOHIDEventAppendEvent(downP, downF, 0)
-        IOHIDEventSetSenderID(downP, senderID)
-        IOHIDEventSystemClientDispatchEvent(client, downP)
+        // eventMask = range(1) | touch(2) | position(4)
+        let eventMask: UInt32 = 0x00000007
+        let fingerDown = IOHIDEventCreateDigitizerFingerEvent(
+            nil, ts, 1, 1, eventMask,
+            nx, ny, 0.0, 1.0, 0.0, true, true, 0)
+        let fingerUp = IOHIDEventCreateDigitizerFingerEvent(
+            nil, ts + 50_000_000, 1, 1, eventMask,
+            nx, ny, 0.0, 0.0, 0.0, false, false, 0)
 
-        // touch-up (80 ms later)
-        let upTS = ts + 80_000_000
-        let upP = IOHIDEventCreateDigitizerEvent(
-            nil, upTS, 0, 0, 1, mask, 0, nx, ny, 0, 0, 0, false, false, 0)
-        let upF = IOHIDEventCreateDigitizerFingerEvent(
-            nil, upTS, 1, 1, mask, nx, ny, 0, 0, 0, false, false, 0)
-        IOHIDEventSetIntegerValue(upF, kIOHIDEventFieldDigitizerIsDisplayIntegrated, 1)
-        IOHIDEventAppendEvent(upP, upF, 0)
-        IOHIDEventSetSenderID(upP, senderID)
-        IOHIDEventSystemClientDispatchEvent(client, upP)
-
-        TPIOSLog.shared.log("TapEngine: IOHIDTap dispatched")
+        app.perform(enqueueHIDSel, with: fingerDown as AnyObject)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            app.perform(enqueueHIDSel, with: fingerUp as AnyObject)
+            TPIOSLog.shared.log("TapEngine: tier1 finger-up dispatched")
+        }
         return true
     }
 
+    // ── Tier 2 ───────────────────────────────────────────────────────────────
+    private func tierTwoUITouch(point: CGPoint, window: UIWindow) -> Bool {
+        // Build UIPhysicalButtonsEvent (iOS 16+) or plain UITouchesEvent via
+        // private class + KVC, then feed through UIApplication.sendEvent(_:).
+        guard let touchesEventClass = NSClassFromString("UITouchesEvent") else { return false }
+
+        let event = touchesEventClass.alloc() as AnyObject
+
+        // Build UITouch
+        guard let touchClass = NSClassFromString("UITouch") else { return false }
+        let touch = touchClass.alloc() as AnyObject
+
+        let initSel = NSSelectorFromString("_initWithWindowContext:")
+        if touch.responds(to: initSel) {
+            _ = touch.perform(initSel, with: window)
+        }
+
+        touch.setValue(window, forKey: "window")
+        touch.setValue(window, forKey: "view")
+        touch.setValue(NSValue(cgPoint: point), forKey: "_locationInWindow")
+        touch.setValue(NSValue(cgPoint: point), forKey: "_previousLocationInWindow")
+        touch.setValue(1, forKey: "tapCount")
+        touch.setValue(Date().timeIntervalSinceReferenceDate, forKey: "timestamp")
+        touch.setValue(UITouch.Phase.began.rawValue, forKey: "phase")
+        touch.setValue(0.0, forKey: "majorRadius")
+        touch.setValue(0.0, forKey: "majorRadiusTolerance")
+
+        // Register touch with event
+        let addTouchSel = NSSelectorFromString("_addTouch:forDelayedDelivery:")
+        if event.responds(to: addTouchSel) {
+            _ = event.perform(addTouchSel, with: touch, with: false as AnyObject)
+        }
+
+        let app = UIApplication.shared
+        touch.setValue(UITouch.Phase.began.rawValue, forKey: "phase")
+        if let uiEvent = event as? UIEvent {
+            app.sendEvent(uiEvent)
+        } else {
+            // force cast as last resort
+            let sendSel = NSSelectorFromString("sendEvent:")
+            app.perform(sendSel, with: event)
+        }
+        TPIOSLog.shared.log("TapEngine: tier2 sendEvent began")
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            touch.setValue(UITouch.Phase.ended.rawValue, forKey: "phase")
+            touch.setValue(Date().timeIntervalSinceReferenceDate, forKey: "timestamp")
+            if let uiEvent = event as? UIEvent {
+                app.sendEvent(uiEvent)
+            } else {
+                let sendSel = NSSelectorFromString("sendEvent:")
+                app.perform(sendSel, with: event)
+            }
+            TPIOSLog.shared.log("TapEngine: tier2 sendEvent ended")
+        }
+        return true
+    }
+
+    // ── Tier 3 ───────────────────────────────────────────────────────────────
+    @discardableResult
+    private func tierThreeFallback(point: CGPoint, window: UIWindow) -> Bool {
+        guard let hit = window.hitTest(point, with: nil) else {
+            TPIOSLog.shared.log("TapEngine: tier3 hitTest nil")
+            return false
+        }
+        // UIControl chain
+        var view: UIView? = hit
+        while let v = view {
+            if let ctrl = v as? UIControl, ctrl.isEnabled, !ctrl.isHidden, ctrl.alpha > 0 {
+                ctrl.sendActions(for: .touchUpInside)
+                TPIOSLog.shared.log("TapEngine: tier3 UIControl \(NSStringFromClass(type(of: ctrl)))")
+                return true
+            }
+            view = v.superview
+        }
+        // Gesture recognizer injection
+        view = hit
+        while let v = view {
+            for gr in v.gestureRecognizers ?? [] {
+                if gr is UITapGestureRecognizer, gr.isEnabled {
+                    gr.setValue(UIGestureRecognizer.State.recognized.rawValue, forKey: "state")
+                    TPIOSLog.shared.log("TapEngine: tier3 gesture \(NSStringFromClass(type(of: v)))")
+                    return true
+                }
+            }
+            view = v.superview
+        }
+        TPIOSLog.shared.log("TapEngine: tier3 all failed on \(NSStringFromClass(type(of: hit)))")
+        return false
+    }
+
+    // ── Window finder ─────────────────────────────────────────────────────────
     static func appWindow() -> UIWindow? {
-        // Broken into steps — swiftc type-checker times out on long chained closures
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         var all: [UIWindow] = []
         for scene in scenes { all.append(contentsOf: scene.windows) }
@@ -161,6 +231,7 @@ final class TPIOSTapTest {
 
     private func finish(restoreMenu: Bool) {
         panel?.stop()
+        panel?.cleanupMarkers()
         panel?.removeFromSuperview()
         panel = nil
         let completion = onFinish
@@ -177,6 +248,7 @@ final class TPIOSTapTest {
 final class TPIOSAutoClickPanel: UIView {
     private var points: [CGPoint] = []
     private var markers: [UIView] = []
+    private static let markerTag = 0xAC70  // unique tag to find markers on window
     private var timer: DispatchSourceTimer?
     private var tapCount = 0
     private var running = false
@@ -513,10 +585,26 @@ final class TPIOSAutoClickPanel: UIView {
         TPIOSLog.shared.log("TapPanel: point saved window=\(windowPoint)")
     }
 
+    private func removeAllMarkers() {
+        // Remove from array (which tracks current superview correctly)
+        markers.forEach { $0.removeFromSuperview() }
+        markers.removeAll()
+        // Also sweep all windows for any orphaned markers by tag
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        for scene in scenes {
+            for w in scene.windows {
+                w.subviews
+                    .filter { $0.tag == TPIOSAutoClickPanel.markerTag }
+                    .forEach { $0.removeFromSuperview() }
+            }
+        }
+    }
+
     private func addMarker(at point: CGPoint) {
-        markers.forEach { $0.removeFromSuperview() }; markers.removeAll()
+        removeAllMarkers()
         guard let window = TPIOSAutoClickEngine.appWindow() else { return }
         let marker = UIView(frame: CGRect(x: point.x - 12, y: point.y - 12, width: 24, height: 24))
+        marker.tag = TPIOSAutoClickPanel.markerTag
         marker.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.85)
         marker.layer.cornerRadius = 12
         marker.layer.borderWidth = 2
@@ -540,7 +628,7 @@ final class TPIOSAutoClickPanel: UIView {
     @objc private func clearPoints() {
         stop()
         points.removeAll()
-        markers.forEach { $0.removeFromSuperview() }; markers.removeAll()
+        removeAllMarkers()
         pointLabel.text = "POINT: 0"; countLabel.text = "TAP: 0"; statusLabel.text = "IDLE"
         TPIOSLog.shared.log("TapPanel: points cleared")
     }
@@ -604,5 +692,10 @@ final class TPIOSAutoClickPanel: UIView {
         startButton.setImage(UIImage(systemName: "play.fill"), for: .normal)
         statusLabel.text = "STOPPED"
         TPIOSLog.shared.log("TapPanel: stopped")
+    }
+
+    /// Called when panel is removed — clean up any markers left on window
+    func cleanupMarkers() {
+        removeAllMarkers()
     }
 }
