@@ -132,7 +132,7 @@ private enum TPIOSTapFix {
             return
         }
 
-        let speed = max(0.05, min(5.0, sliderValue(in: panel) ?? 2.0))
+        let speed = max(0.05, min(5.0, sliderValue(in: panel) ?? 0.15))
         state.running = true
         state.count = 0
         setButtonImage(in: panel, name: "stop.fill")
@@ -192,7 +192,15 @@ private enum TPIOSTapFix {
             }
             view = current.superview
         }
-        TPIOSLog.shared.log("TapFix: no UIControl hit=\(NSStringFromClass(type(of: hit)))")
+        var accessible: UIView? = hit
+        while let current = accessible {
+            if current.isAccessibilityElement, current.accessibilityActivate() {
+                TPIOSLog.shared.log("TapFix: accessibility activated class=\(NSStringFromClass(type(of: current)))")
+                return true
+            }
+            accessible = current.superview
+        }
+        TPIOSLog.shared.log("TapFix: no actionable control hit=\(NSStringFromClass(type(of: hit)))")
         return false
     }
 
