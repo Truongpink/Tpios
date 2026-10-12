@@ -1,57 +1,11 @@
 // TPIOSTapTest.swift
-// Fixed version — replaces sendActions() with real IOHIDEvent injection.
-// Adds missing TPIOSLog, TPIOSPanelStyle, Notification.tpiosCloseMenu stubs.
-// Fixes picker overlay frame (full window, not panel bounds).
+// Fixed: replaces sendActions() with IOHIDEvent injection (works on all view types).
+// Fixed: picker overlay covers full window, not panel bounds.
+// Stubs removed — TPIOSLog, TPIOSPanelStyle, Notification.tpiosCloseMenu
+// are defined in their own files in this project.
 
 import UIKit
 import Foundation
-
-// ─────────────────────────────────────────────
-// MARK: - Missing stubs (nếu đã có ở file khác thì xóa phần này)
-// ─────────────────────────────────────────────
-
-extension Notification.Name {
-    static let tpiosCloseMenu = Notification.Name("tpiosCloseMenu")
-}
-
-final class TPIOSLog {
-    static let shared = TPIOSLog()
-    private init() {}
-    func log(_ msg: String) {
-        NSLog("[TPIOS] %@", msg)
-    }
-}
-
-enum TPIOSPanelStyle {
-    static func applyGlassBackground(to view: UIView, cornerRadius: CGFloat) {
-        view.backgroundColor = UIColor(red: 0.09, green: 0.10, blue: 0.13, alpha: 0.92)
-        view.layer.cornerRadius = cornerRadius
-        view.layer.borderWidth = 0.5
-        view.layer.borderColor = UIColor.white.withAlphaComponent(0.12).cgColor
-        view.layer.shadowColor = UIColor.black.cgColor
-        view.layer.shadowOpacity = 0.55
-        view.layer.shadowRadius = 14
-        view.layer.shadowOffset = CGSize(width: 0, height: 4)
-    }
-
-    static func applyGradientFill(to button: UIButton, colors: [UIColor], cornerRadius: CGFloat) {
-        button.layer.sublayers?.filter { $0 is CAGradientLayer }.forEach { $0.removeFromSuperlayer() }
-        let grad = CAGradientLayer()
-        grad.colors = colors.map { $0.cgColor }
-        grad.startPoint = CGPoint(x: 0, y: 0)
-        grad.endPoint   = CGPoint(x: 1, y: 1)
-        grad.cornerRadius = cornerRadius
-        grad.frame = button.bounds.isEmpty ? CGRect(x: 0, y: 0, width: 58, height: 58) : button.bounds
-        button.layer.insertSublayer(grad, at: 0)
-    }
-
-    /// Sync gradient layer frame to button bounds after layout.
-    static func syncFrames(in button: UIButton) {
-        button.layer.sublayers?
-            .compactMap { $0 as? CAGradientLayer }
-            .forEach { $0.frame = button.bounds }
-    }
-}
 
 // ─────────────────────────────────────────────
 // MARK: - IOHIDEvent private API
