@@ -86,7 +86,7 @@ final class TPIOSAutoClickPanel: UIView {
     private var timer: DispatchSourceTimer?
     private var tapCount = 0
     private var running = false
-    private var speed: TimeInterval = 2.0
+    private var speed: TimeInterval = 0.15
     private var picker: UIView?
     private var currentPointIndex = 0
 
@@ -209,7 +209,7 @@ final class TPIOSAutoClickPanel: UIView {
             content.addSubview(label)
         }
 
-        speedLabel.text = "Tốc độ  2.0s"
+        speedLabel.text = "Tốc độ  0.15s"
         speedLabel.textColor = UIColor.white.withAlphaComponent(0.82)
         speedLabel.font = .systemFont(ofSize: 11, weight: .semibold)
         speedLabel.textAlignment = .center
