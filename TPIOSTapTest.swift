@@ -1,4 +1,4 @@
-import UIKit
+mport UIKit
 import Foundation
 import Darwin
 
@@ -19,19 +19,74 @@ final class TPIOSAutoClickEngine {
             return false
         }
 
+        // 1) Standard UIKit control dispatch.
         var view: UIView? = hit
         while let current = view {
-            if let control = current as? UIControl, control.isEnabled, !control.isHidden, control.alpha > 0 {
-                TPIOSLog.shared.log("TapEngine: UIControl=\(NSStringFromClass(type(of: control))) frame=\(control.frame)")
+            if let control = current as? UIControl,
+               control.isEnabled, !control.isHidden, control.alpha > 0 {
+                TPIOSLog.shared.log("TapEngine: UIControl=\(NSStringFromClass(type(of: control)))")
                 control.sendActions(for: .touchUpInside)
-                TPIOSLog.shared.log("TapEngine: UIControl action dispatched")
                 return true
             }
             view = current.superview
         }
 
-        TPIOSLog.shared.log("TapEngine: no UIControl at point hit=\(NSStringFromClass(type(of: hit)))")
+        // 2) Accessibility activation for accessible native elements.
+        view = hit
+        while let current = view {
+            if current.isAccessibilityElement, current.accessibilityActivate() {
+                TPIOSLog.shared.log("TapEngine: accessibility activated \(NSStringFromClass(type(of: current)))")
+                return true
+            }
+            view = current.superview
+        }
+
+        // 3) React Native views are not UIControls. Try their own accessibility
+        // activation before falling back to the responder chain.
+        if NSStringFromClass(type(of: hit)).contains("RCT") {
+            TPIOSLog.shared.log("TapEngine: React Native target \(NSStringFromClass(type(of: hit)))")
+            if hit.accessibilityActivate() {
+                TPIOSLog.shared.log("TapEngine: React Native accessibility activation SUCCESS")
+                return true
+            }
+
+            // React Native frequently keeps the actionable native view below
+            // an RCTView container. Inspect the hierarchy at the exact point.
+            if let descendant = deepestActionableDescendant(of: hit, windowPoint: windowPoint, window: window) {
+                TPIOSLog.shared.log("TapEngine: descendant target \(NSStringFromClass(type(of: descendant)))")
+                if let control = descendant as? UIControl,
+                   control.isEnabled, !control.isHidden, control.alpha > 0 {
+                    control.sendActions(for: .touchUpInside)
+                    return true
+                }
+                if descendant.isAccessibilityElement, descendant.accessibilityActivate() {
+                    return true
+                }
+            }
+        }
+
+        // A genuine UITouch cannot be constructed through the public UIKit API.
+        // Do not report success for a synthetic action that was never delivered.
+        TPIOSLog.shared.log("TapEngine: no public actionable target hit=\(NSStringFromClass(type(of: hit)))")
         return false
+    }
+
+    private func deepestActionableDescendant(of root: UIView, windowPoint: CGPoint, window: UIWindow) -> UIView? {
+        var best: UIView?
+        func walk(_ view: UIView) {
+            guard !view.isHidden, view.alpha > 0, view.isUserInteractionEnabled else { return }
+            let local = view.convert(windowPoint, from: window)
+            guard view.bounds.contains(local) else { return }
+            for child in view.subviews.reversed() {
+                walk(child)
+                if best != nil { return }
+            }
+            if view !== root && (view is UIControl || view.isAccessibilityElement) {
+                best = view
+            }
+        }
+        walk(root)
+        return best
     }
 
     static func appWindow() -> UIWindow? {
@@ -40,7 +95,11 @@ final class TPIOSAutoClickEngine {
         for scene in scenes { windows.append(contentsOf: scene.windows) }
         for window in windows {
             let className = NSStringFromClass(type(of: window))
-            if !window.isHidden && window.alpha > 0 && window.windowLevel == .normal && window.rootViewController != nil && !className.contains("TPIOS") {
+            if !window.isHidden &&
+                window.alpha > 0 &&
+                window.windowLevel == .normal &&
+                window.rootViewController != nil &&
+                !className.contains("TPIOS") {
                 return window
             }
         }
@@ -71,8 +130,7 @@ final class TPIOSTapTest {
 
     private func finish(restoreMenu: Bool) {
         if let panel {
-            TPIOSTapFix.cleanup(panel)
-            panel.stop()
+            panel.cleanup()
             panel.removeFromSuperview()
         }
         panel = nil
@@ -177,7 +235,7 @@ final class TPIOSAutoClickPanel: UIView {
         header.addSubview(back)
 
         let title = UILabel()
-        title.text = "CHẠM"
+        title.text = "CHáº M"
         title.textColor = .white
         title.font = .systemFont(ofSize: 19, weight: .bold)
         title.textAlignment = .center
@@ -198,10 +256,10 @@ final class TPIOSAutoClickPanel: UIView {
         iconButton(startButton, icon: "play.fill", colors: [UIColor(red: 0.36, green: 0.88, blue: 0.55, alpha: 1), UIColor(red: 0.06, green: 0.52, blue: 0.33, alpha: 1)], action: #selector(startStop))
 
         let tapLabel = UILabel(), pointCaption = UILabel(), clearLabel = UILabel(), startLabel = UILabel()
-        caption(tapLabel, text: "Chạm")
-        caption(pointCaption, text: "Điểm")
-        caption(clearLabel, text: "Xóa")
-        caption(startLabel, text: "Bắt đầu")
+        caption(tapLabel, text: "Cháº¡m")
+        caption(pointCaption, text: "Äiá»m")
+        caption(clearLabel, text: "XÃ³a")
+        caption(startLabel, text: "Báº¯t Äáº§u")
 
         statusLabel.text = "IDLE"
         countLabel.text = "TAP: 0"
@@ -212,7 +270,7 @@ final class TPIOSAutoClickPanel: UIView {
             content.addSubview(label)
         }
 
-        speedLabel.text = "Tốc độ  0.15s"
+        speedLabel.text = "Tá»c Äá»  0.15s"
         speedLabel.textColor = UIColor.white.withAlphaComponent(0.82)
         speedLabel.font = .systemFont(ofSize: 11, weight: .semibold)
         speedLabel.textAlignment = .center
@@ -227,7 +285,7 @@ final class TPIOSAutoClickPanel: UIView {
         speedButton(speedPlusButton, icon: "chevron.right", action: #selector(increaseSpeed))
         addSubview(content)
 
-        resizeHandle.text = "↘"
+        resizeHandle.text = "â"
         resizeHandle.textColor = UIColor.white.withAlphaComponent(0.42)
         resizeHandle.font = .systemFont(ofSize: 19, weight: .medium)
         resizeHandle.textAlignment = .center
@@ -320,13 +378,13 @@ final class TPIOSAutoClickPanel: UIView {
 
     @objc private func tapMode() {
         guard let point = points.first else {
-            statusLabel.text = "CHƯA CÓ ĐIỂM"
+            statusLabel.text = "CHÆ¯A CÃ ÄIá»M"
             TPIOSLog.shared.log("TapPanel: manual tap rejected - no point")
             return
         }
         TPIOSLog.shared.log("TapPanel: manual tap point=\(point)")
         let ok = TPIOSAutoClickEngine.shared.tap(at: point)
-        statusLabel.text = ok ? "TAPPED" : "TAP LỖI"
+        statusLabel.text = ok ? "TAPPED" : "TAP Lá»I"
         TPIOSLog.shared.log("TapPanel: manual tap result=\(ok)")
     }
 
@@ -387,7 +445,7 @@ final class TPIOSAutoClickPanel: UIView {
 
     @objc private func speedChanged() {
         speed = TimeInterval(speedSlider.value)
-        speedLabel.text = String(format: "Tốc độ  %.2fs", speed)
+        speedLabel.text = String(format: "Tá»c Äá»  %.2fs", speed)
         TPIOSLog.shared.log(String(format: "TapPanel: speed=%.2fs", speed))
     }
 
@@ -403,7 +461,7 @@ final class TPIOSAutoClickPanel: UIView {
 
     @objc private func startStop() {
         guard !points.isEmpty else {
-            statusLabel.text = "CHƯA CÓ ĐIỂM"
+            statusLabel.text = "CHÆ¯A CÃ ÄIá»M"
             TPIOSLog.shared.log("TapPanel: auto start rejected - no point")
             return
         }
@@ -437,6 +495,23 @@ final class TPIOSAutoClickPanel: UIView {
         } else {
             TPIOSLog.shared.log("TapPanel: performTap FAILED")
         }
+    }
+
+    func cleanup() {
+        running = false
+        timer?.cancel()
+        timer = nil
+        picker?.removeFromSuperview()
+        picker = nil
+        markers.forEach { $0.removeFromSuperview() }
+        markers.removeAll()
+        points.removeAll()
+        tapCount = 0
+        currentPointIndex = 0
+        pointLabel.text = "POINT: 0"
+        countLabel.text = "TAP: 0"
+        statusLabel.text = "IDLE"
+        TPIOSLog.shared.log("TapPanel: cleanup panel exit - marker/picker/timer removed")
     }
 
     func stop() {
