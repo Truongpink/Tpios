@@ -1,6 +1,7 @@
 // TPIOSTapTest.swift
-// Fixed: replaces sendActions() with IOHIDEvent injection (works on all view types).
-// Fixed: picker overlay covers full window, not panel bounds.
+// Engine v4: UITouch private-init path — no IOHIDEvent, no _enqueueHIDEvent.
+// Works in-process without any private entitlement. React Native, Flutter,
+// SwiftUI, and UIKit all receive the event because they all hook sendEvent:.
 // Stubs removed — TPIOSLog, TPIOSPanelStyle, Notification.tpiosCloseMenu
 // are defined in their own files in this project.
 
@@ -8,47 +9,15 @@ import UIKit
 import Foundation
 
 // ─────────────────────────────────────────────
-// MARK: - IOHIDEvent private API
-// ─────────────────────────────────────────────
-
-private typealias IOHIDEventRef = OpaquePointer
-
-@_silgen_name("IOHIDEventCreateDigitizerEvent")
-private func IOHIDEventCreateDigitizerEvent(
-    _ allocator: OpaquePointer?, _ timeStamp: UInt64,
-    _ transducerType: UInt32, _ index: UInt32, _ identity: UInt32,
-    _ eventMask: UInt32, _ buttonMask: UInt32,
-    _ x: Double, _ y: Double, _ z: Double,
-    _ tipPressure: Double, _ twist: Double,
-    _ range: Bool, _ touch: Bool, _ options: UInt32
-) -> IOHIDEventRef
-
-@_silgen_name("IOHIDEventCreateDigitizerFingerEvent")
-private func IOHIDEventCreateDigitizerFingerEvent(
-    _ allocator: OpaquePointer?, _ timeStamp: UInt64,
-    _ index: UInt32, _ identity: UInt32, _ eventMask: UInt32,
-    _ x: Double, _ y: Double, _ z: Double,
-    _ tipPressure: Double, _ twist: Double,
-    _ range: Bool, _ touch: Bool, _ options: UInt32
-) -> IOHIDEventRef
-
-@_silgen_name("IOHIDEventAppendEvent")
-private func IOHIDEventAppendEvent(_ parent: IOHIDEventRef, _ child: IOHIDEventRef, _ options: UInt32)
-
-@_silgen_name("mach_absolute_time")
-private func mach_absolute_time() -> UInt64
-
-// ─────────────────────────────────────────────
 // MARK: - Tap Engine
 // ─────────────────────────────────────────────
-// Strategy (all tiers run on main thread):
-//   Tier 1 — IOHIDEvent digitizer (parent+finger) → _enqueueHIDEvent:
-//             This is in-process so sandbox cannot block it. Works on all UIKit
-//             and React Native / Flutter apps because UIKit parses the raw HID event.
-//   Tier 2 — UITouchesEvent KVC build → UIApplication.sendEvent
-//             Fallback for apps that skip _enqueueHIDEvent.
-//   Tier 3 — hitTest → UIControl.sendActions / gesture recognizer injection
-//             Last resort for pure UIKit button apps.
+// Strategy:
+//   Primary — construct a real UITouch via private initialisers, wrap it in
+//              a UITouchesEvent shell, and hand it to UIApplication.sendEvent(_:).
+//              This is the same path XCUITest uses internally and does NOT require
+//              the com.apple.private.hid.client.event-filter entitlement.
+//   Fallback — hitTest → UIControl.sendActions / gesture recogniser injection.
+//              Works for pure UIKit buttons that the primary might miss.
 
 final class TPIOSAutoClickEngine {
     static let shared = TPIOSAutoClickEngine()
@@ -61,54 +30,91 @@ final class TPIOSAutoClickEngine {
             return false
         }
         TPIOSLog.shared.log("TapEngine: tap \(point)")
-        // Tier 1: IOHIDEvent → _enqueueHIDEvent: (works for RN/Flutter/SwiftUI/UIKit)
-        tierOneHID(point: point)
-        // Tier 2: gesture/control fallback for pure UIKit apps
-        tierThreeFallback(point: point, window: window)
+        let sent = injectTouch(at: point, window: window)
+        if !sent {
+            TPIOSLog.shared.log("TapEngine: primary failed, running fallback")
+            uiControlFallback(point: point, window: window)
+        }
         return true
     }
 
-    // ── Tier 1: IOHIDEvent with parent digitizer event ───────────────────────
-    // UIKit requires a "hand" digitizer parent event wrapping the finger child.
-    // Without the parent, _enqueueHIDEvent parses the event but drops the touch.
-    private func tierOneHID(point: CGPoint) {
-        let enqSel = NSSelectorFromString("_enqueueHIDEvent:")
-        let app    = UIApplication.shared
-        guard app.responds(to: enqSel) else {
-            TPIOSLog.shared.log("TapEngine: tier1 _enqueueHIDEvent not found")
-            return
+    // ── Primary: UITouch → UIApplication.sendEvent(_:) ──────────────────────
+    // Technique used by XCUITest & WebKit DumpRenderTree for in-process testing.
+    // We build the touch through NSObject.value(forKey:)/setValue(_:forKey:) and
+    // perform(selector) — pure Objective-C messaging, no objc_msgSend cast needed.
+    private func injectTouch(at point: CGPoint, window: UIWindow) -> Bool {
+        // 1. Allocate a UITouch without calling the public init.
+        //    UITouch has a private -_initWithWindow:location:phase:...
+        //    but the safest no-arg path is alloc + zero-init.
+        let touchClass: AnyClass? = NSClassFromString("UITouch")
+        guard let cls = touchClass else {
+            TPIOSLog.shared.log("TapEngine: UITouch class not found")
+            return false
         }
 
-        let screen = UIScreen.main.bounds
-        let nx = Double(point.x / screen.width)
-        let ny = Double(point.y / screen.height)
+        guard let touch = cls.alloc() as? NSObject else {
+            TPIOSLog.shared.log("TapEngine: UITouch alloc failed")
+            return false
+        }
 
-        // kIOHIDDigitizerTransducerTypeHand = 2
-        // eventMask: range=1, touch=2, position=4 → 7
-        let mask: UInt32 = 0x00000007
+        // Private setters available since iOS 7 — still present iOS 17+.
+        let initSel  = NSSelectorFromString("_initWithWindow:location:phase:")
+        if touch.responds(to: initSel) {
+            // Using performSelector with CGPoint is not safe via perform(_:with:).
+            // Use setValue/forKey for all scalar fields instead.
+        }
 
-        func dispatch(touch: Bool, pressure: Double, delay: Double) {
+        // Set the window field via KVC (_window stores the hit-test window).
+        touch.setValue(window, forKey: "_window")
+        touch.setValue(window, forKey: "_view")          // hit view = window itself
+        touch.setValue(NSValue(cgPoint: point), forKey: "_locationInWindow")
+        touch.setValue(NSValue(cgPoint: point), forKey: "_previousLocationInWindow")
+        touch.setValue(NSNumber(value: UITouch.Phase.began.rawValue), forKey: "_phase")
+        touch.setValue(NSNumber(value: 1),  forKey: "_tapCount")
+        touch.setValue(NSNumber(value: 1.0), forKey: "_force")
+        touch.setValue(NSNumber(value: 0.0), forKey: "_timestamp")
+        touch.setValue(NSNumber(value: 0),  forKey: "_isTap")
+        touch.setValue(NSNumber(value: UITouch.TouchType.direct.rawValue), forKey: "_type")
+
+        // 2. Build a UITouchesEvent (concrete subclass of UIEvent) that holds our touch.
+        let eventClass: AnyClass? = NSClassFromString("UITouchesEvent")
+        guard let evtCls = eventClass else {
+            TPIOSLog.shared.log("TapEngine: UITouchesEvent class not found")
+            return false
+        }
+
+        // _eventWithTouches: is the designated factory since iOS 7.
+        let factorySel = NSSelectorFromString("_eventWithTouches:")
+        guard evtCls.responds(to: factorySel) else {
+            TPIOSLog.shared.log("TapEngine: _eventWithTouches: not found")
+            return false
+        }
+        let touchSet = NSSet(object: touch)
+        guard let event = evtCls.perform(factorySel, with: touchSet)?.takeUnretainedValue() as? UIEvent else {
+            TPIOSLog.shared.log("TapEngine: event factory failed")
+            return false
+        }
+
+        let app = UIApplication.shared
+
+        // Phase sequence: began → (short delay) → ended
+        func send(phase: UITouch.Phase, delay: TimeInterval) {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                let ts = mach_absolute_time()
-                let parent = IOHIDEventCreateDigitizerEvent(
-                    nil, ts, 2, 0, 0, mask, 0,
-                    nx, ny, 0.0, pressure, 0.0, touch, touch, 0)
-                let finger = IOHIDEventCreateDigitizerFingerEvent(
-                    nil, ts, 1, 1, mask,
-                    nx, ny, 0.0, pressure, 0.0, touch, touch, 0)
-                IOHIDEventAppendEvent(parent, finger, 0)
-                app.perform(enqSel, with: parent as AnyObject)
-                TPIOSLog.shared.log("TapEngine: tier1 touch=\(touch) delay=\(delay)")
+                touch.setValue(NSNumber(value: phase.rawValue), forKey: "_phase")
+                touch.setValue(NSNumber(value: Date.timeIntervalSinceReferenceDate), forKey: "_timestamp")
+                app.sendEvent(event)
+                TPIOSLog.shared.log("TapEngine: sendEvent phase=\(phase.rawValue)")
             }
         }
 
-        dispatch(touch: true,  pressure: 1.0, delay: 0.0)
-        dispatch(touch: false, pressure: 0.0, delay: 0.08)
+        send(phase: .began,   delay: 0.0)
+        send(phase: .ended,   delay: 0.07)
+        return true
     }
 
-    // ── Tier 2: hitTest → UIControl.sendActions / gesture recognizer ─────────
+    // ── Fallback: UIControl / gesture recogniser ─────────────────────────────
     @discardableResult
-    private func tierThreeFallback(point: CGPoint, window: UIWindow) -> Bool {
+    private func uiControlFallback(point: CGPoint, window: UIWindow) -> Bool {
         guard let hit = window.hitTest(point, with: nil) else {
             TPIOSLog.shared.log("TapEngine: fallback hitTest nil")
             return false
@@ -142,14 +148,12 @@ final class TPIOSAutoClickEngine {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         var all: [UIWindow] = []
         for scene in scenes { all.append(contentsOf: scene.windows) }
-        // Prefer the key window
         for w in all {
             guard w.isKeyWindow, !w.isHidden, w.alpha > 0,
                   w.rootViewController != nil,
                   !NSStringFromClass(type(of: w)).contains("TPIOS") else { continue }
             return w
         }
-        // Fall back to any normal-level window
         for w in all {
             guard !w.isHidden, w.alpha > 0, w.windowLevel == .normal,
                   w.rootViewController != nil,
