@@ -70,8 +70,11 @@ final class TPIOSTapTest {
     }
 
     private func finish(restoreMenu: Bool) {
-        panel?.stop()
-        panel?.removeFromSuperview()
+        if let panel {
+            TPIOSTapFix.cleanup(panel)
+            panel.stop()
+            panel.removeFromSuperview()
+        }
         panel = nil
         let completion = onFinish
         onFinish = nil
