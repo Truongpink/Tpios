@@ -46,7 +46,7 @@ enum TPIOSTapFix {
     private static var stateKey: UInt8 = 0
     private static var installed = false
 
-    static func state(for panel: TPIOSAutoClickPanel) -> TPIOSTapFixState {
+    private static func state(for panel: TPIOSAutoClickPanel) -> TPIOSTapFixState {
         if let state = objc_getAssociatedObject(panel, &stateKey) as? TPIOSTapFixState { return state }
         let state = TPIOSTapFixState()
         state.panel = panel
