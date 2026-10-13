@@ -39,76 +39,55 @@ final class TPIOSAutoClickEngine {
     }
 
     // ── Primary: UITouch → UIApplication.sendEvent(_:) ──────────────────────
-    // Technique used by XCUITest & WebKit DumpRenderTree for in-process testing.
-    // We build the touch through NSObject.value(forKey:)/setValue(_:forKey:) and
-    // perform(selector) — pure Objective-C messaging, no objc_msgSend cast needed.
+    // Builds a real UITouch + UITouchesEvent via KVC, then calls the public
+    // sendEvent(_:) — no IOHIDEvent, no private entitlement required.
     private func injectTouch(at point: CGPoint, window: UIWindow) -> Bool {
-        // 1. Allocate a UITouch without calling the public init.
-        //    UITouch has a private -_initWithWindow:location:phase:...
-        //    but the safest no-arg path is alloc + zero-init.
-        let touchClass: AnyClass? = NSClassFromString("UITouch")
-        guard let cls = touchClass else {
+        // 1. Alloc UITouch without triggering public init.
+        guard let touchCls = NSClassFromString("UITouch") as? NSObject.Type else {
             TPIOSLog.shared.log("TapEngine: UITouch class not found")
             return false
         }
+        let touch = touchCls.init()
 
-        guard let touch = cls.alloc() as? NSObject else {
-            TPIOSLog.shared.log("TapEngine: UITouch alloc failed")
-            return false
-        }
-
-        // Private setters available since iOS 7 — still present iOS 17+.
-        let initSel  = NSSelectorFromString("_initWithWindow:location:phase:")
-        if touch.responds(to: initSel) {
-            // Using performSelector with CGPoint is not safe via perform(_:with:).
-            // Use setValue/forKey for all scalar fields instead.
-        }
-
-        // Set the window field via KVC (_window stores the hit-test window).
         touch.setValue(window, forKey: "_window")
-        touch.setValue(window, forKey: "_view")          // hit view = window itself
+        touch.setValue(window, forKey: "_view")
         touch.setValue(NSValue(cgPoint: point), forKey: "_locationInWindow")
         touch.setValue(NSValue(cgPoint: point), forKey: "_previousLocationInWindow")
-        touch.setValue(NSNumber(value: UITouch.Phase.began.rawValue), forKey: "_phase")
-        touch.setValue(NSNumber(value: 1),  forKey: "_tapCount")
-        touch.setValue(NSNumber(value: 1.0), forKey: "_force")
-        touch.setValue(NSNumber(value: 0.0), forKey: "_timestamp")
-        touch.setValue(NSNumber(value: 0),  forKey: "_isTap")
+        touch.setValue(NSNumber(value: UITouch.Phase.began.rawValue),      forKey: "_phase")
         touch.setValue(NSNumber(value: UITouch.TouchType.direct.rawValue), forKey: "_type")
+        touch.setValue(NSNumber(value: 1),   forKey: "_tapCount")
+        touch.setValue(NSNumber(value: 1.0), forKey: "_force")
+        touch.setValue(NSNumber(value: Date.timeIntervalSinceReferenceDate), forKey: "_timestamp")
 
-        // 2. Build a UITouchesEvent (concrete subclass of UIEvent) that holds our touch.
-        let eventClass: AnyClass? = NSClassFromString("UITouchesEvent")
-        guard let evtCls = eventClass else {
+        // 2. Alloc UITouchesEvent and inject the touch set via KVC.
+        //    UITouchesEvent holds touches in _allTouchesSet (ivar since iOS 3).
+        guard let evtCls = NSClassFromString("UITouchesEvent") as? NSObject.Type else {
             TPIOSLog.shared.log("TapEngine: UITouchesEvent class not found")
             return false
         }
+        let event = evtCls.init()
+        let touchSet = NSMutableSet(object: touch)
+        event.setValue(touchSet, forKey: "_allTouchesSet")
 
-        // _eventWithTouches: is the designated factory since iOS 7.
-        let factorySel = NSSelectorFromString("_eventWithTouches:")
-        guard evtCls.responds(to: factorySel) else {
-            TPIOSLog.shared.log("TapEngine: _eventWithTouches: not found")
-            return false
-        }
-        let touchSet = NSSet(object: touch)
-        guard let event = evtCls.perform(factorySel, with: touchSet)?.takeUnretainedValue() as? UIEvent else {
-            TPIOSLog.shared.log("TapEngine: event factory failed")
+        // Cast to UIEvent for sendEvent — UITouchesEvent IS-A UIEvent.
+        guard let uiEvent = event as? UIEvent else {
+            TPIOSLog.shared.log("TapEngine: event cast failed")
             return false
         }
 
         let app = UIApplication.shared
 
-        // Phase sequence: began → (short delay) → ended
         func send(phase: UITouch.Phase, delay: TimeInterval) {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 touch.setValue(NSNumber(value: phase.rawValue), forKey: "_phase")
                 touch.setValue(NSNumber(value: Date.timeIntervalSinceReferenceDate), forKey: "_timestamp")
-                app.sendEvent(event)
+                app.sendEvent(uiEvent)
                 TPIOSLog.shared.log("TapEngine: sendEvent phase=\(phase.rawValue)")
             }
         }
 
-        send(phase: .began,   delay: 0.0)
-        send(phase: .ended,   delay: 0.07)
+        send(phase: .began, delay: 0.00)
+        send(phase: .ended, delay: 0.07)
         return true
     }
 
