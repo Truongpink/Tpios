@@ -7,6 +7,7 @@ TPIOS là iOS dylib dùng để thử nghiệm các chức năng UI/runtime inje
 ## QUY TẮC LÀM VIỆC TRÊN REPO
 
 > Phần này là quy tắc bắt buộc cho bất kỳ AI/người nào đọc và chỉnh sửa repo này. Khi làm việc trong repo, phải đọc phần này trước và làm đúng theo nó.
+> Đọc và sửa trực tiếp trên repo đã liên kết những phần cần chỉnh sửa
 
 ### 1. Chỉ làm việc trong đúng repo được yêu cầu
 
