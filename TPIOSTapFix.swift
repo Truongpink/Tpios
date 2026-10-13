@@ -42,7 +42,7 @@ private final class TPIOSTapFixPickerTarget: NSObject {
     }
 }
 
-private enum TPIOSTapFix {
+enum TPIOSTapFix {
     private static var stateKey: UInt8 = 0
     private static var installed = false
 
@@ -159,6 +159,18 @@ private enum TPIOSTapFix {
         TPIOSLog.shared.log("TapFix: stopped")
     }
 
+    static func cleanup(_ panel: TPIOSAutoClickPanel) {
+        let state = state(for: panel)
+        state.running = false
+        state.timer?.cancel(); state.timer = nil
+        state.picker?.removeFromSuperview()
+        state.picker = nil
+        state.marker?.removeFromSuperview()
+        state.marker = nil
+        state.point = nil
+        TPIOSLog.shared.log("TapFix: cleanup panel exit - marker/picker/timer removed")
+    }
+
     private static func perform(_ panel: TPIOSAutoClickPanel) {
         let state = state(for: panel)
         guard state.running, let point = state.point else { return }
@@ -168,7 +180,11 @@ private enum TPIOSTapFix {
             setCount(in: panel, value: state.count)
             TPIOSLog.shared.log("TapFix: performTap SUCCESS count=\(state.count)")
         } else {
-            TPIOSLog.shared.log("TapFix: performTap FAILED point=\(point)")
+            state.running = false
+            state.timer?.cancel(); state.timer = nil
+            setButtonImage(in: panel, name: "play.fill")
+            setStatus(in: panel, text: "TAP LỖI")
+            TPIOSLog.shared.log("TapFix: performTap FAILED point=\(point); stopped because target is not actionable")
         }
     }
 
