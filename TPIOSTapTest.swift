@@ -7,12 +7,6 @@
 import UIKit
 import Foundation
 
-// objc_msgSend is marked unavailable in Swift on newer SDKs — redeclare via silgen.
-@_silgen_name("objc_msgSend")
-private func msgSendInt(_ obj: AnyObject, _ sel: Selector, _ arg: Int) -> Void
-@_silgen_name("objc_msgSend")
-private func msgSendDouble(_ obj: AnyObject, _ sel: Selector, _ arg: Double) -> Void
-
 // ─────────────────────────────────────────────
 // MARK: - IOHIDEvent private API
 // ─────────────────────────────────────────────
@@ -66,11 +60,11 @@ final class TPIOSAutoClickEngine {
             TPIOSLog.shared.log("TapEngine: appWindow=nil")
             return false
         }
-        TPIOSLog.shared.log("TapEngine: tap \(point) window=\(NSStringFromClass(type(of: window)))")
+        TPIOSLog.shared.log("TapEngine: tap \(point)")
+        // Tier 1: IOHIDEvent → _enqueueHIDEvent: (works for RN/Flutter/SwiftUI/UIKit)
         tierOneHID(point: point)
-        // Run tier 2 in parallel — belt-and-suspenders approach.
-        // Whichever arrives first wins; the duplicate is ignored by UIKit.
-        tierTwoUITouch(point: point, window: window)
+        // Tier 2: gesture/control fallback for pure UIKit apps
+        tierThreeFallback(point: point, window: window)
         return true
     }
 
@@ -112,61 +106,35 @@ final class TPIOSAutoClickEngine {
         dispatch(touch: false, pressure: 0.0, delay: 0.08)
     }
 
-    // ── Tier 2: UITouchesEvent + UITouch via objc_msgSend → sendEvent ────────
-    // objc_msgSend lets us call setters that take primitives (phase, tapCount, etc.)
-    // without going through KVC (which would throw for unknown keys).
-    private func tierTwoUITouch(point: CGPoint, window: UIWindow) {
-        guard let touchesEventClass = NSClassFromString("UITouchesEvent"),
-              let touchClass        = NSClassFromString("UITouch") else { return }
-
-        let event = touchesEventClass.alloc() as AnyObject
-        let touch = (touchClass.alloc() as AnyObject)
-
-        // Object-arg setters (safe via perform:with:)
-        func objSet(_ obj: AnyObject, _ sel: String, _ val: AnyObject) {
-            let s = NSSelectorFromString(sel)
-            guard obj.responds(to: s) else { return }
-            _ = obj.perform(s, with: val)
+    // ── Tier 2: hitTest → UIControl.sendActions / gesture recognizer ─────────
+    @discardableResult
+    private func tierThreeFallback(point: CGPoint, window: UIWindow) -> Bool {
+        guard let hit = window.hitTest(point, with: nil) else {
+            TPIOSLog.shared.log("TapEngine: fallback hitTest nil")
+            return false
         }
-        objSet(touch, "setWindow:", window)
-        objSet(touch, "setView:",   window)
-        objSet(touch, "setLocationInWindow:",         NSValue(cgPoint: point))
-        objSet(touch, "setPreviousLocationInWindow:", NSValue(cgPoint: point))
-
-        func intSet(_ obj: AnyObject, _ sel: String, _ v: Int) {
-            let s = NSSelectorFromString(sel)
-            guard obj.responds(to: s) else { return }
-            msgSendInt(obj, s, v)
-        }
-        func dblSet(_ obj: AnyObject, _ sel: String, _ v: Double) {
-            let s = NSSelectorFromString(sel)
-            guard obj.responds(to: s) else { return }
-            msgSendDouble(obj, s, v)
-        }
-
-        intSet(touch, "setTapCount:", 1)
-        dblSet(touch, "setMajorRadius:", 1.0)
-        dblSet(touch, "setMajorRadiusTolerance:", 0.0)
-
-        let addSel = NSSelectorFromString("_addTouch:forDelayedDelivery:")
-        if event.responds(to: addSel) {
-            _ = event.perform(addSel, with: touch, with: false as AnyObject)
-        }
-
-        func send(phase: UITouch.Phase, delay: Double) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                intSet(touch, "setPhase:", phase.rawValue)
-                dblSet(touch, "setTimestamp:", Date().timeIntervalSinceReferenceDate)
-                let sendSel = NSSelectorFromString("sendEvent:")
-                // Send to both UIApplication and UIWindow — whichever routes first wins
-                _ = UIApplication.shared.perform(sendSel, with: event)
-                _ = window.perform(sendSel, with: event)
-                TPIOSLog.shared.log("TapEngine: tier2 phase=\(phase.rawValue)")
+        var view: UIView? = hit
+        while let v = view {
+            if let ctrl = v as? UIControl, ctrl.isEnabled, !ctrl.isHidden, ctrl.alpha > 0 {
+                ctrl.sendActions(for: .touchUpInside)
+                TPIOSLog.shared.log("TapEngine: fallback UIControl \(NSStringFromClass(type(of: ctrl)))")
+                return true
             }
+            view = v.superview
         }
-
-        send(phase: .began, delay: 0.005)
-        send(phase: .ended, delay: 0.085)
+        view = hit
+        while let v = view {
+            for gr in v.gestureRecognizers ?? [] {
+                if gr is UITapGestureRecognizer, gr.isEnabled {
+                    gr.setValue(UIGestureRecognizer.State.recognized.rawValue, forKey: "state")
+                    TPIOSLog.shared.log("TapEngine: fallback gesture \(NSStringFromClass(type(of: v)))")
+                    return true
+                }
+            }
+            view = v.superview
+        }
+        TPIOSLog.shared.log("TapEngine: fallback all failed on \(NSStringFromClass(type(of: hit)))")
+        return false
     }
 
     // ── Window finder ─────────────────────────────────────────────────────────
