@@ -108,17 +108,6 @@ final class TPIOSAutoClickEngine {
     }
 }
 
-private extension UIView {
-    func isDescendant(of type: UIView.Type) -> Bool {
-        var current: UIView? = self
-        while let view = current {
-            if type(of: view) == type { return true }
-            current = view.superview
-        }
-        return false
-    }
-}
-
 final class TPIOSTapTest {
     static let shared = TPIOSTapTest()
     var onFinish: (() -> Void)?
