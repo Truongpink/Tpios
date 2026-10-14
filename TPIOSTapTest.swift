@@ -13,6 +13,7 @@ final class TPIOSAutoClickEngine {
             return false
         }
         let windowPoint = window.convert(point, from: nil)
+        TPIOSLog.shared.log("TapEngine: windowPoint=\(windowPoint) window=\(NSStringFromClass(type(of: window)))")
         guard let hit = window.hitTest(windowPoint, with: nil) else {
             TPIOSLog.shared.log("TapEngine: hitTest=nil point=\(windowPoint)")
             return false
@@ -26,6 +27,7 @@ final class TPIOSAutoClickEngine {
             ancestor = current.superview
         }
         TPIOSLog.shared.log("TapEngine: hit=\(NSStringFromClass(type(of: hit)))")
+        logHitHierarchy(from: hit, windowPoint: windowPoint, window: window)
         var view: UIView? = hit
         while let current = view {
             if let control = current as? UIControl, control.isEnabled, !control.isHidden, control.alpha > 0 {
@@ -53,6 +55,36 @@ final class TPIOSAutoClickEngine {
         }
         TPIOSLog.shared.log("TapEngine: no public actionable target hit=\(NSStringFromClass(type(of: hit)))")
         return false
+    }
+
+    private func logHitHierarchy(from hit: UIView, windowPoint: CGPoint, window: UIWindow) {
+        var current: UIView? = hit
+        var level = 0
+        while let view = current, level < 12 {
+            let frame = view.convert(view.bounds, to: window)
+            let gestures = view.gestureRecognizers?.map { NSStringFromClass(type(of: $0)) }.joined(separator: ",") ?? "none"
+            TPIOSLog.shared.log("TapDebug: level=\(level) class=\(NSStringFromClass(type(of: view))) frame=\(frame) userInteraction=\(view.isUserInteractionEnabled) hidden=\(view.isHidden) alpha=\(view.alpha) accessibility=\(view.isAccessibilityElement) gestures=[\(gestures)] subviews=\(view.subviews.count)")
+            current = view.superview
+            level += 1
+        }
+        logContainingSubviews(from: hit, windowPoint: windowPoint, window: window)
+    }
+
+    private func logContainingSubviews(from root: UIView, windowPoint: CGPoint, window: UIWindow) {
+        var queue: [(UIView, Int)] = [(root, 0)]
+        var count = 0
+        while !queue.isEmpty && count < 40 {
+            let (view, depth) = queue.removeFirst()
+            for child in view.subviews.reversed() {
+                let local = child.convert(windowPoint, from: window)
+                guard !child.isHidden, child.alpha > 0, child.bounds.contains(local) else { continue }
+                let gestures = child.gestureRecognizers?.map { NSStringFromClass(type(of: $0)) }.joined(separator: ",") ?? "none"
+                TPIOSLog.shared.log("TapDebug: childDepth=\(depth + 1) class=\(NSStringFromClass(type(of: child))) frame=\(child.convert(child.bounds, to: window)) control=\(child is UIControl) accessibility=\(child.isAccessibilityElement) userInteraction=\(child.isUserInteractionEnabled) gestures=[\(gestures)]")
+                queue.append((child, depth + 1))
+                count += 1
+                if count >= 40 { break }
+            }
+        }
     }
 
     private func deepestActionableDescendant(of root: UIView, windowPoint: CGPoint, window: UIWindow) -> UIView? {
