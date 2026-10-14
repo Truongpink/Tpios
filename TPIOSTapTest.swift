@@ -68,7 +68,11 @@ final class TPIOSAutoClickEngine {
                 for (index, gesture) in gestureRecognizers.enumerated() {
                     let delegate = gesture.delegate.map { NSStringFromClass(type(of: $0)) } ?? "nil"
                     let gestureView = gesture.view.map { NSStringFromClass(type(of: $0)) } ?? "nil"
-                    TPIOSLog.shared.log("TapDebug: gesture level=\(level) index=\(index) class=\(NSStringFromClass(type(of: gesture))) state=\(gesture.state.rawValue) enabled=\(gesture.isEnabled) cancels=\(gesture.cancelsTouchesInView) delaysTouches=\(gesture.delaysTouchesBegan) delaysEnded=\(gesture.delaysTouchesEnded) minTouches=\(gesture.minimumNumberOfTouches) maxTouches=\(gesture.maximumNumberOfTouches) delegate=\(delegate) view=\(gestureView)")
+                    var touchInfo = ""
+                    if let pan = gesture as? UIPanGestureRecognizer {
+                        touchInfo = " minTouches=\(pan.minimumNumberOfTouches) maxTouches=\(pan.maximumNumberOfTouches)"
+                    }
+                    TPIOSLog.shared.log("TapDebug: gesture level=\(level) index=\(index) class=\(NSStringFromClass(type(of: gesture))) state=\(gesture.state.rawValue) enabled=\(gesture.isEnabled) cancels=\(gesture.cancelsTouchesInView) delaysTouches=\(gesture.delaysTouchesBegan) delaysEnded=\(gesture.delaysTouchesEnded)\(touchInfo) delegate=\(delegate) view=\(gestureView)")
                 }
             }
             current = view.superview
