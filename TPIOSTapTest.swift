@@ -13,7 +13,7 @@ final class TPIOSAutoClickEngine {
             return false
         }
 
-        let windowPoint = window.convert(point, from: window)
+        let windowPoint = window.convert(point, from: nil) // nil = screen coordinate space
         guard let hit = window.hitTest(windowPoint, with: nil) else {
             TPIOSLog.shared.log("TapEngine: hitTest=nil point=\(windowPoint)")
             return false
@@ -521,3 +521,4 @@ final class TPIOSAutoClickPanel: UIView {
         statusLabel.text = "STOPPED"
         TPIOSLog.shared.log("TapPanel: stopped")
     }
+}
