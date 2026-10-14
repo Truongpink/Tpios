@@ -64,6 +64,13 @@ final class TPIOSAutoClickEngine {
             let frame = view.convert(view.bounds, to: window)
             let gestures = view.gestureRecognizers?.map { NSStringFromClass(type(of: $0)) }.joined(separator: ",") ?? "none"
             TPIOSLog.shared.log("TapDebug: level=\(level) class=\(NSStringFromClass(type(of: view))) frame=\(frame) userInteraction=\(view.isUserInteractionEnabled) hidden=\(view.isHidden) alpha=\(view.alpha) accessibility=\(view.isAccessibilityElement) gestures=[\(gestures)] subviews=\(view.subviews.count)")
+            if let gestureRecognizers = view.gestureRecognizers {
+                for (index, gesture) in gestureRecognizers.enumerated() {
+                    let delegate = gesture.delegate.map { NSStringFromClass(type(of: $0)) } ?? "nil"
+                    let gestureView = gesture.view.map { NSStringFromClass(type(of: $0)) } ?? "nil"
+                    TPIOSLog.shared.log("TapDebug: gesture level=\(level) index=\(index) class=\(NSStringFromClass(type(of: gesture))) state=\(gesture.state.rawValue) enabled=\(gesture.isEnabled) cancels=\(gesture.cancelsTouchesInView) delaysTouches=\(gesture.delaysTouchesBegan) delaysEnded=\(gesture.delaysTouchesEnded) minTouches=\(gesture.minimumNumberOfTouches) maxTouches=\(gesture.maximumNumberOfTouches) delegate=\(delegate) view=\(gestureView)")
+                }
+            }
             current = view.superview
             level += 1
         }
