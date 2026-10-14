@@ -3,7 +3,6 @@
 extern void TPIOSStart(void);
 extern void TPIOSWebDiagnosticsInstall(void);
 extern void TPIOSGADInstallPresentationHook(void);
-extern void TPIOSTapFixInstall(void);
 
 __attribute__((constructor))
 static void TPIOSBootstrap(void)
@@ -13,7 +12,6 @@ static void TPIOSBootstrap(void)
         // ngay từ lần present đầu tiên.
         TPIOSGADInstallPresentationHook();
         TPIOSWebDiagnosticsInstall();
-        TPIOSTapFixInstall();
         TPIOSStart();
     });
 }
