@@ -2,9 +2,92 @@ import UIKit
 import Foundation
 import Darwin
 
+final class TPIOSRealTouchProbe: UIGestureRecognizer, UIGestureRecognizerDelegate {
+    private var lastPoint: CGPoint = .zero
+
+    override init(target: Any?, action: Selector?) {
+        super.init(target: target, action: action)
+        delegate = self
+        cancelsTouchesInView = false
+        delaysTouchesBegan = false
+        delaysTouchesEnded = false
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        delegate = self
+        cancelsTouchesInView = false
+        delaysTouchesBegan = false
+        delaysTouchesEnded = false
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        if let touch = touches.first, let view = view {
+            lastPoint = touch.location(in: view)
+            let targetView = touch.view.map { NSStringFromClass(type(of: $0)) } ?? "nil"
+            TPIOSLog.shared.log("TapProbe: began count=\(touches.count) point=\(lastPoint) target=\(targetView)")
+        }
+        state = .began
+        state = .changed
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard let touch = touches.first, let view = view else { return }
+        let point = touch.location(in: view)
+        let dx = point.x - lastPoint.x
+        let dy = point.y - lastPoint.y
+        lastPoint = point
+        TPIOSLog.shared.log("TapProbe: moved count=\(touches.count) point=\(point) delta=(\(dx), \(dy)) target=\(NSStringFromClass(type(of: touch.view ?? view)))")
+        state = .changed
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        if let touch = touches.first, let view = view {
+            let point = touch.location(in: view)
+            TPIOSLog.shared.log("TapProbe: ended count=\(touches.count) point=\(point) target=\(NSStringFromClass(type(of: touch.view ?? view)))")
+        }
+        state = .ended
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        if let touch = touches.first, let view = view {
+            let point = touch.location(in: view)
+            TPIOSLog.shared.log("TapProbe: cancelled count=\(touches.count) point=\(point) target=\(NSStringFromClass(type(of: touch.view ?? view)))")
+        } else {
+            TPIOSLog.shared.log("TapProbe: cancelled count=\(touches.count)")
+        }
+        state = .cancelled
+    }
+
+    override func reset() {
+        lastPoint = .zero
+        super.reset()
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        return true
+    }
+}
+
 final class TPIOSAutoClickEngine {
     static let shared = TPIOSAutoClickEngine()
+    private var touchProbe: TPIOSRealTouchProbe?
     private init() {}
+
+    func startTouchProbe(on window: UIWindow) {
+        guard touchProbe == nil else { return }
+        let probe = TPIOSRealTouchProbe(target: nil, action: nil)
+        window.addGestureRecognizer(probe)
+        touchProbe = probe
+        TPIOSLog.shared.log("TapProbe: installed on window=\(NSStringFromClass(type(of: window)))")
+    }
+
+    func stopTouchProbe() {
+        guard let probe = touchProbe else { return }
+        probe.view?.removeGestureRecognizer(probe)
+        touchProbe = nil
+        TPIOSLog.shared.log("TapProbe: removed")
+    }
 
     func tap(at point: CGPoint) -> Bool {
         TPIOSLog.shared.log("TapEngine: request point=\(point)")
@@ -145,10 +228,12 @@ final class TPIOSTapTest {
         }
         window.addSubview(p)
         panel = p
+        TPIOSAutoClickEngine.shared.startTouchProbe(on: window)
         TPIOSLog.shared.log("TapPanel: opened")
     }
 
     private func finish(restoreMenu: Bool) {
+        TPIOSAutoClickEngine.shared.stopTouchProbe()
         if let panel { panel.cleanup(); panel.removeFromSuperview() }
         panel = nil
         let completion = onFinish
