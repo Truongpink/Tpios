@@ -120,12 +120,27 @@ static BOOL CHMLoadHIDAPI(void) {
     return available;
 }
 
+static BOOL CHMIsTPIOSOverlayWindow(UIWindow *window) {
+    return [NSStringFromClass(window.class) hasSuffix:@"TPIOSPassThroughWindow"];
+}
+
 static UIWindow *CHMActiveWindow(void) {
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if (![scene isKindOfClass:UIWindowScene.class]) continue;
-        for (UIWindow *window in ((UIWindowScene *)scene).windows) {
+        if (![scene isKindOfClass:UIWindowScene.class] ||
+            scene.activationState != UISceneActivationStateForegroundActive) continue;
+
+        NSArray<UIWindow *> *appWindows = [((UIWindowScene *)scene).windows
+            filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(UIWindow *window, NSDictionary *bindings) {
+                return !window.hidden && window.alpha > 0.01 &&
+                       !CHMIsTPIOSOverlayWindow(window) &&
+                       window.windowLevel < UIWindowLevelAlert &&
+                       window.rootViewController != nil;
+            }]];
+
+        for (UIWindow *window in appWindows) {
             if (window.keyWindow) return window;
         }
+        if (appWindows.count > 0) return appWindows.firstObject;
     }
     return nil;
 }
