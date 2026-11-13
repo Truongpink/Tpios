@@ -1,51 +1,12 @@
 import UIKit
 import Foundation
-import Darwin
 
 @_silgen_name("TPIOSCHMTouchAvailable") private func TPIOSCHMTouchAvailable() -> Bool
 @_silgen_name("TPIOSCHMTouchDispatch") private func TPIOSCHMTouchDispatch(_ x: Double, _ y: Double, _ phase: Int32) -> Bool
 
-final class TPIOSRealTouchProbe: UIGestureRecognizer, UIGestureRecognizerDelegate {
-    override init(target: Any?, action: Selector?) {
-        super.init(target: target, action: action)
-        delegate = self
-        cancelsTouchesInView = false
-        delaysTouchesBegan = false
-        delaysTouchesEnded = false
-    }
-
-    required init?(coder: NSCoder) { return nil }
-
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
-        state = .recognized
-    }
-
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
-        state = .cancelled
-    }
-
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-        true
-    }
-}
-
 final class TPIOSAutoClickEngine {
     static let shared = TPIOSAutoClickEngine()
-    private var touchProbe: TPIOSRealTouchProbe?
     private init() {}
-    func startTouchProbe(on window: UIWindow) {
-        guard touchProbe == nil else { return }
-        let probe = TPIOSRealTouchProbe(target: nil, action: nil)
-        window.addGestureRecognizer(probe)
-        touchProbe = probe
-        TPIOSLog.shared.log("TapProbe: installed on window=\(NSStringFromClass(type(of: window)))")
-    }
-    func stopTouchProbe() {
-        guard let probe = touchProbe else { return }
-        probe.view?.removeGestureRecognizer(probe)
-        touchProbe = nil
-        TPIOSLog.shared.log("TapProbe: removed")
-    }
     func dispatchTouch(at point: CGPoint, down: Bool) -> Bool {
         TPIOSCHMTouchDispatch(point.x, point.y, down ? 0 : 3)
     }
@@ -85,12 +46,10 @@ final class TPIOSTapTest {
         }
         window.addSubview(p)
         panel = p
-        TPIOSAutoClickEngine.shared.startTouchProbe(on: window)
         TPIOSLog.shared.log("TapPanel: opened")
     }
 
     private func finish(restoreMenu: Bool) {
-        TPIOSAutoClickEngine.shared.stopTouchProbe()
         if let panel { panel.cleanup(); panel.removeFromSuperview() }
         panel = nil
         let completion = onFinish
