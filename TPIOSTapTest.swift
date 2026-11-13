@@ -17,11 +17,7 @@ final class TPIOSRealTouchProbe: UIGestureRecognizer, UIGestureRecognizerDelegat
     }
 
     required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        delegate = self
-        cancelsTouchesInView = false
-        delaysTouchesBegan = false
-        delaysTouchesEnded = false
+        return nil
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
