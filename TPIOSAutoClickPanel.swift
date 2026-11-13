@@ -252,7 +252,7 @@ final class TPIOSAutoClickPanel: UIView {
         activePoint = point
         statusLabel.text = "TAPPED"
         schedule(after: pressDuration) { [weak self] in self?.releaseTouch() }
-        TPIOSLog.shared.log("TapPanel: manual DOWN point=\\(point)")
+        TPIOSLog.shared.log("TapPanel: manual DOWN point=\(point)")
     }
 
     @objc private func pointMode() {
@@ -348,7 +348,7 @@ final class TPIOSAutoClickPanel: UIView {
         currentPointIndex = 0
         startButton.setImage(UIImage(systemName: "stop.fill"), for: .normal)
         statusLabel.text = "RUNNING"
-        TPIOSLog.shared.log("TapPanel: auto START points=\\(points.count) interval=\\(speed) press=\\(pressDuration)")
+        TPIOSLog.shared.log("TapPanel: auto START points=\(points.count) interval=\(speed) press=\(pressDuration)")
         performDown()
     }
 
@@ -385,9 +385,9 @@ final class TPIOSAutoClickPanel: UIView {
         }
         touchIsDown = false
         tapCount += 1
-        countLabel.text = "TAP: \\(tapCount)"
+        countLabel.text = "TAP: \(tapCount)"
         currentPointIndex = (currentPointIndex + 1) % points.count
-        TPIOSLog.shared.log("TapPanel: UP confirmed count=\\(tapCount)")
+        TPIOSLog.shared.log("TapPanel: UP confirmed count=\(tapCount)")
         if running { schedule(after: speed) { [weak self] in self?.performDown() } }
         else { statusLabel.text = "STOPPED" }
     }
@@ -425,6 +425,6 @@ final class TPIOSAutoClickPanel: UIView {
         if touchIsDown { releaseTouch() }
         startButton.setImage(UIImage(systemName: "play.fill"), for: .normal)
         if !touchIsDown { statusLabel.text = "STOPPED" }
-        TPIOSLog.shared.log("TapPanel: stopped touchDown=\\(touchIsDown)")
+        TPIOSLog.shared.log("TapPanel: stopped touchDown=\(touchIsDown)")
     }
 }
