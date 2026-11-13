@@ -29,6 +29,13 @@ final class TPIOSNetworkLog {
         lock.unlock()
 
         install()
+        guard didInstall else {
+            lock.lock()
+            lazadaCaptureHandler = nil
+            lock.unlock()
+            return false
+        }
+
         TPIOSLog.shared.log("NetLog: bắt request Lazada đã bật")
         return true
     }
