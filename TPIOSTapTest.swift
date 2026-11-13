@@ -6,8 +6,6 @@ import Darwin
 @_silgen_name("TPIOSCHMTouchDispatch") private func TPIOSCHMTouchDispatch(_ x: Double, _ y: Double, _ phase: Int32) -> Bool
 
 final class TPIOSRealTouchProbe: UIGestureRecognizer, UIGestureRecognizerDelegate {
-    private var lastPoint: CGPoint = .zero
-
     override init(target: Any?, action: Selector?) {
         super.init(target: target, action: action)
         delegate = self
@@ -16,55 +14,18 @@ final class TPIOSRealTouchProbe: UIGestureRecognizer, UIGestureRecognizerDelegat
         delaysTouchesEnded = false
     }
 
-    required init?(coder: NSCoder) {
-        return nil
-    }
-
-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
-        if let touch = touches.first, let view = view {
-            lastPoint = touch.location(in: view)
-            let targetView = touch.view.map { NSStringFromClass(type(of: $0)) } ?? "nil"
-            
-        }
-        // Keep the recognizer in .possible while the finger is down.
-        // This observes the real touch without recognizing/cancelling it early.
-    }
-
-    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
-        guard let touch = touches.first, let view = view else { return }
-        let point = touch.location(in: view)
-        let dx = point.x - lastPoint.x
-        let dy = point.y - lastPoint.y
-        lastPoint = point
-        
-        // Do not recognize a tap until the finger is lifted.
-    }
+    required init?(coder: NSCoder) { return nil }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
-        if let touch = touches.first, let view = view {
-            let point = touch.location(in: view)
-            
-        }
         state = .recognized
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
-        if let touch = touches.first, let view = view {
-            let point = touch.location(in: view)
-            
-        } else {
-            
-        }
         state = .cancelled
     }
 
-    override func reset() {
-        lastPoint = .zero
-        super.reset()
-    }
-
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-        return true
+        true
     }
 }
 
