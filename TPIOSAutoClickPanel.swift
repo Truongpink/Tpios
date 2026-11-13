@@ -257,14 +257,18 @@ final class TPIOSAutoClickPanel: UIView {
 
     @objc private func pointMode() {
         picker?.removeFromSuperview()
-        let overlay = UIView(frame: bounds)
+        guard let window = superview as? UIWindow else {
+            TPIOSLog.shared.log("TapPanel: point picker failed - app window missing")
+            return
+        }
+        let overlay = UIView(frame: window.bounds)
         overlay.backgroundColor = UIColor.clear
         overlay.isUserInteractionEnabled = true
         overlay.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(pickerTap(_:))))
-        superview?.addSubview(overlay)
+        window.addSubview(overlay)
         picker = overlay
         isHidden = true
-        TPIOSLog.shared.log("TapPanel: point picker opened")
+        TPIOSLog.shared.log("TapPanel: point picker opened full-screen")
     }
 
     @objc private func pickerTap(_ gesture: UITapGestureRecognizer) {
