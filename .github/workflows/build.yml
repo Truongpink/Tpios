@@ -57,8 +57,10 @@ jobs:
             build/TPIOSGADPresentationBlocker.o
 
       - name: Package dylib
+        id: version
         run: |
           VERSION=$(printf "%02d" "$GITHUB_RUN_NUMBER")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           mkdir -p package
           cp build/TPIOS.dylib "package/tpios${VERSION}.dylib"
           echo "TPIOS version: $VERSION"
