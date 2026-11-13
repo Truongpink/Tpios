@@ -63,7 +63,7 @@ Menu hiện có **9 nút**:
 | **Tải lại** | Tìm các refresh candidate trong view/controller/WebView/scroll view rồi thử kích hoạt cơ chế refresh phù hợp | `TPIOSReload.swift` |
 | **Mua all** | Màn hình chẩn đoán IAP/StoreKit: quét thành phần app, đọc receipt và trạng thái giao dịch/entitlement | `TPIOSMenu.swift`, `TPIOSAppScanner.swift`, `TPIOSPaymentScanner.swift` |
 | **Chạm** | Chọn nhiều điểm trên màn hình và tự động gửi chuỗi touch DOWN/UP theo thứ tự | `TPIOSAutoClickPanel.swift`, `TPIOSTapTest.swift`, `CHMTouchBackend.m/.h` |
-| **Cào xu** | Panel thử nghiệm: lưu vị trí nhiệm vụ, trạng thái phiên và log riêng; chưa có bộ đọc nhiệm vụ/traffic hay kịch bản tự động Lazada | `TPIOSCaoXu.swift` |
+| **Cào xu** | Panel nổi có thể kéo ẩn vào mép màn hình/kéo ra, lưu trạng thái phiên và log riêng; chưa có bộ đọc nhiệm vụ hay kịch bản tự động Lazada | `TPIOSCaoXu.swift` |
 
 **Lưu ý về “Mua all”:** các mục hiện tại là công cụ chẩn đoán StoreKit/receipt. Source chưa thể hiện một luồng tự động mua sản phẩm hay tự xác nhận giao dịch.
 
@@ -203,10 +203,10 @@ Những guard này nhằm tránh chồng hai contact hoặc tiếp tục bắn D
 ### Cào xu Lazada — trạng thái triển khai
 
 - `TPIOSCaoXu.swift` có panel Bắt đầu/Tiếp tục, Kết thúc/Tạm dừng, tiến độ, log riêng, sao chép và xóa log.
-- Khi nhấn Bắt đầu, bộ bắt URLSession kiểm tra bundle ID runtime phải khớp `com.lazadaSEA.lazada` (không phân biệt hoa/thường), sau đó mới bật ghi nhận request.
-- `TPIOSNetworkLog.swift` giữ bộ lọc Shopee hiện có và bổ sung nhận diện host có chứa `lazada`. Log Cào xu chỉ lưu URL đã bỏ query và fragment; không ghi request body, response body, cookie hay token.
-- Log request được lưu vào UserDefaults, tối đa 500 dòng; vẫn tiếp tục ghi khi đóng panel để thao tác trong Lazada. Nút Kết thúc/Tạm dừng ngắt callback ghi request. Xóa log không xóa trạng thái nhiệm vụ.
-- Bộ đọc danh sách nhiệm vụ và kịch bản tự động bấm/nhận xu **chưa được triển khai**. Nút Bắt đầu hiện chỉ bật thu thập URL và mở phiên chờ; chưa thực hiện thao tác nhiệm vụ.
+- Log Cào xu chỉ ghi sự kiện và trạng thái nội bộ của panel; dữ liệu được lưu riêng trong UserDefaults, tối đa 500 dòng. Sao chép/xóa log Cào xu không tác động tới log chính hay tiến độ nhiệm vụ.
+- Cào xu **không gọi** `startLazadaCapture`, không hook/bắt request mạng và không ghi URL, query, request body hay response body. Chức năng bắt request trong `TPIOSNetworkLog.swift` thuộc hệ thống log bên ngoài, độc lập với Cào xu.
+- Có thể kéo panel Cào xu; khi thả sát mép trái/phải, panel tự trượt ra ngoài và chừa khoảng 24 pt làm tay nắm. Kéo phần tay nắm ra màn hình để khôi phục panel; vị trí dọc được giữ lại.
+- Bộ đọc danh sách nhiệm vụ và kịch bản tự động bấm/nhận xu **chưa được triển khai**. Nút Bắt đầu hiện chỉ mở phiên theo dõi trạng thái nội bộ; chưa thực hiện thao tác nhiệm vụ.
 - TPIOS là dylib được inject vào tiến trình ứng dụng mục tiêu; hook URLSession chỉ quan sát request nếu dylib thực sự được nạp trong chính tiến trình Lazada. Repo chưa có cấu hình injection/filter plist để xác nhận app mục tiêu. Bundle ID runtime đúng là điều kiện cần, không tự chứng minh đã có request được bắt hoặc xác định chắc chắn thị trường tài khoản.
 
 ### Đồng hồ và giờ server
