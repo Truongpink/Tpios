@@ -204,19 +204,23 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     }
 
     private func refresh() {
+        let hostBundleID = Bundle.main.bundleIdentifier ?? "không rõ bundle"
+
         if taskNames.isEmpty {
             progressLabel.text = "0/0  •  Chưa nhận diện nhiệm vụ"
             progressView.progress = 0
-            statusLabel.text = sessionActive
+            let state = sessionActive
                 ? "Phiên đã mở — đang chờ dữ liệu nhiệm vụ"
                 : "Chưa có dữ liệu nhiệm vụ"
+            statusLabel.text = "\(state)\nAPP: \(hostBundleID)"
         } else {
             let total = taskNames.count
             currentTaskIndex = min(currentTaskIndex, total)
             progressLabel.text = "\(min(currentTaskIndex + 1, total))/\(total)  •  \(currentTaskIndex >= total ? "Hoàn tất" : "Chờ chạy")"
             progressView.progress = total == 0 ? 0 : Float(currentTaskIndex) / Float(total)
             let task = currentTaskIndex < total ? taskNames[currentTaskIndex] : "Đã hoàn tất danh sách"
-            statusLabel.text = sessionActive ? "Đang tiếp tục: \(task)" : "Đã tạm dừng: \(task)"
+            let state = sessionActive ? "Đang tiếp tục: \(task)" : "Đã tạm dừng: \(task)"
+            statusLabel.text = "\(state)\nAPP: \(hostBundleID)"
         }
         refreshLog()
     }
