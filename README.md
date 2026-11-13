@@ -1,275 +1,304 @@
 # TPIOS
 
-TPIOS là iOS dylib dùng để thử nghiệm các chức năng UI/runtime injection trên iPhone.
+TPIOS là **iOS dynamic library (dylib)** dành cho môi trường iOS đã được inject/tweak. Repo chứa mã Swift và Objective-C để hiển thị bộ công cụ nổi trong ứng dụng đang chạy, đọc một số dữ liệu runtime/network và cung cấp các tiện ích tương tác.
+
+> Tài liệu này được đối chiếu với source trên `main` tại commit `d4fe164e22d865918df058dbc10ec83a0905f6c4` (2026-11-13). Mục “đã xác nhận” chỉ dùng cho chức năng đã có kết quả chạy thực tế do người dùng xác nhận; có source trong repo không đồng nghĩa mọi chức năng đã được kiểm thử trên mọi ứng dụng/iOS.
 
 ---
 
-## QUY TẮC LÀM VIỆC TRÊN REPO
+## 1. TPIOS build ra cái gì?
 
-> Phần này là quy tắc bắt buộc cho bất kỳ AI/người nào đọc và chỉnh sửa repo này. Khi làm việc trong repo, phải đọc phần này trước và làm đúng theo nó.
-> Đọc và sửa trực tiếp trên repo đã liên kết những phần cần chỉnh sửa
+- **Đầu ra:** `TPIOS.dylib`, đóng gói artifact với tên dạng `tpiosNN.dylib`.
+- **Kiến trúc:** `arm64`.
+- **Deployment target khi biên dịch:** iOS 15.0.
+- **Build runner:** macOS + Xcode 26.6 (workflow chọn `/Applications/Xcode_26.6.app`).
+- **Cách build:** compile các file Objective-C thành object, sau đó dùng `swiftc` liên kết toàn bộ `*.swift` cùng các object thành dylib.
+- **Không phải:** ứng dụng Xcode độc lập hoặc IPA. Repo hiện build một dylib để nạp vào tiến trình ứng dụng mục tiêu.
 
-### 1. Chỉ làm việc trong đúng repo được yêu cầu
+### Workflow
 
-- Chỉ chỉnh sửa repo hiện tại khi task yêu cầu.
-- Không tự ý kiểm tra, sửa hoặc lấy code từ repo khác nếu chưa được yêu cầu rõ ràng.
-- Không tự ý thay đổi các file không liên quan.
+| File | Công việc |
+|---|---|
+| `.github/workflows/build.yml` | Build dylib, đóng gói và upload artifact `TPIOS-NN`; cuối workflow có bước backup source sang nhánh auto trên GitLab (nếu secret được cấu hình). |
+| `.github/workflows/backup-release.yml` | Workflow backup thủ công: kiểm tra commit đã có build thành công, tạo ZIP toàn repo, tạo GitHub Release và đẩy bản backup đã xác minh sang GitLab. |
 
-### 2. Trước khi sửa phải đọc đúng phần liên quan
-
-- Chỉ đọc các file thực sự liên quan đến lỗi/tính năng đang xử lý.
-- Không đọc toàn bộ repo nếu không cần map kiến trúc.
-- Xác định đúng file + đúng class/hàm trước khi sửa.
-
-### 3. Khi sửa lỗi từ GitHub Actions
-
-- Đọc log của job bị lỗi.
-- Chỉ trích phần `error`, `warning` liên quan trực tiếp và stack trace cần thiết.
-- Bỏ qua log build thành công dài dòng.
-- Không sửa theo kiểu đoán.
-
-Quy trình:
-
-1. Xác định lỗi.
-2. Xác định file/class/hàm gây lỗi.
-3. Sửa đúng nguyên nhân.
-4. Build lại.
-5. Kiểm tra regression.
-
-### 4. Khi chỉnh sửa code
-
-- Ưu tiên diff/patch và thay đổi ít nhất có thể.
-- Không viết lại toàn bộ file nếu chỉ cần sửa vài dòng.
-- Giữ nguyên code đang chạy tốt.
-- Không refactor lớn chỉ để sửa một lỗi nhỏ.
-- Không đổi tên class/method/API nếu không cần thiết.
-
-### 5. Mỗi chức năng nên độc lập
-
-### 5.1. Quy tắc số lượng file cho một chức năng
-
-- Không tách một chức năng thành nhiều file chỉ để chia model/parser/store/UI nếu các phần đó chỉ phục vụ duy nhất chức năng đó.
-- Mặc định: **một chức năng = một file chính**.
-- Chỉ tạo file phụ khi thành phần đó thực sự dùng chung cho nhiều chức năng hoặc có lý do kỹ thuật rõ ràng.
-- Khi đã có nhiều file phụ nhưng không còn cần thiết, phải gom về file chính và xóa file thừa.
-
-### 5.2. UI RULE — chuẩn chung từ Menu chính
-
-Menu chính là **UI reference duy nhất**. Mọi menu con và nút bên trong phải dùng đúng thông số/style của Menu chính, không tự tạo chuẩn riêng.
-
-**Thông số hiện tại của Menu chính:**
-- Khung thiết kế: `240 × 350 pt`; tối thiểu `240 × 330 pt`.
-- Corner radius: `24 pt`.
-- Header: `66 pt` theo tỷ lệ khung.
-- Resize handle: `44 pt`.
-- Grid: `3 cột`.
-- Padding ngang: `14 pt`.
-- Khoảng cách ngang: `10 pt`; dọc: `8 pt`.
-- Icon tối đa: `58 pt`; bo góc icon theo tỷ lệ `28%` kích thước icon.
-- Icon → label: `3 pt`.
-- Label: `15 pt` theo tỷ lệ; font `13 pt`, semibold theo tỷ lệ.
-
-**Quy tắc:**
-- Menu con mở lên phải dùng cùng kích thước/logic scale, corner radius, header, padding, grid, spacing, resize và cách căn của Menu chính.
-- Nút dùng dạng icon vuông bo góc như Menu chính; giữ cùng hệ gradient/style, không tự đổi kiểu.
-- **Mọi nút chức năng phải có một icon bên trong nút phù hợp, dễ nhận biết và thể hiện đúng chức năng; không tạo nút chức năng chỉ có chữ hoặc icon không liên quan.**
-- Icon, font, label và khoảng cách phải theo chuẩn trên; tên đặt ngoài icon, ngắn gọn nhưng dễ hiểu.
-- Resize phải scale đồng bộ icon, chữ, spacing và layout; không tràn, cắt hoặc chồng nội dung; giữ minimum size hợp lý.
-- Menu phải kéo bằng header và clamp trong màn hình; có Back và X/Close khi phù hợp.
-- Ô nhập liệu phải co giãn theo khung và có X xóa nhanh.
-- Không tự đặt size, màu, font, spacing hoặc layout khác cho từng menu. Muốn đổi chuẩn chung phải sửa UI RULE trước.
-
-### 6. Không chạy tác vụ nặng liên tục
-
-Đặc biệt tránh:
-
-- Scanner chạy nền liên tục.
-- View traversal liên tục.
-- Observer/timer không cần thiết.
-- Quét lại mỗi lần mở app nếu không cần.
-
-Tác vụ nặng chỉ chạy khi cần hoặc khi người dùng chủ động yêu cầu.
-
-### 7. Log phải có mục đích
-
-- Log quan trọng dùng `TPIOSLog`.
-- Không spam log trong timer/vòng lặp.
-- Khi debug phải ghi đủ thông tin để xác định nguyên nhân nhưng không ghi vô hạn.
-
-### 8. Task đơn giản thì xử lý trực tiếp
-
-Các việc như:
-
-- Fix typo.
-- Đổi tên biến/file/class theo yêu cầu.
-- Sửa path.
-- Cập nhật README.
-
-Không cần phân tích dài hoặc thay đổi kiến trúc.
-
-### 9. Giới hạn vòng lặp sửa lỗi
-
-Nếu cùng một lỗi đã sửa và build vẫn fail sau **3 lần thử**:
-
-- Dừng sửa tiếp.
-- Tóm tắt lỗi hiện tại.
-- Nêu nguyên nhân nghi ngờ dựa trên log.
-- Không tiếp tục đoán mò.
-
-### 10. Commit và giải thích
-
-- Commit message ngắn gọn.
-- Chỉ mô tả thay đổi mới.
-- Không nhắc lại toàn bộ lịch sử project.
-- Không tuyên bố "đã hoàn thành/chạy OK" nếu chưa có kết quả build/test xác nhận.
-
-### 11. Không tạo file thừa
-
-- Chỉ tạo file mới khi thực sự cần.
-- Không tạo test/log/debug file dư thừa chỉ để thử tạm thời.
-- Không để lại file thử nghiệm không dùng.
-
-### 12. Build
-
-Project hiện được build bằng GitHub Actions với:
-
-- Xcode 26.x
-- iPhoneOS SDK
-- arm64
-- iOS 15.0+
-
-Không tự ý thay đổi workflow/build system nếu không liên quan trực tiếp đến task.
-
-### 13. Trước khi xác nhận một thay đổi là OK
-
-Kiểm tra tối thiểu:
-
-- Compile/build.
-- Không có lỗi linker.
-- Không có selector/method conflict.
-- Không có timer/observer chạy vô hạn ngoài ý muốn.
-- Không làm thay đổi hành vi của chức năng đang ổn định.
-- Nếu có UI/interaction thì kiểm tra cả touch, move, resize và close/back nếu chức năng đó có hỗ trợ.
+**Cả hai workflow hiện chỉ có trigger `workflow_dispatch`.** Push/commit lên `main` không tự chạy build workflow. Không tự ý dispatch workflow khi chỉnh sửa tài liệu hoặc code.
 
 ---
 
-## QUY TẮC BACKUP — RẤT QUAN TRỌNG
+## 2. Cách TPIOS khởi động
 
-Backup dùng để **không bao giờ phải làm lại project từ đầu** nếu repo bị mất, bị khóa hoặc code bị thay đổi ngoài ý muốn.
+Luồng khởi động trong source:
 
-### Khi người dùng nói: "backup hiện tại"
+1. `TPIOSBootstrap.m` dùng constructor của dylib để đưa tác vụ khởi tạo lên main queue.
+2. Cài hook chặn một số màn hình quảng cáo Google Mobile Ads qua `TPIOSGADPresentationBlocker.m`.
+3. Cài chẩn đoán WKWebView qua `TPIOSWebDiagnostics.swift`.
+4. Gọi symbol `TPIOSStart()` trong `TPIOSEntry.swift`.
+5. `TPIOSStart()` cài bộ thu dữ liệu response giỏ hàng `TPIOSCartBody`, sau đó gọi `TPIOSController.start()`.
+6. Controller tạo `TPIOSPassThroughWindow`, đặt nút nổi và mở menu khi người dùng chạm nút.
 
-Phải hiểu là:
+`TPIOSStop()` là điểm dừng được export để đóng overlay và dọn trạng thái controller.
 
-> Backup đúng trạng thái mới nhất **đang chạy OK/đã được xác nhận OK tại thời điểm backup**.
+### Overlay và nút nổi
 
-Không backup code đang thử nghiệm hoặc chưa build/test thành công.
-
-### Cách đặt backup
-
-Mỗi backup phải có ngày tháng năm:
-
-`BACKUP_YYYY-MM-DD.md`
-
-Ví dụ:
-
-`BACKUP_2026-09-27.md`
-
-Nếu cần nhiều backup trong cùng ngày thì dùng:
-
-`BACKUP_2026-09-27_v2.md`
-
-Không ghi đè backup cũ.
-
-### Nguyên tắc giữ lịch sử backup
-
-- Backup mới phải giữ nguyên toàn bộ nội dung backup trước đó.
-- Chỉ **thêm phần trạng thái hiện tại mới đã chạy OK**.
-- Không xóa phần lịch sử cũ.
-- Không sửa lại lịch sử cũ chỉ vì code hiện tại đã thay đổi.
-- Không đưa chức năng đang thử/nghiên cứu nhưng chưa chạy OK vào phần "đã hoàn thành".
-- Mỗi backup phải ghi rõ ngày và trạng thái để nhìn vào là biết project đã đi tới đâu.
-
-### Khi khôi phục
-
-Nếu repo bị mất hoặc bị khóa:
-
-1. Đọc backup mới nhất.
-2. Xác định trạng thái cuối cùng đã xác nhận OK.
-3. Khôi phục theo backup đó.
-4. Không quay lại làm lại các chức năng đã có trong backup.
-5. Các chức năng mới sau backup được xử lý như phần phát triển tiếp theo.
+- `FloatingButton.swift`: nút nổi hình tròn, kéo được.
+- `TPIOSController.swift`: quản lý vòng đời overlay window, menu, retry khi app chưa có foreground scene, kéo nút và giảm độ mờ sau thời gian không thao tác.
+- `TPIOSPassThroughWindow.hitTest`: chỉ giữ touch nếu touch trúng UI của TPIOS; vùng trống xuyên xuống ứng dụng bên dưới.
+- `TPIOSMenu.swift`: menu chính, kéo bằng header, resize ở góc dưới và giới hạn trong vùng màn hình.
+- `TPIOSPanelStyle.swift`: nền kính, gradient và đồng bộ frame cho các panel.
 
 ---
 
-## TRẠNG THÁI HIỆN TẠI
+## 3. Menu và chức năng đang có
 
-Trạng thái này mô tả **code hiện có trong repo tại thời điểm cập nhật README**.
+Menu hiện có **8 nút**:
 
-### UI chính
-
-- Floating Button kiểu AssistiveTouch.
-- Có thể kéo nút.
-- Chạm nút để mở/đóng menu.
-- Menu chính có thể kéo bằng header.
-- Menu chính có thể resize bằng góc dưới bên phải.
-- Menu được giới hạn trong vùng hiển thị.
-- Overlay window cho phép vùng không thuộc UI của TPIOS tiếp tục nhận touch từ app bên dưới.
-- Floating Button tự giảm alpha khi không thao tác.
-
-### Menu hiện tại
-
-Menu chính gồm 6 chức năng:
-
-| Nút | Chức năng | File chính |
+| Nút | Chức năng trong source | File chính |
 |---|---|---|
-| **Vị trí** | Mở giao diện quản lý vị trí, bản đồ, tọa độ và dữ liệu vị trí đã lưu | `TPIOSLocation.swift` |
-| **Sale** | Module săn sale Shopee: theo dõi sản phẩm, voucher và giá thực trả | `TPIOSSale.swift` |
-| **Xem log** | Mở cửa sổ log TPIOS | `TPIOSLog.swift` |
-| **Tắt QC** | Mở giao diện AdBlock/profile và cơ chế chặn quảng cáo đã lưu | `TPIOSAdBlock.swift` |
-| **Đồng hồ** | Hiển thị đồng hồ HH:MM:SS và phần mười giây; có thể kéo/resize | `TPIOSSaleClock.swift` |
-| **Tải lại trang** | Tìm và kích hoạt cơ chế refresh của trang/app hiện tại | `TPIOSReload.swift` |
+| **Vị trí** | Giao diện bản đồ/tìm địa điểm, nhập tọa độ và địa chỉ, lưu vị trí, bật/tắt giả lập vị trí | `TPIOSLocation.swift`, `TPIOSLocationSpoofHook.swift` |
+| **Sale** | Theo dõi sản phẩm Shopee, lưu các lần quét, đọc tên/giá/voucher đang hiển thị và tính giá sau mã | `TPIOSSale.swift`, `TPIOSSaleScanner.swift`, `TPIOSSaleData.swift` |
+| **Xem log** | Xem, lọc, xóa và lưu log; có thao tác bắt request mạng | `TPIOSLog.swift`, `TPIOSNetworkLog.swift` |
+| **Tắt QC** | Quét và lưu profile nhận diện cơ chế quảng cáo; áp dụng các nhánh xử lý native/WebView/model filter | `TPIOSAdBlock.swift`, `TPIOSModelFilter.m` |
+| **Đồng hồ** | Đồng hồ nổi HH:MM:SS và phần mười giây; có thể đồng bộ giờ server Shopee | `TPIOSSaleClock.swift`, `TPIOSServerTime.swift` |
+| **Tải lại** | Tìm các refresh candidate trong view/controller/WebView/scroll view rồi thử kích hoạt cơ chế refresh phù hợp | `TPIOSReload.swift` |
+| **Mua all** | Màn hình chẩn đoán IAP/StoreKit: quét thành phần app, đọc receipt và trạng thái giao dịch/entitlement | `TPIOSMenu.swift`, `TPIOSAppScanner.swift`, `TPIOSPaymentScanner.swift` |
+| **Chạm** | Chọn nhiều điểm trên màn hình và tự động gửi chuỗi touch DOWN/UP theo thứ tự | `TPIOSAutoClickPanel.swift`, `TPIOSTapTest.swift`, `CHMTouchBackend.m/.h` |
 
-Menu còn hiển thị:
-
-- Tên **TPIOS**.
-- **Design By TRUONGPHONG**.
-- Trạng thái bằng chấm xanh.
-- Ngày dương và ngày âm tham khảo.
-- Resize handle ở góc dưới phải.
+**Lưu ý về “Mua all”:** các mục hiện tại là công cụ chẩn đoán StoreKit/receipt. Source chưa thể hiện một luồng tự động mua sản phẩm hay tự xác nhận giao dịch.
 
 ---
 
-## FILE HIỆN TẠI VÀ CHỨC NĂNG
+## 4. CHẠM — kiến trúc và cách hoạt động chi tiết
 
+Đây là luồng auto-click hiện có trong source. Phần giao diện/lập lịch viết bằng Swift; phần phát touch cấp thấp viết bằng Objective-C.
 
+### 4.1. Các thành phần
 
+| File | Vai trò |
+|---|---|
+| `TPIOSMenu.swift` | Nút **Chạm**, mở màn hình auto-click. |
+| `TPIOSTapTest.swift` | Tìm cửa sổ app thật phía dưới overlay, tạo panel và quản lý lúc mở/đóng. |
+| `TPIOSAutoClickPanel.swift` | Chọn/lưu/sửa điểm, marker đánh số, tốc độ, timer, trạng thái chạy/dừng và thứ tự điểm. |
+| `CHMTouchBackend.h` | Khai báo API backend: phase DOWN/UP, callback dispatch và trạng thái sẵn sàng. |
+| `CHMTouchBackend.m` | Tạo và gửi sự kiện HID, đồng thời dựng UIEvent/UITouch để UIKit chuyển sự kiện tới view đích. |
 
+### 4.2. Chọn và lưu nhiều điểm
 
-## NGUYÊN TẮC BẢO TOÀN CHỨC NĂNG
+1. Người dùng mở **Chạm**. `TPIOSTapTest` lấy app window đang foreground, loại trừ `TPIOSPassThroughWindow` của TPIOS.
+2. Panel được gắn trực tiếp lên app window. Khi nhấn **Điểm**, panel tạo một overlay trong suốt phủ màn hình và tạm ẩn panel.
+3. Mỗi lần chạm màn hình, `pickerTap` lấy tọa độ local của vùng chọn rồi convert sang tọa độ của app window.
+4. Tọa độ được thêm vào mảng `points`. Thứ tự thêm chính là thứ tự chạy.
+5. Dữ liệu gồm danh sách tọa độ `x/y` và tốc độ được JSON encode, lưu trong `UserDefaults` với key `TPIOSAutoClickSettings`.
+6. Khi mở lại panel/app, `loadSettings()` khôi phục các điểm và tốc độ; `didMoveToWindow()` dựng lại marker từ mảng điểm đã lưu.
 
-Khi thêm chức năng mới:
+Không có giới hạn số điểm cố định trong logic mảng hiện tại; số điểm thực tế phụ thuộc không gian màn hình và khả năng thao tác của người dùng.
 
-1. Không sửa chức năng cũ nếu không liên quan.
-2. Không thay đổi UI cũ chỉ để thêm chức năng mới.
-3. Ưu tiên tạo module/file riêng **chỉ khi thực sự cần**; nếu các thành phần chỉ thuộc một chức năng thì gom vào file chính.
-4. Nếu phải sửa `TPIOSMenu.swift`, chỉ thêm điểm kết nối cần thiết.
-5. Nếu phải sửa `TPIOSController.swift`, chỉ sửa phần lifecycle/overlay thật sự liên quan.
-6. Sau khi build phải kiểm tra chức năng vừa sửa và các chức năng menu đã hoạt động trước đó.
+### 4.3. Marker và thứ tự chạy
+
+- Mỗi điểm hiển thị thành marker tròn màu xanh, đường kính **30 pt**.
+- Marker có số thứ tự màu trắng, bắt đầu từ **1**.
+- Số được gán theo vị trí trong mảng `markers/points`; khi khôi phục, marker được dựng theo đúng thứ tự đã lưu.
+- Kéo marker sẽ cập nhật tọa độ của đúng phần tử tại index tương ứng; việc kéo không đổi thứ tự.
+- Khi kết thúc thao tác kéo, tọa độ mới được lưu lại.
+- **Xóa** dừng vòng chạy, xóa toàn bộ điểm/marker, cập nhật bộ đếm và lưu danh sách rỗng.
+
+Vì vậy số 1, 2, 3… là thứ tự chạm, không phải ID ngẫu nhiên.
+
+### 4.4. Tốc độ và chu kỳ click
+
+Các thông số đang được đặt trong `TPIOSAutoClickPanel.swift`:
+
+| Thông số | Giá trị |
+|---|---:|
+| Tốc độ mặc định | 0.15 giây |
+| Khoảng tốc độ cho phép | 0.05–5.00 giây |
+| Thời gian giữ một lần chạm (`pressDuration`) | 0.06 giây |
+| Timer | `DispatchSourceTimer` trên main queue |
+| Timer leeway | 1 ms |
+
+Cách hiểu chính xác: **0.06 giây là thời gian giữ DOWN trước khi gửi UP; giá trị speed là thời gian nghỉ sau UP trước DOWN kế tiếp.** Do đó chu kỳ danh nghĩa giữa hai lần DOWN liên tiếp xấp xỉ `0.06 + speed` giây, chưa tính thời gian xử lý hệ thống. Slider không phải tham số thời gian giữ ngón tay.
+
+### 4.5. Bộ lập lịch DOWN/UP
+
+Khi nhấn **Bắt đầu**:
+
+1. Từ chối chạy nếu chưa có điểm.
+2. Nếu một touch cũ chưa được xác nhận UP, không cho bắt đầu chu kỳ mới.
+3. Kiểm tra `TPIOSAutoClickEngine.backendAvailable()`; backend không sẵn sàng thì báo trạng thái và không chạy.
+4. Đặt `running = true`, reset index về 0 và đưa lần DOWN đầu tiên sang main queue async để tránh gửi touch lồng ngay trong lúc UIKit đang xử lý nút Start.
+5. `performDown()` lấy `points[currentPointIndex % points.count]`, gửi DOWN tại điểm đó.
+6. Nếu DOWN thành công, lưu `activePoint`, đánh dấu `touchIsDown = true`, rồi hẹn `performUp()` sau 0.06 giây.
+7. `performUp()` gửi UP tại **chính activePoint vừa DOWN**, không lấy tọa độ khác.
+8. Chỉ khi UP thành công mới tăng TAP counter và chuyển index sang điểm kế tiếp: `(currentPointIndex + 1) % points.count`.
+9. Nếu vẫn đang chạy, đợi khoảng speed rồi thực hiện DOWN tiếp theo.
+
+Ví dụ 3 điểm: **1 → 2 → 3 → 1 → 2 → 3…**. Với một điểm, vòng lặp tiếp tục ở điểm đó.
+
+Chỉ có **một ngón tay/contact đang hoạt động tại một thời điểm**. Đây là click tuần tự nhiều tọa độ, không phải multi-touch đồng thời.
+
+### 4.6. Backend phát touch cấp thấp
+
+`TPIOSTapTest.swift` là cầu nối Swift sang hai C symbol:
+
+- `TPIOSCHMTouchAvailable()`: kiểm tra backend HID có sẵn.
+- `TPIOSCHMTouchDispatch(x, y, phase)`: gửi sự kiện; phase `0` là DOWN và phase `3` là UP.
+
+Trong `CHMTouchBackend.m`:
+
+1. Dùng `dlopen/dlsym` để nạp và tìm các entry point IOKit HID cần thiết. Các hàm cốt lõi gồm tạo digitizer event, tạo finger event, tạo HID event client, đặt sender ID, set field, append event và dispatch event. BackBoardServices được nạp riêng; `BKSHIDEventSetDigitizerInfo` là phần bổ sung tùy khả năng có mặt.
+2. Khi DOWN, backend tìm foreground app window thật, loại trừ overlay window TPIOS và lấy context ID nếu selector private `_contextId` có sẵn.
+3. Tọa độ scheduler lưu theo hệ tọa độ window. Backend convert tọa độ này sang hệ tọa độ màn hình cho HID event.
+4. Tạo digitizer parent event và finger child event, gắn metadata/finger index, force/radius và append finger vào parent.
+5. Để UIKit định tuyến tới đúng control/view, backend tạm ẩn các overlay root có tag `0x5450494F`, hit-test tại tọa độ DOWN trên app window, sau đó hiện lại overlay.
+6. Backend tạo/cập nhật `UITouch` và `UIEvent` bằng các selector UIKit private, đặt window/view/phase/timestamp/location/HID event, rồi gọi `UIApplication.sendEvent`.
+7. Nếu có selector tương ứng, backend còn gọi `_enqueueHIDEvent:`; cuối cùng dispatch parent event qua `IOHIDEventSystemClientDispatchEvent`.
+8. Backend giữ lại `UITouch`, window, view, context ID và tọa độ của DOWN. Khi UP, nó dùng lại đúng contact/window/view/context/point đó để đóng contact ban đầu, không hit-test lại sang view khác.
+
+Việc kết hợp đường UIKit event với đường HID là chủ ý của backend hiện tại: UIKit có target view để xử lý control, còn HID event được đưa xuống event system.
+
+### 4.7. Cơ chế dừng và chống touch bị kẹt
+
+- Nhấn **Dừng** sẽ hủy timer và nếu đang DOWN thì cố gửi UP cho active point.
+- Đóng panel gọi `cleanup()`: dừng scheduler, xóa picker/marker và hủy timer.
+- DOWN lỗi: dừng chu kỳ và báo `DOWN LỖI`.
+- UP lỗi: dừng, giữ cờ touch chưa nhả và báo `UP LỖI - ĐÃ KHÓA`; không cho bắt đầu DOWN mới khi contact cũ chưa được xác nhận đóng.
+- Backend cũng từ chối DOWN thứ hai nếu vẫn còn active UITouch; UP phải dùng contact gốc.
+- Backend kiểm tra main thread, tọa độ hữu hạn, phase hợp lệ và sự tồn tại của các API/selector cần thiết. Lỗi được ghi vào TPIOS log.
+
+Những guard này nhằm tránh chồng hai contact hoặc tiếp tục bắn DOWN khi lần UP trước chưa thành công.
+
+### 4.8. Trạng thái xác nhận và giới hạn tương thích
+
+- **Đã xác nhận thực tế:** người dùng đã báo bản build có marker nhỏ/đánh số và luồng Chạm hiện tại chạy OK (2026-11-13).
+- Tài liệu này không chạy build hay GitHub Actions; đây là mô tả source tại commit nêu đầu README.
+- Backend phụ thuộc các API/selector private/undocumented của iOS (IOKit HID, BackBoardServices và UIKit private selectors). Việc compile được không đảm bảo API private luôn tồn tại hoặc giữ ABI trên mọi bản iOS.
+- Workflow target arm64/iOS 15.0 là thông số biên dịch, **không phải cam kết** backend tương thích mọi phiên bản iOS hay mọi ứng dụng.
+- Cần kiểm thử lại trên thiết bị/môi trường inject mục tiêu sau khi đổi iOS hoặc thay đổi backend.
 
 ---
 
-## LỊCH SỬ PHÁT TRIỂN / BACKUP
+## 5. Các module còn lại
 
-Phần này dùng để ghi các mốc **đã chạy OK**.
+### Vị trí và giả lập GPS
 
-Mỗi lần người dùng yêu cầu **"backup hiện tại"**, thêm một mục mới theo mẫu:
+- Giao diện có tìm địa điểm, bản đồ, chọn tọa độ, nhập/sửa vĩ độ–kinh độ–độ cao/địa chỉ và danh sách vị trí lưu.
+- `TPIOSLocationSpoofHook.swift` swizzle các entry point của `CLLocationManager` như start update, request location và location; khi spoof bật thì trả vị trí giả, khi tắt thì gọi implementation gốc.
+- **Cảnh báo nguồn:** đầu file `TPIOSLocation.swift` ghi rõ source này được dựng lại từ symbol table của binary cũ; chữ ký đã xác nhận nhưng một số thân hàm là suy luận theo tên và phong cách các panel khác. Vì vậy không được coi toàn bộ logic file này là source gốc đã được xác minh từng dòng.
 
-### YYYY-MM-DD — Backup hiện tại
+### Sale Shopee
 
-**Trạng thái:** Đã build/test OK.
+- `TPIOSSale.swift`: giao diện theo dõi sản phẩm, tạo lần quét (snapshot), xem lịch sử, xóa sản phẩm/lần quét, chỉnh tên/giá và nhập voucher.
+- `TPIOSSaleScanner.swift`: đọc text từ view đang hiển thị trong app, gom text cùng frame, tìm tên sản phẩm/giá/voucher và đọc thông tin gần vị trí chọn. Đây là đọc cây view/text runtime, không phải OCR ảnh màn hình.
+- `TPIOSSaleData.swift`: model, lưu trữ, chuẩn hóa tên, tính mức giảm và chọn tổ hợp voucher phù hợp điều kiện/min spend/max discount.
+- `TPIOSCartBody.swift`: hook URLSession delegate để gom response của các request cart/voucher/checkout vào log; parser hiện tạo snapshot giỏ từ response `cart/get` và `cart/update`.
+- Dữ liệu sản phẩm theo dõi được lưu bằng UserDefaults. Việc đọc cart response hỗ trợ so sánh dữ liệu giỏ với dữ liệu đang theo dõi.
 
+### Log và network evidence
 
-## NGUYÊN TẮC QUAN TRỌNG NHẤT
+- `TPIOSLog.swift`: log có giới hạn 2.000 dòng, xem/lọc/xóa, di chuyển/resize cửa sổ và lưu log ra file.
+- Trong cửa sổ log có thao tác bắt request mạng. Khi người dùng bật, `TPIOSNetworkLog` hook `URLSessionTask.resume`, ghi lại một tập URL Shopee liên quan đến item/product/voucher/discount/shipping/flash; giữ tối đa 120 request evidence gần nhất.
+- `TPIOSCartBody` được cài lúc TPIOS khởi động; network URL evidence được bật từ thao tác trong giao diện log.
 
-> **Giữ nguyên cái đang chạy OK. Sửa đúng nguyên nhân. Thay đổi ít nhất có thể. Chức năng mới phải độc lập. Backup phải có ngày tháng và luôn giữ lại lịch sử cũ. Không để việc repo bị khóa/mất làm project phải bắt đầu lại từ đầu.**
+### Đồng hồ và giờ server
+
+- `TPIOSSaleClock.swift`: đồng hồ nổi có thể kéo/resize, hiển thị giờ đến phần mười giây.
+- `TPIOSServerTime.swift`: khi người dùng mở/chạm đồng bộ, gửi 10 HTTP HEAD samples tới endpoint Shopee, cách nhau 0.31 giây; dùng header HTTP Date và RTT để ước lượng offset, sai số và ping. Không có vòng quét giờ nền liên tục.
+
+### Chặn quảng cáo và chẩn đoán WebView
+
+- `TPIOSAdBlock.swift`: quan sát runtime/view/controller, tìm dấu hiệu quảng cáo, lưu profile class/selector và áp dụng chiến lược tương ứng; có nhánh fallback WebView/view. Profile được lưu để lần sau có thể áp dụng mà không phải quét lại nếu tương thích.
+- `TPIOSModelFilter.m`: hỗ trợ hook các initializer đã chỉ định của class mục tiêu, gọi predicate BOOL và từ chối object nếu predicate xác định là model cần lọc.
+- `TPIOSGADPresentationBlocker.m`: hook `presentViewController` và chặn một số class controller fullscreen Google Mobile Ads được nhận diện theo tên class cụ thể.
+- `TPIOSWebDiagnostics.swift`: hook `WKWebView.didMoveToWindow`, ghi URL/frame/cây view và truy vấn DOM/resource liên quan quảng cáo để hỗ trợ chẩn đoán. Đây là diagnostics, không phải tự nó đảm bảo chặn được mọi quảng cáo.
+
+### Tải lại trang
+
+`TPIOSReload.swift` tìm các đối tượng có thể refresh trong cây view/controller, gồm refresh control, scroll view, WebView và một số component React Native; sau đó thử callback/selector hoặc fallback phù hợp. Vì app mục tiêu có thể dùng cấu trúc khác nhau, log có thể báo không tìm thấy candidate hoặc không xác định được callback thật.
+
+### Chẩn đoán IAP/StoreKit
+
+- `TPIOSAppScanner.swift`: đọc bundle/version và liệt kê class runtime liên quan StoreKit/Product/Transaction/Receipt.
+- `TPIOSPaymentScanner.swift`: đọc trạng thái receipt, số transaction StoreKit 1 và số current entitlement StoreKit 2 (API có sẵn từ iOS 15).
+- Chỉ đọc để chẩn đoán; source có comment rõ không sửa receipt, entitlement hoặc kết quả giao dịch.
+
+---
+
+## 6. Bản đồ source code
+
+| File | Trách nhiệm |
+|---|---|
+| `TPIOSBootstrap.m` | Constructor của dylib, cài hook ban đầu và gọi entry point. |
+| `TPIOSEntry.swift` | Export `TPIOSStart` / `TPIOSStop`; cài cart response hook và start/stop controller. |
+| `TPIOSController.swift` | Overlay window pass-through, floating button, menu lifecycle và gesture nút nổi. |
+| `FloatingButton.swift` | Giao diện nút nổi. |
+| `TPIOSMenu.swift` | Menu 8 nút và màn hình con Mua all (đang nằm chung file). |
+| `TPIOSPanelStyle.swift` | Style nền kính/gradient dùng chung. |
+| `TPIOSLog.swift` | Hệ thống log và cửa sổ log. |
+| `TPIOSAutoClickPanel.swift` | UI, điểm chạm, lưu cài đặt và scheduler auto-click. |
+| `TPIOSTapTest.swift` | Quản lý panel Chạm và cầu nối Swift tới backend C. |
+| `CHMTouchBackend.h` / `CHMTouchBackend.m` | API và implementation phát touch UIKit/HID. |
+| `TPIOSLocation.swift` | UI bản đồ, tọa độ, địa chỉ và vị trí đã lưu. |
+| `TPIOSLocationSpoofHook.swift` | Hook CLLocationManager cho giả lập vị trí. |
+| `TPIOSSale.swift` | UI và luồng theo dõi/quét sản phẩm Sale. |
+| `TPIOSSaleScanner.swift` | Đọc text/view runtime và trích tên/giá/voucher. |
+| `TPIOSSaleData.swift` | Model, voucher math, matcher và persistence Sale. |
+| `TPIOSSaleClock.swift` | Đồng hồ nổi. |
+| `TPIOSServerTime.swift` | Đồng bộ/ước lượng giờ server Shopee. |
+| `TPIOSCartBody.swift` | Thu response cart và parse snapshot giỏ hàng. |
+| `TPIOSNetworkLog.swift` | Thu thập URL request Shopee theo thao tác bật bắt mạng. |
+| `TPIOSAdBlock.swift` | Quét, lưu profile và áp dụng logic AdBlock. |
+| `TPIOSModelFilter.m` | Hook initializer để lọc model theo predicate. |
+| `TPIOSGADPresentationBlocker.m` | Chặn một số controller quảng cáo GAD khi present. |
+| `TPIOSWebDiagnostics.swift` | Chẩn đoán WKWebView/DOM/resource quảng cáo. |
+| `TPIOSReload.swift` | Tìm và kích hoạt cơ chế refresh. |
+| `TPIOSAppScanner.swift` | Quét class/bundle liên quan StoreKit. |
+| `TPIOSPaymentScanner.swift` | Đọc receipt và trạng thái StoreKit. |
+
+---
+
+## 7. Quy tắc làm việc trên repo
+
+Các quy tắc sau áp dụng cho AI/người tiếp tục phát triển TPIOS:
+
+1. Chỉ làm việc trong đúng repo được yêu cầu; không tự lấy code từ repo khác.
+2. Chỉ làm việc trên nhánh `main`; không tạo nhánh mới.
+3. Trước khi sửa, kiểm tra trạng thái repo, đọc file và hàm thực tế liên quan; không đoán cấu trúc hoặc API.
+4. Ưu tiên diff nhỏ; giữ nguyên chức năng đang chạy tốt; không refactor hoặc thêm dependency không cần thiết.
+5. Mặc định một chức năng có một file chính; chỉ tách file khi có lý do dùng chung/kỹ thuật rõ ràng.
+6. Menu chính là chuẩn UI tham chiếu: khung thiết kế 240×350 pt, tối thiểu 240×330 pt, radius 24 pt, header 66 pt, resize handle 44 pt, grid 3 cột, padding ngang 14 pt, icon tối đa 58 pt.
+7. Không tạo scanner/timer/observer chạy liên tục nếu không cần; tác vụ nặng chỉ chạy khi người dùng yêu cầu hoặc mở chức năng.
+8. Log phải có mục đích, có giới hạn; không spam trong vòng lặp.
+9. Không tự chạy GitHub Actions/build workflow. Chỉ đọc log hoặc kiểm tra workflow khi được yêu cầu.
+10. Khi sửa lỗi build, dựa trên log thực tế; nếu cùng lỗi đã thử 3 lần vẫn chưa giải quyết thì dừng và báo nguyên nhân còn nghi ngờ.
+11. Không tuyên bố build/test OK nếu chưa có kết quả xác nhận.
+12. Khi chỉnh sửa UI/interaction, kiểm tra touch, kéo, resize, đóng/quay lại và regression liên quan khi có build được người dùng cho phép.
+
+### Chuẩn UI cho panel
+
+- Menu con dùng cùng logic scale, corner radius, header, padding, grid, spacing và resize với menu chính.
+- Nút chức năng phải có icon đúng nghĩa, label ngắn và rõ.
+- Resize phải scale đồng bộ icon/chữ/layout; không tràn hoặc chồng nội dung.
+- Panel kéo bằng header, clamp trong màn hình; có Back/Close khi phù hợp.
+- Ô nhập liệu cần co giãn theo khung và có nút xóa nhanh khi thích hợp.
+
+---
+
+## 8. Quy tắc backup
+
+Backup chỉ đại diện cho trạng thái đã được xác nhận build/test OK.
+
+- Tên file backup theo ngày: `BACKUP_YYYY-MM-DD.md`; nếu nhiều bản cùng ngày dùng hậu tố `_v2`, `_v3`…
+- Không ghi đè backup cũ.
+- Backup mới phải giữ lịch sử cũ và chỉ thêm trạng thái mới đã xác nhận OK.
+- Không đưa tính năng đang thử nghiệm/chưa xác nhận vào danh sách hoàn thành.
+- Khi khôi phục, đọc backup mới nhất trước và không làm lại phần đã có trong backup.
+
+### Kiểm tra trước khi xác nhận thay đổi
+
+Khi có build được người dùng cho phép, kiểm tra compile/linker, selector conflict, timer/observer, regression chức năng cũ và tương tác UI liên quan. Việc cập nhật tài liệu không phải lý do để tự chạy workflow.
+
+---
+
+## 9. Nguyên tắc cốt lõi
+
+> **Giữ nguyên cái đang chạy OK. Sửa đúng nguyên nhân. Thay đổi ít nhất có thể. Phân biệt rõ code đã có với chức năng đã được kiểm thử. Không tự chạy build/Actions. Ghi lại trạng thái đủ rõ để người khác có thể tiếp tục mà không phải làm lại từ đầu.**
