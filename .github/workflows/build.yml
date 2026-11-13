@@ -21,46 +21,21 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
           xcodebuild -version
 
-      - name: Prepare build directory
+      - name: Compile Objective-C sources
         run: |
           rm -rf build
           mkdir -p build
+          SDKROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
 
-      - name: Compile Objective-C bootstrap
-        run: |
-          xcrun clang \
-            -target arm64-apple-ios15.0 \
-            -isysroot "$(xcrun --sdk iphoneos --show-sdk-path)" \
-            -fobjc-arc \
-            -c TPIOSBootstrap.m \
-            -o build/TPIOSBootstrap.o
-
-      - name: Compile Cham HID touch backend
-        run: |
-          xcrun clang \
-            -target arm64-apple-ios15.0 \
-            -isysroot "$(xcrun --sdk iphoneos --show-sdk-path)" \
-            -fobjc-arc \
-            -c CHMTouchBackend.m \
-            -o build/CHMTouchBackend.o
-
-      - name: Compile Objective-C model filter
-        run: |
-          xcrun clang \
-            -target arm64-apple-ios15.0 \
-            -isysroot "$(xcrun --sdk iphoneos --show-sdk-path)" \
-            -fobjc-arc \
-            -c TPIOSModelFilter.m \
-            -o build/TPIOSModelFilter.o
-
-      - name: Compile Google Mobile Ads presentation blocker
-        run: |
-          xcrun clang \
-            -target arm64-apple-ios15.0 \
-            -isysroot "$(xcrun --sdk iphoneos --show-sdk-path)" \
-            -fobjc-arc \
-            -c TPIOSGADPresentationBlocker.m \
-            -o build/TPIOSGADPresentationBlocker.o
+          for source in TPIOSBootstrap.m CHMTouchBackend.m TPIOSModelFilter.m TPIOSGADPresentationBlocker.m; do
+            object="build/${source%.m}.o"
+            xcrun clang \
+              -target arm64-apple-ios15.0 \
+              -isysroot "$SDKROOT" \
+              -fobjc-arc \
+              -c "$source" \
+              -o "$object"
+          done
 
       - name: Compile Swift sources
         run: |
@@ -81,18 +56,12 @@ jobs:
             build/TPIOSModelFilter.o \
             build/TPIOSGADPresentationBlocker.o
 
-      - name: Set build version
-        id: version
-        run: |
-          VERSION=$(printf "%02d" "$GITHUB_RUN_NUMBER")
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "TPIOS version: $VERSION"
-
       - name: Package dylib
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION=$(printf "%02d" "$GITHUB_RUN_NUMBER")
           mkdir -p package
           cp build/TPIOS.dylib "package/tpios${VERSION}.dylib"
+          echo "TPIOS version: $VERSION"
 
       - name: Upload dylib
         uses: actions/upload-artifact@v4
