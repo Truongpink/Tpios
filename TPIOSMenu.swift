@@ -253,7 +253,7 @@ final class TPIOSMenu: UIView, UIGestureRecognizerDelegate {
 
         let sidePadding = 14 * scale
         let columnGap = 10 * scale
-        let rowGap = 8 * scale
+        let rowGap = 6 * scale
         let iconLabelGap = 3 * scale
         let labelHeight = 15 * scale
         let gridTop = header + 12 * scale
