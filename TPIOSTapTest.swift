@@ -27,8 +27,8 @@ final class TPIOSRealTouchProbe: UIGestureRecognizer, UIGestureRecognizerDelegat
             let targetView = touch.view.map { NSStringFromClass(type(of: $0)) } ?? "nil"
             TPIOSLog.shared.log("TapProbe: began count=\(touches.count) point=\(lastPoint) target=\(targetView)")
         }
-        state = .began
-        state = .changed
+        // Keep the recognizer in .possible while the finger is down.
+        // This observes the real touch without recognizing/cancelling it early.
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
@@ -38,7 +38,7 @@ final class TPIOSRealTouchProbe: UIGestureRecognizer, UIGestureRecognizerDelegat
         let dy = point.y - lastPoint.y
         lastPoint = point
         TPIOSLog.shared.log("TapProbe: moved count=\(touches.count) point=\(point) delta=(\(dx), \(dy)) target=\(NSStringFromClass(type(of: touch.view ?? view)))")
-        state = .changed
+        // Do not recognize a tap until the finger is lifted.
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
@@ -46,7 +46,7 @@ final class TPIOSRealTouchProbe: UIGestureRecognizer, UIGestureRecognizerDelegat
             let point = touch.location(in: view)
             TPIOSLog.shared.log("TapProbe: ended count=\(touches.count) point=\(point) target=\(NSStringFromClass(type(of: touch.view ?? view)))")
         }
-        state = .ended
+        state = .recognized
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
