@@ -30,43 +30,19 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private var logs: [String] = []
     private var resizeStartFrame = CGRect.zero
     private var resizeStartPoint = CGPoint.zero
+    private var moveStartFrame = CGRect.zero
+    private var moveStartedTucked = false
+    private var isTuckedToEdge = false
+    private var tuckedToLeft = false
 
     private let stateKey = "TPIOSCaoXuState"
     private let logKey = "TPIOSCaoXuLogs"
-    private static let logUpdatedNotification = Notification.Name("TPIOSCaoXuLogUpdated")
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         loadState()
         setup()
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(capturedLogUpdated),
-            name: Self.logUpdatedNotification,
-            object: nil
-        )
         refresh()
-    }
-
-    deinit {
-        NotificationCenter.default.removeObserver(self, name: Self.logUpdatedNotification, object: nil)
-    }
-
-    static func recordCapturedRequest(_ url: String) {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        var savedLogs = UserDefaults.standard.stringArray(forKey: "TPIOSCaoXuLogs") ?? []
-        savedLogs.append("[\(formatter.string(from: Date()))] Lazada: \(url)")
-        if savedLogs.count > 500 {
-            savedLogs.removeFirst(savedLogs.count - 500)
-        }
-        UserDefaults.standard.set(savedLogs, forKey: "TPIOSCaoXuLogs")
-        NotificationCenter.default.post(name: logUpdatedNotification, object: nil)
-    }
-
-    @objc private func capturedLogUpdated() {
-        logs = UserDefaults.standard.stringArray(forKey: logKey) ?? []
-        refreshLog()
     }
 
     required init?(coder: NSCoder) {
@@ -278,15 +254,6 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     }
 
     @objc private func startTapped() {
-        let captureStarted = TPIOSNetworkLog.shared.startLazadaCapture { url in
-            TPIOSCaoXu.recordCapturedRequest(url)
-        }
-        if captureStarted {
-            appendLog("Đã bật ghi nhận request Lazada; query/token được loại khỏi log")
-        } else {
-            appendLog("Không bật bắt mạng: APP hiện tại không phải com.lazadaSEA.lazada")
-        }
-
         guard taskNames.isEmpty == false else {
             sessionActive = true
             statusLabel.text = "Chưa có nhiệm vụ/kịch bản. Chưa thực hiện thao tác tự động."
@@ -308,7 +275,6 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
 
     @objc private func stopTapped() {
         sessionActive = false
-        TPIOSNetworkLog.shared.stopLazadaCapture()
         appendLog("Đã kết thúc/tạm dừng phiên tại nhiệm vụ \(currentTaskIndex + 1)")
         saveState()
         refresh()
@@ -336,16 +302,64 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     }
 
     @objc private func movePanned(_ gesture: UIPanGestureRecognizer) {
-        guard let parent = superview,
-              gesture.state == .began || gesture.state == .changed else { return }
-        let delta = gesture.translation(in: parent)
-        var next = frame
-        next.origin.x += delta.x
-        next.origin.y += delta.y
-        next.origin.x = max(0, min(next.origin.x, max(0, parent.bounds.width - next.width)))
-        next.origin.y = max(0, min(next.origin.y, max(0, parent.bounds.height - next.height)))
-        frame = next
-        gesture.setTranslation(.zero, in: parent)
+        guard let parent = superview else { return }
+
+        switch gesture.state {
+        case .began:
+            moveStartFrame = frame
+            moveStartedTucked = isTuckedToEdge
+
+        case .changed:
+            let delta = gesture.translation(in: parent)
+            var next = frame
+            next.origin.x += delta.x
+            next.origin.y += delta.y
+            next.origin.y = max(0, min(next.origin.y, max(0, parent.bounds.height - next.height)))
+
+            if moveStartedTucked {
+                // Khi đang ẩn, cho phép kéo khung ra khỏi mép màn hình.
+                next.origin.x = max(-next.width + 24, min(next.origin.x, parent.bounds.width - 24))
+            } else {
+                next.origin.x = max(0, min(next.origin.x, max(0, parent.bounds.width - next.width)))
+            }
+
+            frame = next
+            gesture.setTranslation(.zero, in: parent)
+
+        case .ended, .cancelled, .failed:
+            if moveStartedTucked {
+                let movedOut = abs(frame.minX - moveStartFrame.minX) > 50
+                if movedOut {
+                    isTuckedToEdge = false
+                    let showOnLeft = frame.midX < parent.bounds.midX
+                    frame.origin.x = showOnLeft ? 12 : max(12, parent.bounds.width - frame.width - 12)
+                } else {
+                    frame.origin.x = tuckedToLeft ? -frame.width + 24 : parent.bounds.width - 24
+                }
+            } else {
+                let edgeDistance = min(frame.minX, parent.bounds.width - frame.maxX)
+                if edgeDistance <= 36 {
+                    tuckToEdge(left: frame.midX < parent.bounds.midX, in: parent)
+                }
+            }
+            moveStartedTucked = false
+
+        default:
+            break
+        }
+    }
+
+    private func tuckToEdge(left: Bool, in parent: UIView) {
+        tuckedToLeft = left
+        isTuckedToEdge = true
+        let targetX = left ? -bounds.width + 24 : parent.bounds.width - 24
+        UIView.animate(
+            withDuration: 0.22,
+            delay: 0,
+            options: [.beginFromCurrentState, .allowUserInteraction]
+        ) {
+            self.frame.origin.x = targetX
+        }
     }
 
     @objc private func resizePanned(_ gesture: UIPanGestureRecognizer) {
