@@ -243,16 +243,22 @@ final class TPIOSAutoClickPanel: UIView {
             statusLabel.text = "ĐANG CHẠY / CHƯA CÓ ĐIỂM"
             return
         }
-        guard TPIOSAutoClickEngine.shared.dispatchTouch(at: point, down: true) else {
-            statusLabel.text = "TAP LỖI"
-            TPIOSLog.shared.log("TapPanel: manual DOWN failed")
-            return
-        }
+        // Leave the current UIButton event dispatch before injecting a synthetic touch.
         touchIsDown = true
         activePoint = point
-        statusLabel.text = "TAPPED"
-        schedule(after: pressDuration) { [weak self] in self?.releaseTouch() }
-        TPIOSLog.shared.log("TapPanel: manual DOWN point=\(point)")
+        statusLabel.text = "TESTING"
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.touchIsDown else { return }
+            guard TPIOSAutoClickEngine.shared.dispatchTouch(at: point, down: true) else {
+                self.touchIsDown = false
+                self.statusLabel.text = "TAP LỖI"
+                TPIOSLog.shared.log("TOUCH TEST FAIL: DOWN")
+                return
+            }
+            self.statusLabel.text = "TAPPED"
+            self.schedule(after: self.pressDuration) { [weak self] in self?.releaseTouch() }
+            TPIOSLog.shared.log("TOUCH TEST OK point=\(point)")
+        }
     }
 
     @objc private func pointMode() {
@@ -305,7 +311,6 @@ final class TPIOSAutoClickPanel: UIView {
         let location = gesture.location(in: window)
         marker.center = location
         points = [location]
-        TPIOSLog.shared.log("TapPanel: marker moved point=\(location)")
     }
 
     @objc private func clearPoints() {
@@ -318,7 +323,6 @@ final class TPIOSAutoClickPanel: UIView {
     @objc private func speedChanged() {
         speed = TimeInterval(speedSlider.value)
         speedLabel.text = String(format: "Tốc độ  %.2fs", speed)
-        TPIOSLog.shared.log(String(format: "TapPanel: speed=%.2fs", speed))
     }
 
     @objc private func decreaseSpeed() {
@@ -352,8 +356,9 @@ final class TPIOSAutoClickPanel: UIView {
         currentPointIndex = 0
         startButton.setImage(UIImage(systemName: "stop.fill"), for: .normal)
         statusLabel.text = "RUNNING"
-        TPIOSLog.shared.log("TapPanel: auto START points=\(points.count) interval=\(speed) press=\(pressDuration)")
-        performDown()
+        TPIOSLog.shared.log("TapPanel: auto START points=\(points.count)")
+        // Avoid injecting DOWN re-entrantly while UIKit is handling the START button.
+        DispatchQueue.main.async { [weak self] in self?.performDown() }
     }
 
     private func schedule(after delay: TimeInterval, _ action: @escaping () -> Void) {
@@ -391,7 +396,6 @@ final class TPIOSAutoClickPanel: UIView {
         tapCount += 1
         countLabel.text = "TAP: \(tapCount)"
         currentPointIndex = (currentPointIndex + 1) % points.count
-        TPIOSLog.shared.log("TapPanel: UP confirmed count=\(tapCount)")
         if running { schedule(after: speed) { [weak self] in self?.performDown() } }
         else { statusLabel.text = "STOPPED" }
     }
