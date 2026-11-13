@@ -446,11 +446,21 @@ final class TPIOSAutoClickPanel: UIView {
         TPIOSLog.shared.log("TapPanel: cleanup panel exit - marker/picker/timer removed")
     }
 
+    private func releaseActiveTouch() {
+        guard touchIsDown else { return }
+        if TPIOSAutoClickEngine.shared.dispatchTouch(at: activePoint, down: false) {
+            touchIsDown = false
+        } else {
+            TPIOSLog.shared.log("TapPanel: UP failed; next start blocked")
+            statusLabel.text = "UP LỖI - ĐÃ KHÓA"
+        }
+    }
+
     func stop() {
         running = false
         timer?.cancel()
         timer = nil
-        if touchIsDown { releaseTouch() }
+        if touchIsDown { releaseActiveTouch() }
         startButton.setImage(UIImage(systemName: "play.fill"), for: .normal)
         if !touchIsDown { statusLabel.text = "STOPPED" }
         TPIOSLog.shared.log("TapPanel: stopped touchDown=\(touchIsDown)")
