@@ -212,14 +212,15 @@ final class TPIOSAutoClickPanel: UIView {
         let iconSize = min(columnWidth, 58 * scale), iconInset = max(0, (columnWidth - iconSize) / 2)
         let labelHeight = 15 * scale, iconLabelGap = 3 * scale, rowHeight = iconSize + iconLabelGap + labelHeight, rowGap = 7 * scale, top = 10 * scale
         let buttons = [pointButton, clearButton]
+        let actionColumnWidth = (contentWidth - columnGap) / 2
         let labels = content.subviews.compactMap { $0 as? UILabel }.filter { $0 !== statusLabel && $0 !== countLabel && $0 !== pointLabel && $0 !== speedLabel }
         for index in 0..<buttons.count {
-            let centerX = sidePadding + (CGFloat(index) + 0.5) * (columnWidth + columnGap)
+            let centerX = sidePadding + (CGFloat(index) + 0.5) * (actionColumnWidth + columnGap)
             buttons[index].frame = CGRect(x: centerX - iconSize / 2, y: top, width: iconSize, height: iconSize)
             buttons[index].layer.cornerRadius = iconSize * 0.28
             TPIOSPanelStyle.syncFrames(in: buttons[index])
             if index < labels.count {
-                labels[index].frame = CGRect(x: centerX - columnWidth / 2, y: top + iconSize + iconLabelGap, width: columnWidth, height: labelHeight)
+                labels[index].frame = CGRect(x: centerX - actionColumnWidth / 2, y: top + iconSize + iconLabelGap, width: actionColumnWidth, height: labelHeight)
                 labels[index].font = .systemFont(ofSize: max(8, 13 * scale), weight: .semibold)
             }
         }
