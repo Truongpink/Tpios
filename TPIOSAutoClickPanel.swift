@@ -315,15 +315,25 @@ final class TPIOSAutoClickPanel: UIView {
 
     private func addMarker(at point: CGPoint) {
         guard let window = superview as? UIWindow else { return }
-        // A larger hit target makes each saved point easy to grab and reposition.
-        let markerSize: CGFloat = 36
+        let markerSize: CGFloat = 30
         let marker = UIView(frame: CGRect(x: point.x - markerSize / 2, y: point.y - markerSize / 2, width: markerSize, height: markerSize))
+        let pointNumber = markers.count + 1
         marker.tag = 0x5450494F
-        marker.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.85)
+        marker.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.88)
         marker.layer.cornerRadius = markerSize / 2
-        marker.layer.borderWidth = 2
+        marker.layer.borderWidth = 1.5
         marker.layer.borderColor = UIColor.white.cgColor
         marker.isUserInteractionEnabled = true
+        marker.accessibilityLabel = "Điểm \(pointNumber)"
+
+        let numberLabel = UILabel(frame: marker.bounds)
+        numberLabel.text = String(pointNumber)
+        numberLabel.textColor = .white
+        numberLabel.font = .systemFont(ofSize: 13, weight: .bold)
+        numberLabel.textAlignment = .center
+        numberLabel.isUserInteractionEnabled = false
+        marker.addSubview(numberLabel)
+
         marker.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(moveMarker(_:))))
         window.addSubview(marker)
         markers.append(marker)
