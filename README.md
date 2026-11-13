@@ -205,7 +205,8 @@ Những guard này nhằm tránh chồng hai contact hoặc tiếp tục bắn D
 - `TPIOSCaoXu.swift` hiện là panel giao diện thử nghiệm: Bắt đầu/Tiếp tục, Kết thúc/Tạm dừng, tiến độ, sao chép log và xóa log riêng.
 - Vị trí nhiệm vụ và log được lưu riêng bằng UserDefaults; xóa log không xóa vị trí nhiệm vụ.
 - Chưa tích hợp đọc danh sách nhiệm vụ, ghi request/response Lazada hoặc tự bấm nhiệm vụ/nhận xu. Khi chưa có dữ liệu và kịch bản, nút Bắt đầu chỉ mở phiên chờ, không phát thao tác tự động.
-- Chưa xác minh app Lazada đang chạy native hay WebView; cần xác định nguồn traffic trước khi thêm bộ ghi mạng. Không ghi cookie/token đăng nhập vào log.
+- TPIOS là dylib được inject vào tiến trình ứng dụng mục tiêu; `TPIOSBootstrap.m` chỉ khởi tạo trong tiến trình đang nạp dylib. Vì vậy hook URLSession chỉ có thể quan sát request của Lazada nếu dylib thực sự được inject vào chính tiến trình Lazada.
+- Panel Cào xu hiển thị `Bundle.main.bundleIdentifier` để xác minh tiến trình chủ sau khi mở panel trong Lazada. Chưa có cấu hình injection/filter plist trong repo này để xác nhận app mục tiêu được chọn; cần kiểm tra bundle ID runtime trước khi thêm hook Lazada. Không ghi cookie/token đăng nhập vào log.
 
 ### Đồng hồ và giờ server
 
