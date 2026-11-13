@@ -206,33 +206,24 @@ final class TPIOSAutoClickPanel: UIView {
             title.frame = CGRect(x: 56 * scale, y: 12 * scale, width: max(0, bounds.width - 112 * scale), height: 42 * scale)
             title.font = .systemFont(ofSize: max(12, 19 * scale), weight: .bold)
         }
-        let sidePadding = 14 * scale, columnGap = 10 * scale
+        let sidePadding = 14 * scale, columnGap = 8 * scale
         let contentWidth = max(0, bounds.width - sidePadding * 2)
         let columnWidth = max(0, (contentWidth - columnGap * 2) / 3)
-        let iconSize = min(columnWidth, 58 * scale), iconInset = max(0, (columnWidth - iconSize) / 2)
-        let labelHeight = 15 * scale, iconLabelGap = 3 * scale, rowHeight = iconSize + iconLabelGap + labelHeight, rowGap = 7 * scale, top = 10 * scale
-        let buttons = [pointButton, clearButton]
-        let actionColumnWidth = (contentWidth - columnGap) / 2
+        let iconSize = min(columnWidth, 58 * scale)
+        let labelHeight = 15 * scale, iconLabelGap = 3 * scale
+        let rowHeight = iconSize + iconLabelGap + labelHeight
+        let top = 12 * scale
+        let buttons = [pointButton, clearButton, startButton]
         let labels = content.subviews.compactMap { $0 as? UILabel }.filter { $0 !== statusLabel && $0 !== countLabel && $0 !== pointLabel && $0 !== speedLabel }
-        for index in 0..<buttons.count {
-            let centerX = sidePadding + (CGFloat(index) + 0.5) * (actionColumnWidth + columnGap)
+        for index in buttons.indices {
+            let centerX = sidePadding + CGFloat(index) * (columnWidth + columnGap) + columnWidth / 2
             buttons[index].frame = CGRect(x: centerX - iconSize / 2, y: top, width: iconSize, height: iconSize)
             buttons[index].layer.cornerRadius = iconSize * 0.28
             TPIOSPanelStyle.syncFrames(in: buttons[index])
-            if index < labels.count {
-                labels[index].frame = CGRect(x: centerX - actionColumnWidth / 2, y: top + iconSize + iconLabelGap, width: actionColumnWidth, height: labelHeight)
-                labels[index].font = .systemFont(ofSize: max(8, 13 * scale), weight: .semibold)
-            }
+            labels[index].frame = CGRect(x: sidePadding + CGFloat(index) * (columnWidth + columnGap), y: top + iconSize + iconLabelGap, width: columnWidth, height: labelHeight)
+            labels[index].font = .systemFont(ofSize: max(8, 13 * scale), weight: .semibold)
         }
-        let secondY = top + rowHeight + rowGap
-        startButton.frame = CGRect(x: sidePadding + iconInset, y: secondY, width: iconSize, height: iconSize)
-        startButton.layer.cornerRadius = iconSize * 0.28
-        TPIOSPanelStyle.syncFrames(in: startButton)
-        if labels.count > 2 {
-            labels[2].frame = CGRect(x: sidePadding, y: secondY + iconSize + iconLabelGap, width: columnWidth, height: labelHeight)
-            labels[2].font = .systemFont(ofSize: max(8, 13 * scale), weight: .semibold)
-        }
-        let infoY = secondY + rowHeight + 3 * scale
+        let infoY = top + rowHeight + 10 * scale
         statusLabel.frame = CGRect(x: sidePadding, y: infoY, width: bounds.width - sidePadding * 2, height: 15 * scale)
         countLabel.frame = CGRect(x: sidePadding, y: infoY + 16 * scale, width: (bounds.width - sidePadding * 2) / 2 - 4 * scale, height: 15 * scale)
         pointLabel.frame = CGRect(x: bounds.midX + 4 * scale, y: infoY + 16 * scale, width: (bounds.width - sidePadding * 2) / 2 - 4 * scale, height: 15 * scale)
@@ -303,8 +294,11 @@ final class TPIOSAutoClickPanel: UIView {
     }
 
     @objc private func pickerTap(_ gesture: UITapGestureRecognizer) {
-        guard let overlay = picker, let window = overlay.superview as? UIWindow else { return }
-        let windowPoint = gesture.location(in: window)
+        guard let overlay = picker,
+              let window = overlay.superview as? UIWindow,
+              let tapArea = gesture.view else { return }
+        let localPoint = gesture.location(in: tapArea)
+        let windowPoint = tapArea.convert(localPoint, to: window)
         points.append(windowPoint)
         addMarker(at: windowPoint)
         pointLabel.text = "POINT: \(points.count)"
@@ -321,10 +315,12 @@ final class TPIOSAutoClickPanel: UIView {
 
     private func addMarker(at point: CGPoint) {
         guard let window = superview as? UIWindow else { return }
-        let marker = UIView(frame: CGRect(x: point.x - 12, y: point.y - 12, width: 24, height: 24))
+        // A larger hit target makes each saved point easy to grab and reposition.
+        let markerSize: CGFloat = 36
+        let marker = UIView(frame: CGRect(x: point.x - markerSize / 2, y: point.y - markerSize / 2, width: markerSize, height: markerSize))
         marker.tag = 0x5450494F
         marker.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.85)
-        marker.layer.cornerRadius = 12
+        marker.layer.cornerRadius = markerSize / 2
         marker.layer.borderWidth = 2
         marker.layer.borderColor = UIColor.white.cgColor
         marker.isUserInteractionEnabled = true
