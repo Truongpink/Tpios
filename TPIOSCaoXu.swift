@@ -257,7 +257,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         guard taskNames.isEmpty == false else {
             sessionActive = true
             statusLabel.text = "Chưa có nhiệm vụ/kịch bản. Chưa thực hiện thao tác tự động."
-            appendLog("Bắt đầu phiên — chưa có dữ liệu nhiệm vụ; chờ ghi nhận Lazada")
+            appendLog("Bắt đầu phiên — chưa có dữ liệu nhiệm vụ; chờ cập nhật danh sách")
             refresh()
             return
         }
