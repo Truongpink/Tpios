@@ -24,7 +24,7 @@ final class TPIOSRealTouchProbe: UIGestureRecognizer, UIGestureRecognizerDelegat
         if let touch = touches.first, let view = view {
             lastPoint = touch.location(in: view)
             let targetView = touch.view.map { NSStringFromClass(type(of: $0)) } ?? "nil"
-            TPIOSLog.shared.log("TapProbe: began count=\(touches.count) point=\(lastPoint) target=\(targetView)")
+            
         }
         // Keep the recognizer in .possible while the finger is down.
         // This observes the real touch without recognizing/cancelling it early.
@@ -36,14 +36,14 @@ final class TPIOSRealTouchProbe: UIGestureRecognizer, UIGestureRecognizerDelegat
         let dx = point.x - lastPoint.x
         let dy = point.y - lastPoint.y
         lastPoint = point
-        TPIOSLog.shared.log("TapProbe: moved count=\(touches.count) point=\(point) delta=(\(dx), \(dy)) target=\(NSStringFromClass(type(of: touch.view ?? view)))")
+        
         // Do not recognize a tap until the finger is lifted.
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
         if let touch = touches.first, let view = view {
             let point = touch.location(in: view)
-            TPIOSLog.shared.log("TapProbe: ended count=\(touches.count) point=\(point) target=\(NSStringFromClass(type(of: touch.view ?? view)))")
+            
         }
         state = .recognized
     }
@@ -51,9 +51,9 @@ final class TPIOSRealTouchProbe: UIGestureRecognizer, UIGestureRecognizerDelegat
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
         if let touch = touches.first, let view = view {
             let point = touch.location(in: view)
-            TPIOSLog.shared.log("TapProbe: cancelled count=\(touches.count) point=\(point) target=\(NSStringFromClass(type(of: touch.view ?? view)))")
+            
         } else {
-            TPIOSLog.shared.log("TapProbe: cancelled count=\(touches.count)")
+            
         }
         state = .cancelled
     }
