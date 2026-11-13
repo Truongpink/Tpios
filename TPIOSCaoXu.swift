@@ -33,12 +33,40 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
 
     private let stateKey = "TPIOSCaoXuState"
     private let logKey = "TPIOSCaoXuLogs"
+    private static let logUpdatedNotification = Notification.Name("TPIOSCaoXuLogUpdated")
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         loadState()
         setup()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(capturedLogUpdated),
+            name: Self.logUpdatedNotification,
+            object: nil
+        )
         refresh()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self, name: Self.logUpdatedNotification, object: nil)
+    }
+
+    static func recordCapturedRequest(_ url: String) {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        var savedLogs = UserDefaults.standard.stringArray(forKey: "TPIOSCaoXuLogs") ?? []
+        savedLogs.append("[\(formatter.string(from: Date()))] Lazada: \(url)")
+        if savedLogs.count > 500 {
+            savedLogs.removeFirst(savedLogs.count - 500)
+        }
+        UserDefaults.standard.set(savedLogs, forKey: "TPIOSCaoXuLogs")
+        NotificationCenter.default.post(name: logUpdatedNotification, object: nil)
+    }
+
+    @objc private func capturedLogUpdated() {
+        logs = UserDefaults.standard.stringArray(forKey: logKey) ?? []
+        refreshLog()
     }
 
     required init?(coder: NSCoder) {
@@ -250,6 +278,15 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     }
 
     @objc private func startTapped() {
+        let captureStarted = TPIOSNetworkLog.shared.startLazadaCapture { url in
+            TPIOSCaoXu.recordCapturedRequest(url)
+        }
+        if captureStarted {
+            appendLog("Đã bật ghi nhận request Lazada; query/token được loại khỏi log")
+        } else {
+            appendLog("Không bật bắt mạng: APP hiện tại không phải com.lazadaSEA.lazada")
+        }
+
         guard taskNames.isEmpty == false else {
             sessionActive = true
             statusLabel.text = "Chưa có nhiệm vụ/kịch bản. Chưa thực hiện thao tác tự động."
@@ -271,6 +308,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
 
     @objc private func stopTapped() {
         sessionActive = false
+        TPIOSNetworkLog.shared.stopLazadaCapture()
         appendLog("Đã kết thúc/tạm dừng phiên tại nhiệm vụ \(currentTaskIndex + 1)")
         saveState()
         refresh()
@@ -288,13 +326,11 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     }
 
     @objc private func backTapped() {
-        sessionActive = false
         saveState()
         onBack?()
     }
 
     @objc private func closeTapped() {
-        sessionActive = false
         saveState()
         onClose?()
     }
