@@ -81,7 +81,7 @@ final class TPIOSAutoClickEngine {
         let probe = TPIOSRealTouchProbe(target: nil, action: nil)
         window.addGestureRecognizer(probe)
         touchProbe = probe
-        TPIOSLog.shared.log("TapProbe: installed on window=\\(NSStringFromClass(type(of: window)))")
+        TPIOSLog.shared.log("TapProbe: installed on window=\(NSStringFromClass(type(of: window)))")
     }
     func stopTouchProbe() {
         guard let probe = touchProbe else { return }
