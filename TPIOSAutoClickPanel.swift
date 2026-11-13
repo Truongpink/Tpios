@@ -9,6 +9,9 @@ final class TPIOSAutoClickPanel: UIView {
     private var speed: TimeInterval = 0.15
     private var picker: UIView?
     private var currentPointIndex = 0
+    private var touchIsDown = false
+    private var activePoint = CGPoint.zero
+    private let pressDuration: TimeInterval = 0.06
 
     private let header = UIView()
     private let content = UIView()
@@ -236,15 +239,20 @@ final class TPIOSAutoClickPanel: UIView {
     @objc private func closeTap() { onClose?() }
 
     @objc private func tapMode() {
-        guard let point = points.first else {
-            statusLabel.text = "CHƯA CÓ ĐIỂM"
-            TPIOSLog.shared.log("TapPanel: manual tap rejected - no point")
+        guard !running, !touchIsDown, let point = points.first else {
+            statusLabel.text = "ĐANG CHẠY / CHƯA CÓ ĐIỂM"
             return
         }
-        TPIOSLog.shared.log("TapPanel: manual tap point=\(point)")
-        let ok = TPIOSAutoClickEngine.shared.tap(at: point)
-        statusLabel.text = ok ? "TAPPED" : "TAP LỖI"
-        TPIOSLog.shared.log("TapPanel: manual tap result=\(ok)")
+        guard TPIOSAutoClickEngine.shared.dispatchTouch(at: point, down: true) else {
+            statusLabel.text = "TAP LỖI"
+            TPIOSLog.shared.log("TapPanel: manual DOWN failed")
+            return
+        }
+        touchIsDown = true
+        activePoint = point
+        statusLabel.text = "TAPPED"
+        schedule(after: pressDuration) { [weak self] in self?.releaseTouch() }
+        TPIOSLog.shared.log("TapPanel: manual DOWN point=\\(point)")
     }
 
     @objc private func pointMode() {
@@ -277,6 +285,7 @@ final class TPIOSAutoClickPanel: UIView {
         markers.forEach { $0.removeFromSuperview() }; markers.removeAll()
         guard let window = superview as? UIWindow else { return }
         let marker = UIView(frame: CGRect(x: point.x - 12, y: point.y - 12, width: 24, height: 24))
+        marker.tag = 0x5450494F
         marker.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.85)
         marker.layer.cornerRadius = 12
         marker.layer.borderWidth = 2
@@ -324,42 +333,78 @@ final class TPIOSAutoClickPanel: UIView {
             TPIOSLog.shared.log("TapPanel: auto start rejected - no point")
             return
         }
-        if running {
-            TPIOSLog.shared.log("TapPanel: auto stop requested")
-            stop()
+        if running { stop(); return }
+        guard !touchIsDown else {
+            statusLabel.text = "CHƯA NHẢ ĐƯỢC TOUCH"
+            TPIOSLog.shared.log("TapPanel: start blocked - previous UP unconfirmed")
             return
         }
-        running = true; currentPointIndex = 0
+        guard TPIOSAutoClickEngine.backendAvailable() else {
+            statusLabel.text = "HID KHÔNG SẴN SÀNG"
+            TPIOSLog.shared.log("TapPanel: HID backend unavailable")
+            return
+        }
+        running = true
+        currentPointIndex = 0
         startButton.setImage(UIImage(systemName: "stop.fill"), for: .normal)
         statusLabel.text = "RUNNING"
-        TPIOSLog.shared.log("TapPanel: auto START points=\(points.count) speed=\(speed)")
-        performTap()
-        let source = DispatchSource.makeTimerSource(queue: DispatchQueue.main)
-        source.schedule(deadline: .now() + speed, repeating: speed, leeway: .milliseconds(5))
-        source.setEventHandler { [weak self] in self?.performTap() }
-        source.resume(); timer = source
+        TPIOSLog.shared.log("TapPanel: auto START points=\\(points.count) interval=\\(speed) press=\\(pressDuration)")
+        performDown()
     }
 
-    private func performTap() {
-        guard running, !points.isEmpty else { return }
-        let index = currentPointIndex % points.count
-        let point = points[index]
-        TPIOSLog.shared.log("TapPanel: performTap index=\(index) point=\(point)")
-        let ok = TPIOSAutoClickEngine.shared.tap(at: point)
-        if ok {
-            tapCount += 1
-            countLabel.text = "TAP: \(tapCount)"
-            currentPointIndex = (currentPointIndex + 1) % points.count
-            TPIOSLog.shared.log("TapPanel: performTap SUCCESS count=\(tapCount)")
+    private func schedule(after delay: TimeInterval, _ action: @escaping () -> Void) {
+        timer?.cancel()
+        let source = DispatchSource.makeTimerSource(queue: .main)
+        source.schedule(deadline: .now() + max(0.0001, delay), leeway: .milliseconds(1))
+        source.setEventHandler { [weak self] in self?.timer = nil; action() }
+        timer = source
+        source.resume()
+    }
+
+    private func performDown() {
+        guard running, !touchIsDown, !points.isEmpty else { return }
+        let point = points[currentPointIndex % points.count]
+        guard TPIOSAutoClickEngine.shared.dispatchTouch(at: point, down: true) else {
+            TPIOSLog.shared.log("TapPanel: DOWN failed")
+            stop()
+            statusLabel.text = "DOWN LỖI"
+            return
+        }
+        activePoint = point
+        touchIsDown = true
+        schedule(after: pressDuration) { [weak self] in self?.performUp() }
+    }
+
+    private func performUp() {
+        guard touchIsDown else { return }
+        guard TPIOSAutoClickEngine.shared.dispatchTouch(at: activePoint, down: false) else {
+            TPIOSLog.shared.log("TapPanel: UP failed; blocking next DOWN")
+            stop()
+            statusLabel.text = "UP LỖI - ĐÃ KHÓA"
+            return
+        }
+        touchIsDown = false
+        tapCount += 1
+        countLabel.text = "TAP: \\(tapCount)"
+        currentPointIndex = (currentPointIndex + 1) % points.count
+        TPIOSLog.shared.log("TapPanel: UP confirmed count=\\(tapCount)")
+        if running { schedule(after: speed) { [weak self] in self?.performDown() } }
+        else { statusLabel.text = "STOPPED" }
+    }
+
+    private func releaseTouch() {
+        guard touchIsDown else { return }
+        if TPIOSAutoClickEngine.shared.dispatchTouch(at: activePoint, down: false) {
+            touchIsDown = false
+            TPIOSLog.shared.log("TapPanel: UP confirmed")
         } else {
-            TPIOSLog.shared.log("TapPanel: performTap FAILED")
+            TPIOSLog.shared.log("TapPanel: UP failed; next start blocked")
+            statusLabel.text = "UP LỖI - ĐÃ KHÓA"
         }
     }
 
     func cleanup() {
-        running = false
-        timer?.cancel()
-        timer = nil
+        stop()
         picker?.removeFromSuperview()
         picker = nil
         markers.forEach { $0.removeFromSuperview() }
@@ -375,9 +420,11 @@ final class TPIOSAutoClickPanel: UIView {
 
     func stop() {
         running = false
-        timer?.cancel(); timer = nil
+        timer?.cancel()
+        timer = nil
+        if touchIsDown { releaseTouch() }
         startButton.setImage(UIImage(systemName: "play.fill"), for: .normal)
-        statusLabel.text = "STOPPED"
-        TPIOSLog.shared.log("TapPanel: stopped")
+        if !touchIsDown { statusLabel.text = "STOPPED" }
+        TPIOSLog.shared.log("TapPanel: stopped touchDown=\\(touchIsDown)")
     }
 }
