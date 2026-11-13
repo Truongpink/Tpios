@@ -1,9 +1,6 @@
 name: Build TPIOS dylib
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 jobs:
