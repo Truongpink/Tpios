@@ -91,8 +91,16 @@ final class TPIOSAutoClickEngine {
     static func backendAvailable() -> Bool { TPIOSCHMTouchAvailable() }
     static func appWindow() -> UIWindow? {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        for scene in scenes {
-            if let window = scene.windows.first(where: { $0.isKeyWindow && !$0.isHidden && $0.alpha > 0 }) { return window }
+        for scene in scenes where scene.activationState == .foregroundActive {
+            let appWindows = scene.windows.filter {
+                !$0.isHidden &&
+                $0.alpha > 0.01 &&
+                !NSStringFromClass(type(of: $0)).hasSuffix("TPIOSPassThroughWindow") &&
+                $0.windowLevel < .alert &&
+                $0.rootViewController != nil
+            }
+            if let keyWindow = appWindows.first(where: \\.isKeyWindow) { return keyWindow }
+            if let appWindow = appWindows.first { return appWindow }
         }
         return nil
     }
