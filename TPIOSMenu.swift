@@ -27,7 +27,9 @@ final class TPIOSMenu: UIView, UIGestureRecognizerDelegate {
     private let reloadButton = UIButton(type: .system)
     private let buyAllButton = UIButton(type: .system)
     private let tapTestButton = UIButton(type: .system)
+    private let caoXuButton = UIButton(type: .system)
     private let tapTestLabel = UILabel()
+    private let caoXuLabel = UILabel()
 
     private let bypassLabel = UILabel()
     private let saleLabel = UILabel()
@@ -39,6 +41,7 @@ final class TPIOSMenu: UIView, UIGestureRecognizerDelegate {
 
     private var saleClock: TPIOSSaleClock?
     private var buyAllView: TPIOSMuaAll?
+    private var caoXuView: TPIOSCaoXu?
     private let footerLabel = UILabel()
     private let resizeHandle = UILabel()
 
@@ -127,10 +130,18 @@ final class TPIOSMenu: UIView, UIGestureRecognizerDelegate {
         )
         configureCaptionLabel(tapTestLabel, text: "Chạm")
 
-        for view in [bypassButton, saleButton, logButton, adBlockButton, clockButton, reloadButton, buyAllButton, tapTestButton] as [UIView] {
+        configureIconButton(
+            caoXuButton,
+            icon: "sparkles",
+            colors: [UIColor(red: 1.00, green: 0.68, blue: 0.22, alpha: 1), UIColor(red: 0.86, green: 0.34, blue: 0.08, alpha: 1)],
+            action: #selector(caoXuTapped)
+        )
+        configureCaptionLabel(caoXuLabel, text: "Cào xu")
+
+        for view in [bypassButton, saleButton, logButton, adBlockButton, clockButton, reloadButton, buyAllButton, tapTestButton, caoXuButton] as [UIView] {
             addSubview(view)
         }
-        for label in [bypassLabel, saleLabel, logLabel, adBlockLabel, clockLabel, reloadLabel, buyAllLabel, tapTestLabel] {
+        for label in [bypassLabel, saleLabel, logLabel, adBlockLabel, clockLabel, reloadLabel, buyAllLabel, tapTestLabel, caoXuLabel] {
             addSubview(label)
         }
     }
@@ -252,8 +263,8 @@ final class TPIOSMenu: UIView, UIGestureRecognizerDelegate {
         let iconXInset = max(0, (columnWidth - iconSize) / 2)
         let rowHeight = iconSize + iconLabelGap + labelHeight
 
-        let icons = [bypassButton, saleButton, logButton, adBlockButton, clockButton, reloadButton, buyAllButton, tapTestButton]
-        let labels = [bypassLabel, saleLabel, logLabel, adBlockLabel, clockLabel, reloadLabel, buyAllLabel, tapTestLabel]
+        let icons = [bypassButton, saleButton, logButton, adBlockButton, clockButton, reloadButton, buyAllButton, tapTestButton, caoXuButton]
+        let labels = [bypassLabel, saleLabel, logLabel, adBlockLabel, clockLabel, reloadLabel, buyAllLabel, tapTestLabel, caoXuLabel]
 
         for index in 0..<icons.count {
             let column = index % 3
@@ -288,6 +299,7 @@ final class TPIOSMenu: UIView, UIGestureRecognizerDelegate {
         closeSale()
         closeAdBlock()
         closeBuyAll()
+        closeCaoXu()
         NotificationCenter.default.post(name: .tpiosCloseMenu, object: nil)
     }
 
@@ -378,6 +390,29 @@ final class TPIOSMenu: UIView, UIGestureRecognizerDelegate {
     private func closeSale() {
         saleView?.removeFromSuperview()
         saleView = nil
+        isHidden = false
+    }
+
+    @objc private func caoXuTapped() {
+        guard locationView == nil, saleView == nil, buyAllView == nil, caoXuView == nil, let parent = superview else { return }
+        let width = min(320, max(280, parent.bounds.width - 20))
+        let height = min(520, max(420, parent.bounds.height - 40))
+        let x = max(10, min(frame.origin.x, parent.bounds.width - width - 10))
+        let y = max(10, min(frame.origin.y, parent.bounds.height - height - 10))
+        let panel = TPIOSCaoXu(frame: CGRect(x: x, y: y, width: width, height: height))
+        panel.onBack = { [weak self] in self?.closeCaoXu() }
+        panel.onClose = { [weak self] in
+            self?.closeCaoXu()
+            NotificationCenter.default.post(name: .tpiosCloseMenu, object: nil)
+        }
+        parent.addSubview(panel)
+        caoXuView = panel
+        isHidden = true
+    }
+
+    private func closeCaoXu() {
+        caoXuView?.removeFromSuperview()
+        caoXuView = nil
         isHidden = false
     }
 
