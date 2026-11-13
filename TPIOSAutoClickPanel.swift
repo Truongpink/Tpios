@@ -1,6 +1,17 @@
 import UIKit
 
 final class TPIOSAutoClickPanel: UIView {
+    private struct SavedPoint: Codable {
+        let x: Double
+        let y: Double
+    }
+
+    private struct SavedSettings: Codable {
+        let points: [SavedPoint]
+        let speed: Double
+    }
+
+    private static let settingsKey = "TPIOSAutoClickSettings"
     private var points: [CGPoint] = []
     private var markers: [UIView] = []
     private var timer: DispatchSourceTimer?
@@ -22,7 +33,6 @@ final class TPIOSAutoClickPanel: UIView {
     private let speedSlider = UISlider()
     private let speedMinusButton = UIButton(type: .system)
     private let speedPlusButton = UIButton(type: .system)
-    private let tapButton = UIButton(type: .system)
     private let pointButton = UIButton(type: .system)
     private let clearButton = UIButton(type: .system)
     private let startButton = UIButton(type: .system)
@@ -36,10 +46,38 @@ final class TPIOSAutoClickPanel: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
+        loadSettings()
         setup()
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        guard window != nil else { return }
+        markers.forEach { $0.removeFromSuperview() }
+        markers.removeAll()
+        points.forEach { addMarker(at: $0) }
+        pointLabel.text = "POINT: \(points.count)"
+        speedSlider.value = Float(speed)
+        speedLabel.text = String(format: "Tốc độ  %.2fs", speed)
+    }
+
+    private func loadSettings() {
+        guard let data = UserDefaults.standard.data(forKey: Self.settingsKey),
+              let saved = try? JSONDecoder().decode(SavedSettings.self, from: data) else { return }
+        points = saved.points.map { CGPoint(x: $0.x, y: $0.y) }
+        speed = min(5.0, max(0.05, saved.speed))
+    }
+
+    private func saveSettings() {
+        let saved = SavedSettings(
+            points: points.map { SavedPoint(x: Double($0.x), y: Double($0.y)) },
+            speed: speed
+        )
+        guard let data = try? JSONEncoder().encode(saved) else { return }
+        UserDefaults.standard.set(data, forKey: Self.settingsKey)
+    }
 
     private func iconButton(_ button: UIButton, icon: String, colors: [UIColor], action: Selector) {
         let config = UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
@@ -112,13 +150,11 @@ final class TPIOSAutoClickPanel: UIView {
         close.addTarget(self, action: #selector(closeTap), for: .touchUpInside)
         header.addSubview(close)
 
-        iconButton(tapButton, icon: "hand.tap.fill", colors: [UIColor(red: 0.95, green: 0.30, blue: 0.60, alpha: 1), UIColor(red: 0.55, green: 0.10, blue: 0.45, alpha: 1)], action: #selector(tapMode))
         iconButton(pointButton, icon: "scope", colors: [UIColor(red: 0.36, green: 0.71, blue: 1.00, alpha: 1), UIColor(red: 0.09, green: 0.39, blue: 0.80, alpha: 1)], action: #selector(pointMode))
         iconButton(clearButton, icon: "trash.fill", colors: [UIColor(red: 1.00, green: 0.35, blue: 0.27, alpha: 1), UIColor(red: 0.64, green: 0.06, blue: 0.06, alpha: 1)], action: #selector(clearPoints))
         iconButton(startButton, icon: "play.fill", colors: [UIColor(red: 0.36, green: 0.88, blue: 0.55, alpha: 1), UIColor(red: 0.06, green: 0.52, blue: 0.33, alpha: 1)], action: #selector(startStop))
 
-        let tapLabel = UILabel(), pointCaption = UILabel(), clearLabel = UILabel(), startLabel = UILabel()
-        caption(tapLabel, text: "Chạm")
+        let pointCaption = UILabel(), clearLabel = UILabel(), startLabel = UILabel()
         caption(pointCaption, text: "Điểm")
         caption(clearLabel, text: "Xóa")
         caption(startLabel, text: "Bắt đầu")
@@ -175,15 +211,15 @@ final class TPIOSAutoClickPanel: UIView {
         let columnWidth = max(0, (contentWidth - columnGap * 2) / 3)
         let iconSize = min(columnWidth, 58 * scale), iconInset = max(0, (columnWidth - iconSize) / 2)
         let labelHeight = 15 * scale, iconLabelGap = 3 * scale, rowHeight = iconSize + iconLabelGap + labelHeight, rowGap = 7 * scale, top = 10 * scale
-        let buttons = [tapButton, pointButton, clearButton]
+        let buttons = [pointButton, clearButton]
         let labels = content.subviews.compactMap { $0 as? UILabel }.filter { $0 !== statusLabel && $0 !== countLabel && $0 !== pointLabel && $0 !== speedLabel }
         for index in 0..<buttons.count {
-            let x = sidePadding + CGFloat(index) * (columnWidth + columnGap) + iconInset
-            buttons[index].frame = CGRect(x: x, y: top, width: iconSize, height: iconSize)
+            let centerX = sidePadding + (CGFloat(index) + 0.5) * (columnWidth + columnGap)
+            buttons[index].frame = CGRect(x: centerX - iconSize / 2, y: top, width: iconSize, height: iconSize)
             buttons[index].layer.cornerRadius = iconSize * 0.28
             TPIOSPanelStyle.syncFrames(in: buttons[index])
             if index < labels.count {
-                labels[index].frame = CGRect(x: sidePadding + CGFloat(index) * (columnWidth + columnGap), y: top + iconSize + iconLabelGap, width: columnWidth, height: labelHeight)
+                labels[index].frame = CGRect(x: centerX - columnWidth / 2, y: top + iconSize + iconLabelGap, width: columnWidth, height: labelHeight)
                 labels[index].font = .systemFont(ofSize: max(8, 13 * scale), weight: .semibold)
             }
         }
@@ -191,9 +227,9 @@ final class TPIOSAutoClickPanel: UIView {
         startButton.frame = CGRect(x: sidePadding + iconInset, y: secondY, width: iconSize, height: iconSize)
         startButton.layer.cornerRadius = iconSize * 0.28
         TPIOSPanelStyle.syncFrames(in: startButton)
-        if labels.count > 3 {
-            labels[3].frame = CGRect(x: sidePadding, y: secondY + iconSize + iconLabelGap, width: columnWidth, height: labelHeight)
-            labels[3].font = .systemFont(ofSize: max(8, 13 * scale), weight: .semibold)
+        if labels.count > 2 {
+            labels[2].frame = CGRect(x: sidePadding, y: secondY + iconSize + iconLabelGap, width: columnWidth, height: labelHeight)
+            labels[2].font = .systemFont(ofSize: max(8, 13 * scale), weight: .semibold)
         }
         let infoY = secondY + rowHeight + 3 * scale
         statusLabel.frame = CGRect(x: sidePadding, y: infoY, width: bounds.width - sidePadding * 2, height: 15 * scale)
@@ -238,61 +274,51 @@ final class TPIOSAutoClickPanel: UIView {
     @objc private func backTap() { onBack?() }
     @objc private func closeTap() { onClose?() }
 
-    @objc private func tapMode() {
-        guard !running, !touchIsDown, let point = points.first else {
-            statusLabel.text = "ĐANG CHẠY / CHƯA CÓ ĐIỂM"
-            return
-        }
-        // Leave the current UIButton event dispatch before injecting a synthetic touch.
-        touchIsDown = true
-        activePoint = point
-        statusLabel.text = "TESTING"
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.touchIsDown else { return }
-            guard TPIOSAutoClickEngine.shared.dispatchTouch(at: point, down: true) else {
-                self.touchIsDown = false
-                self.statusLabel.text = "TAP LỖI"
-                TPIOSLog.shared.log("TOUCH TEST FAIL: DOWN")
-                return
-            }
-            self.statusLabel.text = "TAPPED"
-            self.schedule(after: self.pressDuration) { [weak self] in self?.releaseTouch() }
-            TPIOSLog.shared.log("TOUCH TEST OK point=\(point)")
-        }
-    }
-
     @objc private func pointMode() {
         picker?.removeFromSuperview()
-        guard let window = superview as? UIWindow else {
-            TPIOSLog.shared.log("TapPanel: point picker failed - app window missing")
-            return
-        }
+        guard let window = superview as? UIWindow else { return }
+
         let overlay = UIView(frame: window.bounds)
-        overlay.backgroundColor = UIColor.clear
-        overlay.isUserInteractionEnabled = true
-        overlay.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(pickerTap(_:))))
+        overlay.backgroundColor = .clear
+        let tapArea = UIView(frame: overlay.bounds)
+        tapArea.backgroundColor = .clear
+        tapArea.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(pickerTap(_:))))
+        overlay.addSubview(tapArea)
+
+        let doneButton = UIButton(type: .system)
+        doneButton.setTitle("XONG", for: .normal)
+        doneButton.setTitleColor(.white, for: .normal)
+        doneButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .bold)
+        doneButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.95)
+        doneButton.layer.cornerRadius = 18
+        doneButton.frame = CGRect(x: (window.bounds.width - 104) / 2, y: window.safeAreaInsets.top + 12, width: 104, height: 40)
+        doneButton.addTarget(self, action: #selector(finishPointMode), for: .touchUpInside)
+        overlay.addSubview(doneButton)
+
         window.addSubview(overlay)
         picker = overlay
         isHidden = true
-        TPIOSLog.shared.log("TapPanel: point picker opened full-screen")
+        statusLabel.text = "CHỌN NHIỀU ĐIỂM · NHẤN XONG"
     }
 
     @objc private func pickerTap(_ gesture: UITapGestureRecognizer) {
-        guard let overlay = picker, let window = overlay.superview as? UIWindow else {
-            TPIOSLog.shared.log("TapPanel: picker failed - overlay/window missing")
-            return
-        }
-        let point = gesture.location(in: overlay)
-        let windowPoint = overlay.convert(point, to: window)
-        points = [windowPoint]
+        guard let overlay = picker, let window = overlay.superview as? UIWindow else { return }
+        let windowPoint = gesture.location(in: window)
+        points.append(windowPoint)
         addMarker(at: windowPoint)
-        pointLabel.text = "POINT: 1"
-        picker?.removeFromSuperview(); picker = nil; isHidden = false
-        TPIOSLog.shared.log("TapPanel: point saved local=\(point) window=\(windowPoint)")
+        pointLabel.text = "POINT: \(points.count)"
+        saveSettings()
+    }
+
+    @objc private func finishPointMode() {
+        picker?.removeFromSuperview()
+        picker = nil
+        isHidden = false
+        statusLabel.text = "ĐÃ LƯU \(points.count) ĐIỂM"
+        saveSettings()
     }
 
     private func addMarker(at point: CGPoint) {
-        markers.forEach { $0.removeFromSuperview() }; markers.removeAll()
         guard let window = superview as? UIWindow else { return }
         let marker = UIView(frame: CGRect(x: point.x - 12, y: point.y - 12, width: 24, height: 24))
         marker.tag = 0x5450494F
@@ -307,22 +333,29 @@ final class TPIOSAutoClickPanel: UIView {
     }
 
     @objc private func moveMarker(_ gesture: UIPanGestureRecognizer) {
-        guard let marker = gesture.view, let window = superview as? UIWindow else { return }
+        guard let marker = gesture.view,
+              let window = superview as? UIWindow,
+              let index = markers.firstIndex(of: marker),
+              index < points.count else { return }
         let location = gesture.location(in: window)
         marker.center = location
-        points = [location]
+        points[index] = location
+        pointLabel.text = "POINT: \(points.count)"
+        if gesture.state == .ended || gesture.state == .cancelled { saveSettings() }
     }
 
     @objc private func clearPoints() {
         stop()
         points.removeAll(); markers.forEach { $0.removeFromSuperview() }; markers.removeAll()
         pointLabel.text = "POINT: 0"; countLabel.text = "TAP: 0"; statusLabel.text = "IDLE"
+        saveSettings()
         TPIOSLog.shared.log("TapPanel: points cleared")
     }
 
     @objc private func speedChanged() {
         speed = TimeInterval(speedSlider.value)
         speedLabel.text = String(format: "Tốc độ  %.2fs", speed)
+        saveSettings()
     }
 
     @objc private func decreaseSpeed() {
@@ -417,12 +450,9 @@ final class TPIOSAutoClickPanel: UIView {
         picker = nil
         markers.forEach { $0.removeFromSuperview() }
         markers.removeAll()
-        points.removeAll()
         tapCount = 0
         currentPointIndex = 0
-        pointLabel.text = "POINT: 0"
-        countLabel.text = "TAP: 0"
-        statusLabel.text = "IDLE"
+        saveSettings()
         TPIOSLog.shared.log("TapPanel: cleanup panel exit - marker/picker/timer removed")
     }
 
