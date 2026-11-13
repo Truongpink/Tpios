@@ -60,7 +60,7 @@ final class TPIOSAutoClickEngine {
                 $0.windowLevel < .alert &&
                 $0.rootViewController != nil
             }
-            if let keyWindow = appWindows.first(where: \\.isKeyWindow) { return keyWindow }
+            if let keyWindow = appWindows.first(where: \.isKeyWindow) { return keyWindow }
             if let appWindow = appWindows.first { return appWindow }
         }
         return nil
