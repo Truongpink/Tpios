@@ -51,7 +51,7 @@ Luồng khởi động trong source:
 
 ## 3. Menu và chức năng đang có
 
-Menu hiện có **8 nút**:
+Menu hiện có **9 nút**:
 
 | Nút | Chức năng trong source | File chính |
 |---|---|---|
@@ -63,6 +63,7 @@ Menu hiện có **8 nút**:
 | **Tải lại** | Tìm các refresh candidate trong view/controller/WebView/scroll view rồi thử kích hoạt cơ chế refresh phù hợp | `TPIOSReload.swift` |
 | **Mua all** | Màn hình chẩn đoán IAP/StoreKit: quét thành phần app, đọc receipt và trạng thái giao dịch/entitlement | `TPIOSMenu.swift`, `TPIOSAppScanner.swift`, `TPIOSPaymentScanner.swift` |
 | **Chạm** | Chọn nhiều điểm trên màn hình và tự động gửi chuỗi touch DOWN/UP theo thứ tự | `TPIOSAutoClickPanel.swift`, `TPIOSTapTest.swift`, `CHMTouchBackend.m/.h` |
+| **Cào xu** | Panel thử nghiệm: lưu vị trí nhiệm vụ, trạng thái phiên và log riêng; chưa có bộ đọc nhiệm vụ/traffic hay kịch bản tự động Lazada | `TPIOSCaoXu.swift` |
 
 **Lưu ý về “Mua all”:** các mục hiện tại là công cụ chẩn đoán StoreKit/receipt. Source chưa thể hiện một luồng tự động mua sản phẩm hay tự xác nhận giao dịch.
 
@@ -199,6 +200,13 @@ Những guard này nhằm tránh chồng hai contact hoặc tiếp tục bắn D
 - Trong cửa sổ log có thao tác bắt request mạng. Khi người dùng bật, `TPIOSNetworkLog` hook `URLSessionTask.resume`, ghi lại một tập URL Shopee liên quan đến item/product/voucher/discount/shipping/flash; giữ tối đa 120 request evidence gần nhất.
 - `TPIOSCartBody` được cài lúc TPIOS khởi động; network URL evidence được bật từ thao tác trong giao diện log.
 
+### Cào xu Lazada — trạng thái triển khai
+
+- `TPIOSCaoXu.swift` hiện là panel giao diện thử nghiệm: Bắt đầu/Tiếp tục, Kết thúc/Tạm dừng, tiến độ, sao chép log và xóa log riêng.
+- Vị trí nhiệm vụ và log được lưu riêng bằng UserDefaults; xóa log không xóa vị trí nhiệm vụ.
+- Chưa tích hợp đọc danh sách nhiệm vụ, ghi request/response Lazada hoặc tự bấm nhiệm vụ/nhận xu. Khi chưa có dữ liệu và kịch bản, nút Bắt đầu chỉ mở phiên chờ, không phát thao tác tự động.
+- Chưa xác minh app Lazada đang chạy native hay WebView; cần xác định nguồn traffic trước khi thêm bộ ghi mạng. Không ghi cookie/token đăng nhập vào log.
+
 ### Đồng hồ và giờ server
 
 - `TPIOSSaleClock.swift`: đồng hồ nổi có thể kéo/resize, hiển thị giờ đến phần mười giây.
@@ -231,7 +239,8 @@ Những guard này nhằm tránh chồng hai contact hoặc tiếp tục bắn D
 | `TPIOSEntry.swift` | Export `TPIOSStart` / `TPIOSStop`; cài cart response hook và start/stop controller. |
 | `TPIOSController.swift` | Overlay window pass-through, floating button, menu lifecycle và gesture nút nổi. |
 | `FloatingButton.swift` | Giao diện nút nổi. |
-| `TPIOSMenu.swift` | Menu 8 nút và màn hình con Mua all (đang nằm chung file). |
+| `TPIOSMenu.swift` | Menu 9 nút và màn hình con Mua all (đang nằm chung file). |
+| `TPIOSCaoXu.swift` | Panel Cào xu thử nghiệm, lưu tiến độ phiên và log riêng bằng UserDefaults. |
 | `TPIOSPanelStyle.swift` | Style nền kính/gradient dùng chung. |
 | `TPIOSLog.swift` | Hệ thống log và cửa sổ log. |
 | `TPIOSAutoClickPanel.swift` | UI, điểm chạm, lưu cài đặt và scheduler auto-click. |
