@@ -35,6 +35,15 @@ jobs:
             -c TPIOSBootstrap.m \
             -o build/TPIOSBootstrap.o
 
+      - name: Compile Cham HID touch backend
+        run: |
+          xcrun clang \
+            -target arm64-apple-ios15.0 \
+            -isysroot "$(xcrun --sdk iphoneos --show-sdk-path)" \
+            -fobjc-arc \
+            -c CHMTouchBackend.m \
+            -o build/CHMTouchBackend.o
+
       - name: Compile Objective-C model filter
         run: |
           xcrun clang \
@@ -68,6 +77,7 @@ jobs:
             -o build/TPIOS.dylib \
             *.swift \
             build/TPIOSBootstrap.o \
+            build/CHMTouchBackend.o \
             build/TPIOSModelFilter.o \
             build/TPIOSGADPresentationBlocker.o
 
