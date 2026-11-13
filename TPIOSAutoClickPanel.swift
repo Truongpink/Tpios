@@ -66,7 +66,7 @@ final class TPIOSAutoClickPanel: UIView {
     private func loadSettings() {
         guard let data = UserDefaults.standard.data(forKey: Self.settingsKey),
               let saved = try? JSONDecoder().decode(SavedSettings.self, from: data) else { return }
-        points = saved.points.map { CGPoint(x: $0.x, y: $0.y) }
+        points = saved.points.map { CGPoint(x: CGFloat($0.x), y: CGFloat($0.y)) }
         speed = min(5.0, max(0.05, saved.speed))
     }
 
@@ -431,17 +431,6 @@ final class TPIOSAutoClickPanel: UIView {
         currentPointIndex = (currentPointIndex + 1) % points.count
         if running { schedule(after: speed) { [weak self] in self?.performDown() } }
         else { statusLabel.text = "STOPPED" }
-    }
-
-    private func releaseTouch() {
-        guard touchIsDown else { return }
-        if TPIOSAutoClickEngine.shared.dispatchTouch(at: activePoint, down: false) {
-            touchIsDown = false
-            TPIOSLog.shared.log("TapPanel: UP confirmed")
-        } else {
-            TPIOSLog.shared.log("TapPanel: UP failed; next start blocked")
-            statusLabel.text = "UP LỖI - ĐÃ KHÓA"
-        }
     }
 
     func cleanup() {
