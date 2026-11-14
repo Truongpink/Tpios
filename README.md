@@ -209,7 +209,6 @@ Những guard này nhằm tránh chồng hai contact hoặc tiếp tục bắn D
 - Tên nhiệm vụ và trạng thái được lưu riêng trong UserDefaults; log Cào xu lưu tối đa 500 dòng và không dùng chung log chính. Tạm dừng dừng observer nhưng giữ tiến độ.
 - Panel resize tối thiểu 220 × 300 pt; nút Bắt đầu/Tạm dừng dùng biểu tượng tròn gradient. Có thể thu gọn sát mép màn hình thành tay nắm 56 × 56 pt, chỉ lộ khoảng 24 pt.
 - Cào xu không gọi `startLazadaCapture`, không sử dụng `TPIOSNetworkLog`, `TPIOSCartBody` hoặc logic Sale Shopee.
-
 - Bộ lọc ứng viên loại tiêu đề chung (ví dụ “Nhiệm vụ hôm nay”), nhãn CTA đơn lẻ (“Tìm kiếm”, “Đánh giá”, “Thêm vào giỏ”, “Check-in ngay”) và dòng đếm đánh giá/người theo dõi.
 - Chuẩn hóa khoảng trắng, gộp tiêu đề bị lặp liền nhau và bỏ trùng trong cùng một lượt quan sát.
 - Chỉ ghi UserDefaults khi danh sách nhiệm vụ/trạng thái thực sự thay đổi, thay vì ghi lại mỗi chu kỳ 2 giây.
