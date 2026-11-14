@@ -247,7 +247,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         progressLabel.frame = CGRect(x: inset, y: header + 40 * scale, width: width, height: 17 * scale)
         progressView.frame = CGRect(x: inset, y: header + 60 * scale, width: width, height: 4 * scale)
 
-        let buttonSize = min(46 * scale, max(34, width * 0.23))        let buttonY = header + 72 * scale
+        let buttonSize = min(46 * scale, max(34, width * 0.23))
+        let buttonY = header + 72 * scale
         let leftX = bounds.midX - buttonSize - 12 * scale
         let rightX = bounds.midX + 12 * scale
         startButton.frame = CGRect(x: leftX, y: buttonY, width: buttonSize, height: buttonSize)
@@ -807,7 +808,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         }
 
         guard let index = automationTaskIndex, taskNames.indices.contains(index) else {
-            automationTaskIndex = nil            automationPhase = .selecting
+            automationTaskIndex = nil
+            automationPhase = .selecting
             return
         }
 
