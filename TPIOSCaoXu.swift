@@ -399,9 +399,9 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
 
     private func normalizedTaskText(_ raw: String) -> String {
         var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        text = text.replacingOccurrences(of: #"\\s+"#, with: " ", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
         // Some Lazada views expose the same title twice with no separator.
-        text = text.replacingOccurrences(of: #"(.{4,80})\\1"#, with: "$1",
+        text = text.replacingOccurrences(of: #"(.{4,80})\1"#, with: "$1",
                                          options: [.regularExpression, .caseInsensitive])
         return text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
     }
@@ -418,7 +418,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         guard !excludedLabels.contains(lower) else { return false }
 
         // Exclude seller/product counters such as "200+ đánh giá có hình ảnh".
-        let metadataPattern = #"^\\d+[\\d.,]*\\s*\\+?\\s*(đánh giá|người theo dõi|lượt theo dõi|reviews?|followers?)"#
+        let metadataPattern = #"^\d+[\d.,]*\s*\+?\s*(đánh giá|người theo dõi|lượt theo dõi|reviews?|followers?)"#
         if lower.range(of: metadataPattern, options: .regularExpression) != nil { return false }
 
         // This is a page/category slogan, not an individual task card.
@@ -452,7 +452,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 taskNames.append(name)
                 completedTasks.append(false)
                 changed = true
-                appendLog("Nhận diện nhiệm vụ trên màn hình: \\(name)")
+                appendLog("Nhận diện nhiệm vụ trên màn hình: \(name)")
             }
 
             let lower = raw.lowercased()
@@ -463,7 +463,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                !completedTasks[index] {
                 completedTasks[index] = true
                 changed = true
-                appendLog("Giao diện báo hoàn thành: \\(name)")
+                appendLog("Giao diện báo hoàn thành: \(name)")
             }
         }
 
