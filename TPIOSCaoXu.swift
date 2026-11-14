@@ -498,7 +498,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                   let json = String(data: encoded, encoding: .utf8) else { return }
             let script = """
             (function(){
-              const title = (json).at(0).normalize('NFC').toLowerCase();
+              const title = \(json)[0].normalize('NFC').toLowerCase();
               const norm = s => (s || '').replace(/\\s+/g,' ').trim().normalize('NFC').toLowerCase();
               const visible = e => { const r=e.getBoundingClientRect(),s=getComputedStyle(e); return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'; };
               const nodes = Array.from(document.querySelectorAll('a,button,[role="button"],[onclick]')).filter(visible);
@@ -551,7 +551,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     }
 
     private func secondsRequired(in text: String) -> TimeInterval? {
-        let pattern = #"(?i)(\\d{1,3})\\s*(giây|giây nữa|seconds?|s)\\b"#
+        let pattern = #"(?i)(\d{1,3})\s*(giây|giây nữa|seconds?|s)\b"#
         guard let range = text.range(of: pattern, options: .regularExpression) else { return nil }
         let digits = text[range].prefix { $0.isNumber }
         return TimeInterval(digits)
