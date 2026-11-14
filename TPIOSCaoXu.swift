@@ -47,6 +47,14 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private var expandedFrame = CGRect.zero
     private var observerTimer: DispatchSourceTimer?
     private var didLogObserverDiagnostics = false
+    private var automationEnabled = false
+    private enum AutomationPhase { case selecting, waitingForPage, scrolling, returning }
+    private var automationPhase: AutomationPhase = .selecting
+    private var automationTaskIndex: Int?
+    private var automationStartedAt: Date?
+    private var automationDuration: TimeInterval = 15
+    private var attemptedTaskIndices = Set<Int>()
+    private var lastAutomationLogIndex: Int?
 
     private let stateKey = "TPIOSCaoXuObservedState"
     private let logKey = "TPIOSCaoXuLogs"
@@ -66,7 +74,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         )
         sessionActive = true
         startObserver()
-        appendLog("Tự động bắt đầu ghi nhận khi mở Cào xu")
+        appendLog("Tự động bắt đầu ghi nhận khi mở Cào xu; chờ anh bấm Bắt đầu để chạy nhiệm vụ")
     }
 
     required init?(coder: NSCoder) {
@@ -348,16 +356,20 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     @objc private func startTapped() {
         guard !sessionActive else { return }
         sessionActive = true
+        automationEnabled = true
+        automationPhase = .selecting
+        automationTaskIndex = nil
         didLogObserverDiagnostics = false
-        appendLog("Bắt đầu quan sát giao diện Lazada — không tự thao tác")
+        appendLog("Bật tự động Cào xu; ưu tiên nhiệm vụ lướt có thời lượng xác định")
         startObserver()
         refresh()
     }
 
     @objc private func stopTapped() {
         sessionActive = false
+        automationEnabled = false
         stopObserver()
-        appendLog("Đã tạm dừng quan sát; tiến độ được giữ lại")
+        appendLog("Đã tạm dừng tự động; tiến độ được giữ lại")
         refresh()
     }
 
@@ -447,7 +459,102 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 lines.append(contentsOf: webLines)
             }
             self.processObservedLines(lines, pageURL: pageURL)
+            self.driveAutomation(in: webView)
         }
+    }
+
+    private func driveAutomation(in webView: WKWebView) {
+        guard sessionActive, automationEnabled else { return }
+
+        if automationTaskIndex == nil {
+            let next = taskNames.indices.first {
+                !completedTasks[$0] && !attemptedTaskIndices.contains($0) &&
+                taskNames[$0].localizedCaseInsensitiveContains("lướt")
+            }
+            guard let next else {
+                if lastAutomationLogIndex != -1 {
+                    lastAutomationLogIndex = -1
+                    appendLog("Chưa còn nhiệm vụ lướt phù hợp; các nhiệm vụ tìm sản phẩm/game chưa được tự chạy ở phiên này")
+                }
+                return
+            }
+            automationTaskIndex = next
+            let name = taskNames[next]
+            let duration = secondsRequired(in: name + " " + taskDetails[next])
+            automationDuration = min(180, max(5, duration ?? 15))
+            automationPhase = .selecting
+        }
+
+        guard let index = automationTaskIndex, taskNames.indices.contains(index) else {
+            automationTaskIndex = nil
+            automationPhase = .selecting
+            return
+        }
+
+        let taskName = taskNames[index]
+        switch automationPhase {
+        case .selecting:
+            guard let encoded = try? JSONSerialization.data(withJSONObject: [taskName]),
+                  let json = String(data: encoded, encoding: .utf8) else { return }
+            let script = """
+            (function(){
+              const title = (json).at(0).normalize('NFC').toLowerCase();
+              const norm = s => (s || '').replace(/\\s+/g,' ').trim().normalize('NFC').toLowerCase();
+              const visible = e => { const r=e.getBoundingClientRect(),s=getComputedStyle(e); return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'; };
+              const nodes = Array.from(document.querySelectorAll('a,button,[role="button"],[onclick]')).filter(visible);
+              const hit = nodes.find(e => norm(e.innerText || e.textContent).includes(title));
+              if (!hit) return 'not_found';
+              hit.click();
+              return 'clicked';
+            })();
+            """
+            webView.evaluateJavaScript(script) { [weak self] result, error in
+                guard let self, self.sessionActive, self.automationEnabled else { return }
+                if (result as? String) == "clicked" {
+                    self.automationPhase = .waitingForPage
+                    self.automationStartedAt = Date()
+                    self.appendLog("Đã mở nhiệm vụ: \(taskName)")
+                } else if self.lastAutomationLogIndex != index {
+                    self.lastAutomationLogIndex = index
+                    self.appendLog("Chưa tìm thấy nút mở nhiệm vụ trên màn hình: \(taskName)")
+                    self.attemptedTaskIndices.insert(index)
+                    self.automationTaskIndex = nil
+                }
+                if let error { self.appendLog("Lỗi mở nhiệm vụ: \(error.localizedDescription)") }
+            }
+        case .waitingForPage:
+            guard let started = automationStartedAt, Date().timeIntervalSince(started) >= 2 else { return }
+            automationPhase = .scrolling
+            automationStartedAt = Date()
+            appendLog("Bắt đầu lướt nhiệm vụ trong \(Int(automationDuration)) giây: \(taskName)")
+        case .scrolling:
+            guard let started = automationStartedAt else { return }
+            if Date().timeIntervalSince(started) >= automationDuration {
+                webView.evaluateJavaScript("window.history.back();") { [weak self] _, _ in
+                    guard let self, self.sessionActive, self.automationEnabled else { return }
+                    self.automationPhase = .returning
+                    self.automationStartedAt = Date()
+                    self.appendLog("Đã kết thúc thời gian lướt; quay lại danh sách nhiệm vụ: \(taskName)")
+                }
+            } else {
+                webView.evaluateJavaScript("window.scrollBy({top: Math.max(240, window.innerHeight * 0.72), behavior: 'smooth'});", completionHandler: nil)
+            }
+        case .returning:
+            guard let started = automationStartedAt, Date().timeIntervalSince(started) >= 2 else { return }
+            attemptedTaskIndices.insert(index)
+            automationTaskIndex = nil
+            automationStartedAt = nil
+            automationPhase = .selecting
+            lastAutomationLogIndex = nil
+            appendLog("Đã chạy xong thao tác lướt; chờ Lazada xác nhận hoàn thành: \(taskName)")
+        }
+    }
+
+    private func secondsRequired(in text: String) -> TimeInterval? {
+        let pattern = #"(?i)(\\d{1,3})\\s*(giây|giây nữa|seconds?|s)\\b"#
+        guard let range = text.range(of: pattern, options: .regularExpression) else { return nil }
+        let digits = text[range].prefix { $0.isNumber }
+        return TimeInterval(digits)
     }
 
     private func sanitizedPageURL(_ url: URL?) -> String? {
@@ -682,6 +789,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     @objc private func backTapped() {
         stopObserver()
         sessionActive = false
+        automationEnabled = false
         saveState()
         onBack?()
     }
@@ -689,6 +797,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     @objc private func closeTapped() {
         stopObserver()
         sessionActive = false
+        automationEnabled = false
         saveState()
         onClose?()
     }
