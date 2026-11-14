@@ -653,12 +653,13 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     }
 
     private func missionKind(for raw: String) -> String {
+        // Normalize away Vietnamese diacritics before matching; keep keywords unaccented too.
         let text = raw.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).lowercased()
-        if text.contains("tìm kiếm") || text.contains("tìm '") || text.contains("tìm \"") { return "search" }
-        if text.contains("vào game") || text.contains("trò chơi") || text.contains("mini game") { return "game" }
+        if text.contains("tim kiem") || text.contains("tim '") || text.contains("tim \"") { return "search" }
+        if text.contains("vao game") || text.contains("tro choi") || text.contains("mini game") { return "game" }
         if text.contains("video") || text.contains("livestream") || text.contains("live stream") { return "video" }
-        if text.contains("lướt") || text.contains("ghé thăm") || text.contains("visit") { return "scroll" }
-        if text.contains("xem") && text.contains("sản phẩm") { return "product" }
+        if text.contains("luot") || text.contains("ghe tham") || text.contains("visit") { return "scroll" }
+        if text.contains("xem") && text.contains("san pham") { return "product" }
         return "other"
     }
 
