@@ -40,7 +40,6 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private var tuckedToLeft = false
     private var expandedFrame = CGRect.zero
     private var observerTimer: DispatchSourceTimer?
-    private var lastObservedLines = Set<String>()
 
     private let stateKey = "TPIOSCaoXuObservedState"
     private let logKey = "TPIOSCaoXuLogs"
@@ -319,9 +318,19 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
 
     private func observeVisibleTasks() {
         guard sessionActive, let root = visibleAppRoot() else { return }
-        var lines = nativeVisibleLines(in: root)
+        let isLazadaProcess = (Bundle.main.bundleIdentifier ?? "").lowercased().contains("lazada")
         let webViews = findWebViews(in: root)
-        guard let webView = webViews.first(where: { $0.window != nil && !$0.isHidden && $0.alpha > 0.01 }) else {
+        let lazadaWebView = webViews.first {
+            $0.window != nil && !$0.isHidden && $0.alpha > 0.01 &&
+            ($0.url?.host?.lowercased().contains("lazada") == true)
+        }
+
+        // Không đọc nội dung app khác: Cào xu chỉ hoạt động trong tiến trình Lazada
+        // hoặc WebView đang mở host Lazada. Sale Shopee không bị quét ở đây.
+        guard isLazadaProcess || lazadaWebView != nil else { return }
+        var lines = isLazadaProcess ? nativeVisibleLines(in: root) : []
+
+        guard let webView = lazadaWebView else {
             processObservedLines(lines)
             return
         }
@@ -332,11 +341,14 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             const r = e.getBoundingClientRect(), s = getComputedStyle(e);
             return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden';
           };
-          return Array.from(document.querySelectorAll('body *'))
+          const bodyLines = (document.body ? document.body.innerText : '').split(/\\n+/);
+          const leafLines = Array.from(document.querySelectorAll('body *'))
             .filter(e => e.children.length === 0 && visible(e))
-            .map(e => (e.innerText || e.textContent || '').trim())
+            .map(e => (e.innerText || e.textContent || '').trim());
+          return bodyLines.concat(leafLines)
+            .map(t => t.trim())
             .filter(t => t.length > 1 && t.length < 180)
-            .slice(0, 500);
+            .slice(0, 700);
         })();
         """
         webView.evaluateJavaScript(script) { [weak self] result, _ in
