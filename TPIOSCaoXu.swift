@@ -32,6 +32,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private var completedTasks: [Bool] = []
     private var taskDetails: [String] = []
     private var taskURLs: [String] = []
+    private var observedPageURLs: [String] = []
     private var sessionActive = false
     private var lastObservedPageURL: String?
     private var lastObservedScreenSignature: String?
@@ -266,6 +267,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             completedTasks = state["completed"] as? [Bool] ?? []
             taskDetails = state["details"] as? [String] ?? []
             taskURLs = state["urls"] as? [String] ?? []
+            observedPageURLs = state["pageURLs"] as? [String] ?? []
         }
         if completedTasks.count < taskNames.count {
             completedTasks.append(contentsOf: repeatElement(false, count: taskNames.count - completedTasks.count))
@@ -275,8 +277,12 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         // Remove known UI headings/CTA labels and product metadata left by earlier observer versions.
         let validIndices = taskNames.indices.filter { isLikelyTaskName(taskNames[$0]) }
         if validIndices.count != taskNames.count {
+            let oldDetails = taskDetails
+            let oldURLs = taskURLs
             taskNames = validIndices.map { taskNames[$0] }
             completedTasks = validIndices.map { completedTasks[$0] }
+            taskDetails = validIndices.map { $0 < oldDetails.count ? oldDetails[$0] : "" }
+            taskURLs = validIndices.map { $0 < oldURLs.count ? oldURLs[$0] : "" }
         }
         if taskDetails.count < taskNames.count {
             taskDetails.append(contentsOf: repeatElement("", count: taskNames.count - taskDetails.count))
@@ -295,7 +301,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private func saveState() {
         let state: [String: Any] = [
             "tasks": taskNames, "completed": completedTasks,
-            "details": taskDetails, "urls": taskURLs
+            "details": taskDetails, "urls": taskURLs,
+            "pageURLs": observedPageURLs
         ]
         if let data = try? JSONSerialization.data(withJSONObject: state) {
             UserDefaults.standard.set(data, forKey: stateKey)
@@ -315,7 +322,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private func refresh() {
         let total = taskNames.count
         let completed = completedTasks.filter { $0 }.count
-        progressLabel.text = "\(completed)/\(total) nhiệm vụ ghi nhận"
+        progressLabel.text = "\(completed)/\(total) hoàn thành · còn \(max(0, total - completed))"
+        startCaption.text = sessionActive ? "Đang theo dõi" : "Tiếp tục"
         progressView.progress = total == 0 ? 0 : Float(completed) / Float(total)
         if !sessionActive {
             statusLabel.text = total == 0 ? "Chưa ghi nhận nhiệm vụ · Mở trang nhiệm vụ Lazada" : "Đã tạm dừng · \(total) nhiệm vụ đã nhận diện"
@@ -565,9 +573,10 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         if lower.hasPrefix("tìm kiếm & xem hot deal") { return false }
 
         let taskWords = [
-            "điểm danh", "livestream", "live", "theo dõi", "xem sản phẩm", "xem video",
-            "chia sẻ", "thêm vào giỏ", "mua hàng", "đánh giá", "tìm kiếm", "nhận xu",
-            "check-in", "watch", "share", "visit", "lướt xem"
+            "điểm danh", "livestream", "live", "theo dõi", "xem sản phẩm", "xem 3 sản phẩm",
+            "xem video", "chia sẻ", "thêm vào giỏ", "mua hàng", "đánh giá", "tìm kiếm",
+            "tìm ", "nhận xu", "check-in", "watch", "share", "visit", "lướt xem",
+            "lướt", "siêu tiết kiệm", "vào game", "trò chơi"
         ]
         return taskWords.contains(where: { lower.contains($0) })
     }
@@ -587,6 +596,11 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         if pageURL != lastObservedPageURL || signature != lastObservedScreenSignature {
             lastObservedPageURL = pageURL
             lastObservedScreenSignature = signature
+            if let pageURL, !observedPageURLs.contains(pageURL) {
+                observedPageURLs.append(pageURL)
+                if observedPageURLs.count > 100 { observedPageURLs.removeFirst(observedPageURLs.count - 100) }
+                appendLog("Đã lưu URL trang Lazada: \(pageURL)")
+            }
             let pageDescription = pageURL ?? "URL chưa đọc được"
             appendLog("Màn hình thay đổi: \(pageDescription) · text=\(uniqueLines.count) · ứng viên nhiệm vụ=\(candidateNames.count)")
         }
@@ -618,10 +632,13 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             if let index = taskNames.firstIndex(where: {
                 normalizedTaskText($0).compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
             }) {
-                let detailLines = uniqueLines.dropFirst(lineIndex + 1).prefix(3).filter {
-                    !$0.isEmpty && !$0.lowercased().contains("nhận xu") &&
-                    !$0.lowercased().contains("kiếm thêm") && !$0.lowercased().contains("làm ngay")
-                }
+                let detailLines = uniqueLines.dropFirst(lineIndex + 1)
+                    .prefix(while: { !isLikelyTaskName($0) })
+                    .prefix(3)
+                    .filter {
+                        !$0.isEmpty && !$0.lowercased().contains("nhận xu") &&
+                        !$0.lowercased().contains("kiếm thêm") && !$0.lowercased().contains("làm ngay")
+                    }
                 let detail = detailLines.joined(separator: " · ").prefix(240).description
                 if !detail.isEmpty && taskDetails[index] != detail {
                     taskDetails[index] = detail
