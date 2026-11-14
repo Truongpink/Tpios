@@ -354,7 +354,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     }
 
     @objc private func startTapped() {
-        guard !sessionActive else { return }
+        guard !automationEnabled else { return }
         sessionActive = true
         automationEnabled = true
         automationPhase = .selecting
