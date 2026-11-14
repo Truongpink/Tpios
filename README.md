@@ -203,10 +203,11 @@ Những guard này nhằm tránh chồng hai contact hoặc tiếp tục bắn D
 ### Cào xu Lazada — trạng thái triển khai
 
 - `TPIOSCaoXu.swift` có panel Bắt đầu/Tiếp tục, Kết thúc/Tạm dừng, tiến độ, log riêng, sao chép và xóa log.
+- Người dùng có thể **thêm nhiệm vụ thủ công**, xem danh sách có trạng thái chờ/hoàn thành và đánh dấu hoàn thành nhiệm vụ kế tiếp. Tên nhiệm vụ, thứ tự và trạng thái hoàn thành được lưu riêng trong UserDefaults, khôi phục sau khi đóng/mở lại app.
 - Log Cào xu chỉ ghi sự kiện và trạng thái nội bộ của panel; dữ liệu được lưu riêng trong UserDefaults, tối đa 500 dòng. Sao chép/xóa log Cào xu không tác động tới log chính hay tiến độ nhiệm vụ.
 - Cào xu **không gọi** `startLazadaCapture`, không hook/bắt request mạng và không ghi URL, query, request body hay response body. Chức năng bắt request trong `TPIOSNetworkLog.swift` thuộc hệ thống log bên ngoài, độc lập với Cào xu.
-- Có thể kéo panel Cào xu; khi thả sát mép trái/phải, panel tự trượt ra ngoài và chừa khoảng 24 pt làm tay nắm. Kéo phần tay nắm ra màn hình để khôi phục panel; vị trí dọc được giữ lại.
-- Bộ đọc danh sách nhiệm vụ và kịch bản tự động bấm/nhận xu **chưa được triển khai**. Nút Bắt đầu hiện chỉ mở phiên theo dõi trạng thái nội bộ; chưa thực hiện thao tác nhiệm vụ.
+- Panel có thể resize xuống tối thiểu 390 pt. Khi người dùng kéo panel sát mép trái/phải (vùng kích hoạt 12 pt), panel thu thành tay nắm 56 × 56 pt, chỉ lộ khoảng 24 pt; kéo tay nắm ra ngoài để khôi phục kích thước trước đó.
+- Bộ đọc nhiệm vụ Lazada và kịch bản tự động bấm/nhận xu **chưa được triển khai**. Bắt đầu/Tiếp tục hiện chỉ mở phiên theo dõi; người dùng vẫn tự thực hiện nhiệm vụ và đánh dấu hoàn thành bằng tay.
 - TPIOS là dylib được inject vào tiến trình ứng dụng mục tiêu; hook URLSession chỉ quan sát request nếu dylib thực sự được nạp trong chính tiến trình Lazada. Repo chưa có cấu hình injection/filter plist để xác nhận app mục tiêu. Bundle ID runtime đúng là điều kiện cần, không tự chứng minh đã có request được bắt hoặc xác định chắc chắn thị trường tài khoản.
 
 ### Đồng hồ và giờ server
