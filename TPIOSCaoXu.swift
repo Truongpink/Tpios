@@ -54,6 +54,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private var automationStartedAt: Date?
     private var automationDuration: TimeInterval = 15
     private var attemptedTaskIndices = Set<Int>()
+    private var automationScanCursor = 0
     private var lastAutomationLogIndex: Int?
 
     private let stateKey = "TPIOSCaoXuObservedState"
@@ -359,6 +360,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         automationEnabled = true
         automationPhase = .selecting
         automationTaskIndex = nil
+        automationScanCursor = 0
+        lastAutomationLogIndex = nil
         didLogObserverDiagnostics = false
         appendLog("Bật tự động Cào xu; ưu tiên nhiệm vụ lướt có thời lượng xác định")
         startObserver()
@@ -467,7 +470,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         guard sessionActive, automationEnabled else { return }
 
         if automationTaskIndex == nil {
-            let next = taskNames.indices.first {
+            let count = taskNames.count
+            let next = (0..<count).map { (automationScanCursor + $0) % count }.first {
                 !completedTasks[$0] && !attemptedTaskIndices.contains($0) &&
                 taskNames[$0].localizedCaseInsensitiveContains("lướt")
             }
@@ -522,15 +526,22 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             """
             webView.evaluateJavaScript(script) { [weak self] result, error in
                 guard let self, self.sessionActive, self.automationEnabled else { return }
-                if (result as? String) == "clicked" {
+                let clickResult = result as? String ?? "no_result"
+                if clickResult.hasPrefix("clicked_") {
                     self.automationPhase = .waitingForPage
                     self.automationStartedAt = Date()
-                    self.appendLog("Đã mở nhiệm vụ: \(taskName)")
-                } else if self.lastAutomationLogIndex != index {
-                    self.lastAutomationLogIndex = index
-                    self.appendLog("Chưa tìm thấy nút mở nhiệm vụ trên màn hình: \(taskName)")
-                    self.attemptedTaskIndices.insert(index)
+                    self.lastAutomationLogIndex = nil
+                    self.appendLog("Đã bấm mở nhiệm vụ (\(clickResult)): \(taskName)")
+                } else {
+                    if self.lastAutomationLogIndex != index {
+                        self.lastAutomationLogIndex = index
+                        self.appendLog("Chưa mở được nhiệm vụ: \(taskName) · kết quả=\(clickResult)")
+                    }
+                    // Chưa hiển thị trên màn hình hiện tại: thử nhiệm vụ lướt kế tiếp,
+                    // không loại nhiệm vụ vĩnh viễn khỏi phiên chạy.
+                    self.automationScanCursor = (index + 1) % max(1, self.taskNames.count)
                     self.automationTaskIndex = nil
+                    self.automationPhase = .selecting
                 }
                 if let error { self.appendLog("Lỗi mở nhiệm vụ: \(error.localizedDescription)") }
             }
@@ -554,6 +565,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         case .returning:
             guard let started = automationStartedAt, Date().timeIntervalSince(started) >= 2 else { return }
             attemptedTaskIndices.insert(index)
+            automationScanCursor = (index + 1) % max(1, taskNames.count)
             automationTaskIndex = nil
             automationStartedAt = nil
             automationPhase = .selecting
