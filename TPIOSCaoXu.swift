@@ -40,6 +40,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private var sessionActive = false
     private var lastObservedPageURL: String?
     private var lastObservedScreenSignature: String?
+    private var lastDOMDiagnosticSignature: String?
 
     private var logs: [String] = []
     private var resizeStartFrame = CGRect.zero
@@ -490,7 +491,27 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
           const leafLines = Array.from(document.querySelectorAll('body *'))
             .filter(e => e.children.length === 0 && visible(e))
             .map(e => (e.innerText || e.textContent || '').trim());
+          const compact = s => (s || '').replace(/\\s+/g, ' ').trim().slice(0, 100);
+          const interactive = Array.from(document.querySelectorAll('input,textarea,button,a,[role="button"],[contenteditable="true"]'))
+            .filter(visible).slice(0, 45).map(e => {
+              const tag = e.tagName.toLowerCase();
+              const cls = typeof e.className === 'string' ? e.className.split(/\\s+/).slice(0, 3).join('.') : '';
+              const text = compact(e.innerText || e.textContent);
+              const label = compact(e.getAttribute('aria-label') || e.getAttribute('title'));
+              const placeholder = compact(e.getAttribute('placeholder'));
+              return [tag, cls, text, label, placeholder].filter(Boolean).join(' | ');
+            }).filter(Boolean);
+          const productCards = Array.from(document.querySelectorAll('[class*="product"],[class*="goods"],[class*="item-card"]'))
+            .filter(e => visible(e) && !e.parentElement?.closest('[class*="product"],[class*="goods"],[class*="item-card"]'))
+            .map(e => compact(e.innerText || e.textContent))
+            .filter(t => t.length >= 8 && t.length <= 180).slice(0, 12);
+          const headings = Array.from(document.querySelectorAll('h1,h2,h3,[role="heading"]'))
+            .filter(visible).map(e => compact(e.innerText || e.textContent)).filter(Boolean).slice(0, 8);
           return {
+            pageTitle: compact(document.title),
+            headings: headings,
+            interactive: interactive,
+            productCards: productCards,
             lines: bodyLines.concat(leafLines)
               .map(t => t.trim())
               .filter(t => t.length > 1 && t.length < 180)
@@ -518,6 +539,19 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 let hasCheckInCard = payload["hasCheckInCard"] as? Bool ?? false
                 let hasMissionsPage = payload["hasMissionsPage"] as? Bool ?? false
                 let hasOpenMissionsControl = payload["hasOpenMissionsControl"] as? Bool ?? false
+                let diagnosticParts = [
+                    payload["pageTitle"] as? String ?? "",
+                    (payload["headings"] as? [String] ?? []).joined(separator: " ; "),
+                    (payload["interactive"] as? [String] ?? []).joined(separator: " || "),
+                    (payload["productCards"] as? [String] ?? []).joined(separator: " || ")
+                ]
+                let diagnostic = diagnosticParts.joined(separator: " ## ")
+                let diagnosticSignature = String(diagnostic.hashValue)
+                if !diagnostic.isEmpty, diagnosticSignature != self.lastDOMDiagnosticSignature {
+                    self.lastDOMDiagnosticSignature = diagnosticSignature
+                    let clipped = String(diagnostic.prefix(1800))
+                    self.appendLog("DOM nhiệm vụ: \(clipped)")
+                }
                 self.captureLazadaPageURLs(
                     pageURL: pageURL,
                     hasCheckInCard: hasCheckInCard,
