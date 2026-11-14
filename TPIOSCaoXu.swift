@@ -35,6 +35,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private var observedPageURLs: [String] = []
     private var checkInPageURL: String?
     private var missionsPageURL: String?
+    private var lastMissionEntryPromptURL: String?
     private var sessionActive = false
     private var lastObservedPageURL: String?
     private var lastObservedScreenSignature: String?
@@ -506,9 +507,11 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private func captureLazadaPageURLs(pageURL: String?, hasCheckInCard: Bool,
                                         hasMissionsPage: Bool, hasOpenMissionsControl: Bool) {
         guard let pageURL else { return }
+        var changed = false
 
         if hasCheckInCard, checkInPageURL != pageURL {
             checkInPageURL = pageURL
+            changed = true
             appendLog("Đã xác nhận và lưu URL trang Điểm danh nhận xu: \(pageURL)")
         }
 
@@ -516,11 +519,15 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         // its presence alone as proof that the mission list has loaded.
         if hasMissionsPage, missionsPageURL != pageURL {
             missionsPageURL = pageURL
+            changed = true
+            lastMissionEntryPromptURL = nil
             appendLog("Đã xác nhận và lưu URL trang Kiếm thêm (có thẻ nhiệm vụ): \(pageURL)")
-        } else if hasOpenMissionsControl, missionsPageURL == nil {
+        } else if hasOpenMissionsControl, missionsPageURL == nil,
+                  lastMissionEntryPromptURL != pageURL {
+            lastMissionEntryPromptURL = pageURL
             appendLog("Đã thấy nút mở Kiếm thêm; đang chờ danh sách .mission-item-center tải xong")
         }
-        saveState()
+        if changed { saveState() }
     }
 
     private func driveNativeAutomation(in root: UIView) {
