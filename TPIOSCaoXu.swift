@@ -509,14 +509,14 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
 
         if hasCheckInCard, checkInPageURL != pageURL {
             checkInPageURL = pageURL
-            appendLog("Đã xác nhận và lưu URL trang Điểm danh nhận xu: \\(pageURL)")
+            appendLog("Đã xác nhận và lưu URL trang Điểm danh nhận xu: \(pageURL)")
         }
 
         // The date control is the observed entry point to Kiếm thêm; do not treat
         // its presence alone as proof that the mission list has loaded.
         if hasMissionsPage, missionsPageURL != pageURL {
             missionsPageURL = pageURL
-            appendLog("Đã xác nhận và lưu URL trang Kiếm thêm (có thẻ nhiệm vụ): \\(pageURL)")
+            appendLog("Đã xác nhận và lưu URL trang Kiếm thêm (có thẻ nhiệm vụ): \(pageURL)")
         } else if hasOpenMissionsControl, missionsPageURL == nil {
             appendLog("Đã thấy nút mở Kiếm thêm; đang chờ danh sách .mission-item-center tải xong")
         }
