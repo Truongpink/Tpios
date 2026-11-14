@@ -647,7 +647,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             if lastMissionEntryPromptURL != pageURL {
                 lastMissionEntryPromptURL = pageURL
                 let count = entryPoint?["count"] as? Int ?? 0
-                appendLog("Kiếm thêm: không tìm thấy duy nhất nút có nhãn chính xác; số nút khớp=\\(count)")
+                appendLog("Kiếm thêm: không tìm thấy duy nhất nút có nhãn chính xác; số nút khớp=\(count)")
             }
             return
         }
