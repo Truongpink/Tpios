@@ -517,14 +517,29 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
               .filter(t => t.length > 1 && t.length < 180)
               .slice(0, 700),
             missionTitles: missionTitles,
-            hasCheckInCard: Array.from(document.querySelectorAll('.lazcoins-checkin-card')).some(visible),
+            hasCheckInCard: (() => {
+              const bodyText = document.body ? document.body.innerText : '';
+              return Array.from(document.querySelectorAll('.lazcoins-checkin-card')).some(visible) ||
+                (/điểm danh/i.test(bodyText) && /nhận xu/i.test(bodyText));
+            })(),
             hasMissionsPage: Array.from(document.querySelectorAll('.mission-item-center')).some(visible),
-            hasOpenMissionsControl: Array.from(document.querySelectorAll('.lazcoins-check-in-date')).some(visible),
+            hasOpenMissionsControl: (() => {
+              const exactLabel = e => /^kiếm thêm(?:\\s+xu)?$/i.test(
+                (e.innerText || e.textContent || '').replace(/\\s+/g, ' ').trim()
+              );
+              return Array.from(document.querySelectorAll('.lazcoins-check-in-date,a,button,[role="button"],[tabindex]'))
+                .some(e => visible(e) && exactLabel(e));
+            })(),
             missionEntryPoint: (() => {
-              const controls = Array.from(document.querySelectorAll('.lazcoins-check-in-date')).filter(visible);
+              const exactLabel = e => /^kiếm thêm(?:\\s+xu)?$/i.test(
+                (e.innerText || e.textContent || '').replace(/\\s+/g, ' ').trim()
+              );
+              const controls = Array.from(document.querySelectorAll('.lazcoins-check-in-date,a,button,[role="button"],[tabindex]'))
+                .filter(e => visible(e) && exactLabel(e));
               if (controls.length !== 1) return {count: controls.length};
               const r = controls[0].getBoundingClientRect();
-              return {count: 1, x: r.left + r.width / 2, y: r.top + r.height / 2};
+              return {count: 1, x: r.left + r.width / 2, y: r.top + r.height / 2,
+                label: (controls[0].innerText || controls[0].textContent || '').trim()};
             })()
           };
         })();
@@ -615,15 +630,35 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                                          entryPoint: [String: Any]?) {
         guard sessionActive, automationEnabled,
               let pageURL, pageURL == checkInPageURL,
-              hasCheckInCard, hasOpenMissionsControl,
               pageURL != missionsPageURL,
-              lastMissionEntryTapURL != pageURL,
-              let window = webView.window,
-              let entryPoint,
+              lastMissionEntryTapURL != pageURL else { return }
+
+        guard hasCheckInCard else {
+            if lastMissionEntryPromptURL != pageURL {
+                lastMissionEntryPromptURL = pageURL
+                appendLog("Kiếm thêm: chưa xác nhận được màn hình Điểm danh nhận xu; không tự chạm")
+            }
+            return
+        }
+        guard hasOpenMissionsControl, let entryPoint,
               (entryPoint["count"] as? Int) == 1,
               let x = entryPoint["x"] as? Double,
-              let y = entryPoint["y"] as? Double,
-              TPIOSAutoClickEngine.backendAvailable() else { return }
+              let y = entryPoint["y"] as? Double else {
+            if lastMissionEntryPromptURL != pageURL {
+                lastMissionEntryPromptURL = pageURL
+                let count = entryPoint?["count"] as? Int ?? 0
+                appendLog("Kiếm thêm: không tìm thấy duy nhất nút có nhãn chính xác; số nút khớp=\\(count)")
+            }
+            return
+        }
+        guard let window = webView.window else { return }
+        guard TPIOSAutoClickEngine.backendAvailable() else {
+            if lastMissionEntryPromptURL != pageURL {
+                lastMissionEntryPromptURL = pageURL
+                appendLog("Kiếm thêm: HID backend chưa sẵn sàng; chưa thể tự chạm")
+            }
+            return
+        }
 
         let webPoint = CGPoint(x: x, y: y)
         guard webView.bounds.insetBy(dx: 1, dy: 1).contains(webPoint) else {
