@@ -36,6 +36,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private var checkInPageURL: String?
     private var missionsPageURL: String?
     private var lastMissionEntryPromptURL: String?
+    private var lastMissionEntryTapURL: String?
     private var sessionActive = false
     private var lastObservedPageURL: String?
     private var lastObservedScreenSignature: String?
@@ -246,8 +247,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         progressLabel.frame = CGRect(x: inset, y: header + 40 * scale, width: width, height: 17 * scale)
         progressView.frame = CGRect(x: inset, y: header + 60 * scale, width: width, height: 4 * scale)
 
-        let buttonSize = min(46 * scale, max(34, width * 0.23))
-        let buttonY = header + 72 * scale
+        let buttonSize = min(46 * scale, max(34, width * 0.23))        let buttonY = header + 72 * scale
         let leftX = bounds.midX - buttonSize - 12 * scale
         let rightX = bounds.midX + 12 * scale
         startButton.frame = CGRect(x: leftX, y: buttonY, width: buttonSize, height: buttonSize)
@@ -478,7 +478,13 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             missionTitles: missionTitles,
             hasCheckInCard: Array.from(document.querySelectorAll('.lazcoins-checkin-card')).some(visible),
             hasMissionsPage: Array.from(document.querySelectorAll('.mission-item-center')).some(visible),
-            hasOpenMissionsControl: Array.from(document.querySelectorAll('.lazcoins-check-in-date')).some(visible)
+            hasOpenMissionsControl: Array.from(document.querySelectorAll('.lazcoins-check-in-date')).some(visible),
+            missionEntryPoint: (() => {
+              const controls = Array.from(document.querySelectorAll('.lazcoins-check-in-date')).filter(visible);
+              if (controls.length !== 1) return {count: controls.length};
+              const r = controls[0].getBoundingClientRect();
+              return {count: 1, x: r.left + r.width / 2, y: r.top + r.height / 2};
+            })()
           };
         })();
         """
@@ -489,15 +495,24 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     lines.append(contentsOf: webLines)
                 }
                 self.visibleWebMissionTitles = payload["missionTitles"] as? [String] ?? []
+                let hasCheckInCard = payload["hasCheckInCard"] as? Bool ?? false
+                let hasMissionsPage = payload["hasMissionsPage"] as? Bool ?? false
+                let hasOpenMissionsControl = payload["hasOpenMissionsControl"] as? Bool ?? false
                 self.captureLazadaPageURLs(
                     pageURL: pageURL,
-                    hasCheckInCard: payload["hasCheckInCard"] as? Bool ?? false,
-                    hasMissionsPage: payload["hasMissionsPage"] as? Bool ?? false,
-                    hasOpenMissionsControl: payload["hasOpenMissionsControl"] as? Bool ?? false
+                    hasCheckInCard: hasCheckInCard,
+                    hasMissionsPage: hasMissionsPage,
+                    hasOpenMissionsControl: hasOpenMissionsControl
+                )
+                self.tapMissionEntryIfNeeded(
+                    in: webView,
+                    pageURL: pageURL,
+                    hasCheckInCard: hasCheckInCard,
+                    hasOpenMissionsControl: hasOpenMissionsControl,
+                    entryPoint: payload["missionEntryPoint"] as? [String: Any]
                 )
             } else if let webLines = result as? [String] {
-                lines.append(contentsOf: webLines)
-                self.visibleWebMissionTitles = []
+                lines.append(contentsOf: webLines)                self.visibleWebMissionTitles = []
             }
             self.processObservedLines(lines, pageURL: pageURL)
             self.driveAutomation(in: webView)
@@ -529,6 +544,48 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             appendLog("Đã thấy nút mở Kiếm thêm; đang chờ danh sách .mission-item-center tải xong")
         }
         if changed { saveState() }
+    }
+
+    private func tapMissionEntryIfNeeded(in webView: WKWebView, pageURL: String?,
+                                         hasCheckInCard: Bool, hasOpenMissionsControl: Bool,
+                                         entryPoint: [String: Any]?) {
+        guard sessionActive, automationEnabled,
+              let pageURL, pageURL == checkInPageURL,
+              hasCheckInCard, hasOpenMissionsControl,
+              pageURL != missionsPageURL,
+              lastMissionEntryTapURL != pageURL,
+              let window = webView.window,
+              let entryPoint,
+              (entryPoint["count"] as? Int) == 1,
+              let x = entryPoint["x"] as? Double,
+              let y = entryPoint["y"] as? Double,
+              TPIOSAutoClickEngine.backendAvailable() else { return }
+
+        let webPoint = CGPoint(x: x, y: y)
+        guard webView.bounds.insetBy(dx: 1, dy: 1).contains(webPoint) else {
+            appendLog("Kiếm thêm: tọa độ nút nằm ngoài WebView; không chạm")
+            return
+        }
+
+        let windowPoint = webView.convert(webPoint, to: window)
+        lastMissionEntryTapURL = pageURL
+        guard TPIOSAutoClickEngine.shared.dispatchTouch(at: windowPoint, down: true) else {
+            lastMissionEntryTapURL = nil
+            appendLog("Kiếm thêm: HID không gửi được chạm DOWN")
+            return
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            let released = TPIOSAutoClickEngine.shared.dispatchTouch(at: windowPoint, down: false)
+            guard let self else { return }
+            guard released else {
+                self.automationEnabled = false
+                self.appendLog("Kiếm thêm: không xác nhận được chạm UP; đã dừng tự động để tránh kẹt touch")
+                return
+            }
+            guard self.sessionActive, self.automationEnabled else { return }
+            self.appendLog("Đã chạm nút Kiếm thêm bằng DOM + HID; chờ Lazada chuyển trang và tải danh sách")
+        }
     }
 
     private func driveNativeAutomation(in root: UIView) {
@@ -718,7 +775,9 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     }
 
     private func driveAutomation(in webView: WKWebView) {
-        guard sessionActive, automationEnabled else { return }
+        guard sessionActive, automationEnabled,
+              let pageURL = sanitizedPageURL(webView.url),
+              missionsPageURL == pageURL else { return }
 
         if automationTaskIndex == nil {
             let count = taskNames.count
@@ -746,8 +805,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         }
 
         guard let index = automationTaskIndex, taskNames.indices.contains(index) else {
-            automationTaskIndex = nil
-            automationPhase = .selecting
+            automationTaskIndex = nil            automationPhase = .selecting
             return
         }
 
@@ -996,8 +1054,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     }
 
     private func isLikelyTaskName(_ raw: String) -> Bool {
-        let name = normalizedTaskText(raw)
-        let lower = name.lowercased()
+        let name = normalizedTaskText(raw)        let lower = name.lowercased()
         guard name.count >= 12, name.count <= 140 else { return false }
 
         let excludedLabels: Set<String> = [
