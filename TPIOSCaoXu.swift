@@ -240,6 +240,12 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         } else if completedTasks.count > taskNames.count {
             completedTasks = Array(completedTasks.prefix(taskNames.count))
         }
+        // Remove known UI headings/CTA labels and product metadata left by earlier observer versions.
+        let validIndices = taskNames.indices.filter { isLikelyTaskName(taskNames[$0]) }
+        if validIndices.count != taskNames.count {
+            taskNames = validIndices.map { taskNames[$0] }
+            completedTasks = validIndices.map { completedTasks[$0] }
+        }
         logs = defaults.stringArray(forKey: logKey) ?? []
         sessionActive = false
     }
@@ -391,39 +397,78 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         return result
     }
 
+    private func normalizedTaskText(_ raw: String) -> String {
+        var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        text = text.replacingOccurrences(of: #"\\s+"#, with: " ", options: .regularExpression)
+        // Some Lazada views expose the same title twice with no separator.
+        text = text.replacingOccurrences(of: #"(.{4,80})\\1"#, with: "$1",
+                                         options: [.regularExpression, .caseInsensitive])
+        return text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
+    }
+
+    private func isLikelyTaskName(_ raw: String) -> Bool {
+        let name = normalizedTaskText(raw)
+        let lower = name.lowercased()
+        guard name.count >= 12, name.count <= 140 else { return false }
+
+        let excludedLabels: Set<String> = [
+            "nhiệm vụ hôm nay", "nhiệm vụ", "tìm kiếm", "đánh giá",
+            "thêm vào giỏ", "check-in ngay", "nhận xu"
+        ]
+        guard !excludedLabels.contains(lower) else { return false }
+
+        // Exclude seller/product counters such as "200+ đánh giá có hình ảnh".
+        let metadataPattern = #"^\\d+[\\d.,]*\\s*\\+?\\s*(đánh giá|người theo dõi|lượt theo dõi|reviews?|followers?)"#
+        if lower.range(of: metadataPattern, options: .regularExpression) != nil { return false }
+
+        // This is a page/category slogan, not an individual task card.
+        if lower.hasPrefix("tìm kiếm & xem hot deal") { return false }
+
+        let taskWords = [
+            "điểm danh", "livestream", "live", "theo dõi", "xem sản phẩm", "xem video",
+            "chia sẻ", "thêm vào giỏ", "mua hàng", "đánh giá", "tìm kiếm", "nhận xu",
+            "check-in", "watch", "share", "visit", "lướt xem"
+        ]
+        return taskWords.contains(where: { lower.contains($0) })
+    }
+
     private func processObservedLines(_ rawLines: [String]) {
-        let taskWords = ["điểm danh", "livestream", "live", "theo dõi", "xem sản phẩm", "xem video",
-                         "chia sẻ", "thêm vào giỏ", "mua hàng", "đánh giá", "tìm kiếm", "nhận xu",
-                         "nhiệm vụ", "follow", "check-in", "watch", "share", "visit"]
-        let doneWords = ["đã hoàn thành", "hoàn thành", "đã nhận", "nhận thành công", "completed", "claimed", "done"]
+        let doneWords = [
+            "đã hoàn thành", "hoàn thành", "đã nhận", "nhận thành công",
+            "completed", "claimed", "done"
+        ]
+        var changed = false
+        var seenThisPass = Set<String>()
 
         for raw in rawLines {
-            let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard line.count >= 5, line.count <= 180 else { continue }
-            let lower = line.lowercased()
-            guard taskWords.contains(where: { lower.contains($0) }) else { continue }
+            let name = normalizedTaskText(raw)
+            guard isLikelyTaskName(name) else { continue }
+            let key = name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            guard seenThisPass.insert(key).inserted else { continue }
 
-            let name = line
-                .replacingOccurrences(of: "Đã hoàn thành", with: "", options: .caseInsensitive)
-                .replacingOccurrences(of: "Hoàn thành", with: "", options: .caseInsensitive)
-                .replacingOccurrences(of: "Đã nhận", with: "", options: .caseInsensitive)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard name.count >= 4 else { continue }
-
-            if !taskNames.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) {
+            if !taskNames.contains(where: {
+                normalizedTaskText($0).compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+            }) {
                 taskNames.append(name)
                 completedTasks.append(false)
-                appendLog("Nhận diện nhiệm vụ trên màn hình: \(name)")
+                changed = true
+                appendLog("Nhận diện nhiệm vụ trên màn hình: \\(name)")
             }
 
+            let lower = raw.lowercased()
             if doneWords.contains(where: { lower.contains($0) }),
-               let index = taskNames.firstIndex(where: { $0.caseInsensitiveCompare(name) == .orderedSame }),
+               let index = taskNames.firstIndex(where: {
+                   normalizedTaskText($0).compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+               }),
                !completedTasks[index] {
                 completedTasks[index] = true
-                appendLog("Giao diện báo hoàn thành: \(name)")
+                changed = true
+                appendLog("Giao diện báo hoàn thành: \\(name)")
             }
         }
-        saveObservedTasks()
+
+        // Persist only when the task list or completion state actually changes.
+        if changed { saveObservedTasks() }
     }
 
     @objc private func copyTapped() {
