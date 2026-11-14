@@ -210,6 +210,11 @@ Những guard này nhằm tránh chồng hai contact hoặc tiếp tục bắn D
 - Panel resize tối thiểu 220 × 300 pt; nút Bắt đầu/Tạm dừng dùng biểu tượng tròn gradient. Có thể thu gọn sát mép màn hình thành tay nắm 56 × 56 pt, chỉ lộ khoảng 24 pt.
 - Cào xu không gọi `startLazadaCapture`, không sử dụng `TPIOSNetworkLog`, `TPIOSCartBody` hoặc logic Sale Shopee.
 
+- Bộ lọc ứng viên loại tiêu đề chung (ví dụ “Nhiệm vụ hôm nay”), nhãn CTA đơn lẻ (“Tìm kiếm”, “Đánh giá”, “Thêm vào giỏ”, “Check-in ngay”) và dòng đếm đánh giá/người theo dõi.
+- Chuẩn hóa khoảng trắng, gộp tiêu đề bị lặp liền nhau và bỏ trùng trong cùng một lượt quan sát.
+- Chỉ ghi UserDefaults khi danh sách nhiệm vụ/trạng thái thực sự thay đổi, thay vì ghi lại mỗi chu kỳ 2 giây.
+- Các dòng nhiệm vụ cần đủ mô tả và chứa từ khóa hành động; đây vẫn là heuristic theo text, chưa phải nhận diện chính xác cấu trúc từng card trên mọi phiên bản Lazada.
+
 ### Đồng hồ và giờ server
 
 - `TPIOSSaleClock.swift`: đồng hồ nổi có thể kéo/resize, hiển thị giờ đến phần mười giây.
