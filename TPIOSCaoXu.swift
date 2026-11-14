@@ -33,6 +33,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private var taskDetails: [String] = []
     private var taskURLs: [String] = []
     private var observedPageURLs: [String] = []
+    private var checkInPageURL: String?
+    private var missionsPageURL: String?
     private var sessionActive = false
     private var lastObservedPageURL: String?
     private var lastObservedScreenSignature: String?
@@ -278,6 +280,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             taskDetails = state["details"] as? [String] ?? []
             taskURLs = state["urls"] as? [String] ?? []
             observedPageURLs = state["pageURLs"] as? [String] ?? []
+            checkInPageURL = state["checkInPageURL"] as? String
+            missionsPageURL = state["missionsPageURL"] as? String
         }
         if completedTasks.count < taskNames.count {
             completedTasks.append(contentsOf: repeatElement(false, count: taskNames.count - completedTasks.count))
@@ -312,7 +316,9 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         let state: [String: Any] = [
             "tasks": taskNames, "completed": completedTasks,
             "details": taskDetails, "urls": taskURLs,
-            "pageURLs": observedPageURLs
+            "pageURLs": observedPageURLs,
+            "checkInPageURL": checkInPageURL ?? "",
+            "missionsPageURL": missionsPageURL ?? ""
         ]
         if let data = try? JSONSerialization.data(withJSONObject: state) {
             UserDefaults.standard.set(data, forKey: stateKey)
@@ -468,7 +474,10 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
               .map(t => t.trim())
               .filter(t => t.length > 1 && t.length < 180)
               .slice(0, 700),
-            missionTitles: missionTitles
+            missionTitles: missionTitles,
+            hasCheckInCard: Array.from(document.querySelectorAll('.lazcoins-checkin-card')).some(visible),
+            hasMissionsPage: Array.from(document.querySelectorAll('.mission-item-center')).some(visible),
+            hasOpenMissionsControl: Array.from(document.querySelectorAll('.lazcoins-check-in-date')).some(visible)
           };
         })();
         """
@@ -479,6 +488,12 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     lines.append(contentsOf: webLines)
                 }
                 self.visibleWebMissionTitles = payload["missionTitles"] as? [String] ?? []
+                self.captureLazadaPageURLs(
+                    pageURL: pageURL,
+                    hasCheckInCard: payload["hasCheckInCard"] as? Bool ?? false,
+                    hasMissionsPage: payload["hasMissionsPage"] as? Bool ?? false,
+                    hasOpenMissionsControl: payload["hasOpenMissionsControl"] as? Bool ?? false
+                )
             } else if let webLines = result as? [String] {
                 lines.append(contentsOf: webLines)
                 self.visibleWebMissionTitles = []
@@ -486,6 +501,26 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             self.processObservedLines(lines, pageURL: pageURL)
             self.driveAutomation(in: webView)
         }
+    }
+
+    private func captureLazadaPageURLs(pageURL: String?, hasCheckInCard: Bool,
+                                        hasMissionsPage: Bool, hasOpenMissionsControl: Bool) {
+        guard let pageURL else { return }
+
+        if hasCheckInCard, checkInPageURL != pageURL {
+            checkInPageURL = pageURL
+            appendLog("Đã xác nhận và lưu URL trang Điểm danh nhận xu: \\(pageURL)")
+        }
+
+        // The date control is the observed entry point to Kiếm thêm; do not treat
+        // its presence alone as proof that the mission list has loaded.
+        if hasMissionsPage, missionsPageURL != pageURL {
+            missionsPageURL = pageURL
+            appendLog("Đã xác nhận và lưu URL trang Kiếm thêm (có thẻ nhiệm vụ): \\(pageURL)")
+        } else if hasOpenMissionsControl, missionsPageURL == nil {
+            appendLog("Đã thấy nút mở Kiếm thêm; đang chờ danh sách .mission-item-center tải xong")
+        }
+        saveState()
     }
 
     private func driveNativeAutomation(in root: UIView) {
