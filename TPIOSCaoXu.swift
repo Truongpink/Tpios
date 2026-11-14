@@ -500,12 +500,24 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             (function(){
               const title = \(json)[0].normalize('NFC').toLowerCase();
               const norm = s => (s || '').replace(/\\s+/g,' ').trim().normalize('NFC').toLowerCase();
-              const visible = e => { const r=e.getBoundingClientRect(),s=getComputedStyle(e); return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'; };
-              const nodes = Array.from(document.querySelectorAll('a,button,[role="button"],[onclick]')).filter(visible);
-              const hit = nodes.find(e => norm(e.innerText || e.textContent).includes(title));
-              if (!hit) return 'not_found';
-              hit.click();
-              return 'clicked';
+              const visible = e => { const r=e.getBoundingClientRect(),s=getComputedStyle(e); return r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth&&s.display!=='none'&&s.visibility!=='hidden'; };
+              const clickable = 'a,button,[role="button"],[onclick]';
+              const titleNodes = Array.from(document.querySelectorAll('body *')).filter(e => {
+                if (!visible(e)) return false;
+                const t = norm(e.innerText || e.textContent);
+                return t && t.includes(title) && t.length <= title.length + 100;
+              }).sort((a,b) => (a.innerText || a.textContent || '').length - (b.innerText || b.textContent || '').length);
+              if (!titleNodes.length) return 'title_not_found';
+              const titleNode = titleNodes[0];
+              const direct = titleNode.closest(clickable);
+              if (direct && visible(direct)) { direct.click(); return 'clicked_title'; }
+              let card = titleNode;
+              for (let depth=0; depth<6 && card; depth++, card=card.parentElement) {
+                const actions = Array.from(card.querySelectorAll(clickable)).filter(visible);
+                const action = actions.find(e => /làm ngay|thực hiện|đi ngay|xem ngay|tham gia|bắt đầu/i.test(norm(e.innerText || e.textContent)));
+                if (action) { action.click(); return 'clicked_action'; }
+              }
+              return 'title_found_no_action';
             })();
             """
             webView.evaluateJavaScript(script) { [weak self] result, error in
