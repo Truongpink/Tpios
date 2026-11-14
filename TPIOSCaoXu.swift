@@ -40,6 +40,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private var tuckedToLeft = false
     private var expandedFrame = CGRect.zero
     private var observerTimer: DispatchSourceTimer?
+    private var didLogObserverDiagnostics = false
 
     private let stateKey = "TPIOSCaoXuObservedState"
     private let logKey = "TPIOSCaoXuLogs"
@@ -295,6 +296,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     @objc private func startTapped() {
         guard !sessionActive else { return }
         sessionActive = true
+        didLogObserverDiagnostics = false
         appendLog("Bắt đầu quan sát giao diện Lazada — không tự thao tác")
         startObserver()
         refresh()
@@ -323,18 +325,44 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     }
 
     private func observeVisibleTasks() {
-        guard sessionActive, let root = visibleAppRoot() else { return }
-        let isLazadaProcess = (Bundle.main.bundleIdentifier ?? "").lowercased().contains("lazada")
+        guard sessionActive else { return }
+        guard let root = visibleAppRoot() else {
+            if !didLogObserverDiagnostics {
+                didLogObserverDiagnostics = true
+                appendLog("Chẩn đoán: không tìm thấy cửa sổ app đang hiển thị")
+            }
+            return
+        }
+
+        let bundleID = Bundle.main.bundleIdentifier ?? "unknown"
+        let isLazadaProcess = bundleID.lowercased().contains("lazada")
         let webViews = findWebViews(in: root)
         let lazadaWebView = webViews.first {
             $0.window != nil && !$0.isHidden && $0.alpha > 0.01 &&
             ($0.url?.host?.lowercased().contains("lazada") == true)
         }
+        let isLazadaTarget = isLazadaProcess || lazadaWebView != nil
+
+        var lines: [String] = []
+        var nativeViewCount = 0
+        var accessibilityCount = 0
+        if isLazadaProcess {
+            let snapshot = nativeVisibleLines(in: root)
+            lines = snapshot.lines
+            nativeViewCount = snapshot.viewCount
+            accessibilityCount = snapshot.accessibilityCount
+        }
+
+        if !didLogObserverDiagnostics {
+            didLogObserverDiagnostics = true
+            let windowName = root.window.map { NSStringFromClass(type(of: $0)) } ?? "none"
+            let rootName = NSStringFromClass(type(of: root))
+            appendLog("Chẩn đoán: app=\(bundleID) window=\(windowName) root=\(rootName) nativeViews=\(nativeViewCount) accessibility=\(accessibilityCount) webViews=\(webViews.count) Lazada=\(isLazadaTarget ? "yes" : "no")")
+        }
 
         // Không đọc nội dung app khác: Cào xu chỉ hoạt động trong tiến trình Lazada
         // hoặc WebView đang mở host Lazada. Sale Shopee không bị quét ở đây.
-        guard isLazadaProcess || lazadaWebView != nil else { return }
-        var lines = isLazadaProcess ? nativeVisibleLines(in: root) : []
+        guard isLazadaTarget else { return }
 
         guard let webView = lazadaWebView else {
             processObservedLines(lines)
@@ -345,7 +373,10 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         (function() {
           const visible = e => {
             const r = e.getBoundingClientRect(), s = getComputedStyle(e);
-            return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden';
+            return r.width > 0 && r.height > 0 &&
+              r.bottom > 0 && r.right > 0 &&
+              r.top < window.innerHeight && r.left < window.innerWidth &&
+              s.display !== 'none' && s.visibility !== 'hidden';
           };
           const bodyLines = (document.body ? document.body.innerText : '').split(/\\n+/);
           const leafLines = Array.from(document.querySelectorAll('body *'))
@@ -371,9 +402,28 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             .compactMap { $0 as? UIWindowScene }
             .filter { $0.activationState == .foregroundActive }
             .flatMap { $0.windows }
-        let appWindow = windows.first { $0 !== self.window && !$0.isHidden }
+
+        let appWindow = windows
+            .filter {
+                $0 !== self.window &&
+                !$0.isHidden &&
+                $0.alpha > 0.01 &&
+                $0.windowLevel == .normal &&
+                $0.rootViewController != nil
+            }
+            .sorted {
+                if $0.isKeyWindow != $1.isKeyWindow {
+                    return $0.isKeyWindow
+                }
+                return $0.bounds.width * $0.bounds.height >
+                    $1.bounds.width * $1.bounds.height
+            }
+            .first
+
         var controller = appWindow?.rootViewController
-        while let presented = controller?.presentedViewController { controller = presented }
+        while let presented = controller?.presentedViewController {
+            controller = presented
+        }
         return controller?.view ?? appWindow
     }
 
@@ -384,17 +434,52 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         return result
     }
 
-    private func nativeVisibleLines(in root: UIView) -> [String] {
+    private func nativeVisibleLines(in root: UIView) -> (lines: [String], viewCount: Int, accessibilityCount: Int) {
         var result: [String] = []
+        var seen = Set<String>()
+        var viewCount = 0
+        var accessibilityCount = 0
+
+        func append(_ raw: String?) {
+            guard let text = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  text.count > 1 else { return }
+            let key = text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            if seen.insert(key).inserted { result.append(text) }
+        }
+
         func visit(_ view: UIView) {
             guard !view.isHidden, view.alpha > 0.01 else { return }
-            if let label = view as? UILabel, let text = label.text { result.append(text) }
-            if let button = view as? UIButton, let text = button.currentTitle { result.append(text) }
-            if let textView = view as? UITextView, !textView.text.isEmpty { result.append(textView.text) }
+            viewCount += 1
+
+            if let label = view as? UILabel { append(label.text) }
+            if let button = view as? UIButton {
+                append(button.currentTitle)
+                append(button.accessibilityLabel)
+            }
+            if let textView = view as? UITextView, !textView.isEditable {
+                append(textView.text)
+            }
+            if !(view is UITextField), !(view is UISearchBar) {
+                append(view.accessibilityLabel)
+            }
+
+            if let elements = view.accessibilityElements {
+                for element in elements {
+                    if let accessible = element as? UIAccessibilityElement {
+                        accessibilityCount += 1
+                        append(accessible.accessibilityLabel)
+                    } else if let accessibleView = element as? UIView {
+                        accessibilityCount += 1
+                        append(accessibleView.accessibilityLabel)
+                    }
+                }
+            }
+
             for child in view.subviews { visit(child) }
         }
+
         visit(root)
-        return result
+        return (result, viewCount, accessibilityCount)
     }
 
     private func normalizedTaskText(_ raw: String) -> String {
