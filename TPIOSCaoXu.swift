@@ -550,7 +550,10 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         case .waitingForPage:
             guard let started = automationStartedAt, Date().timeIntervalSince(started) >= 2 else { return }
             guard let scrollView = findScrollableView(in: root) else {
-                appendLog("Native: đã mở nhiệm vụ nhưng chưa tìm thấy vùng cuộn; giữ tiến độ, không đánh dấu hoàn thành")
+                if lastAutomationLogIndex != index {
+                    lastAutomationLogIndex = index
+                    appendLog("Native: đã mở nhiệm vụ nhưng chưa tìm thấy vùng cuộn; giữ tiến độ, không đánh dấu hoàn thành")
+                }
                 automationStartedAt = Date()
                 return
             }
@@ -621,7 +624,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             node.subviews.forEach(collect)
         }
         collect(view)
-        return values.joined(separator: " ").replacingOccurrences(of: #"\\s+"#, with: " ", options: .regularExpression)
+        return values.joined(separator: " ").replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
     }
 
     private func allButtons(in root: UIView) -> [UIButton] {
