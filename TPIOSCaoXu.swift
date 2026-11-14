@@ -531,13 +531,14 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         """
         webView.evaluateJavaScript(script) { [weak self] result, _ in
             guard let self, self.sessionActive else { return }
+            var hasMissionsPage = false
             if let payload = result as? [String: Any] {
                 if let webLines = payload["lines"] as? [String] {
                     lines.append(contentsOf: webLines)
                 }
                 self.visibleWebMissionTitles = payload["missionTitles"] as? [String] ?? []
                 let hasCheckInCard = payload["hasCheckInCard"] as? Bool ?? false
-                let hasMissionsPage = payload["hasMissionsPage"] as? Bool ?? false
+                hasMissionsPage = payload["hasMissionsPage"] as? Bool ?? false
                 let hasOpenMissionsControl = payload["hasOpenMissionsControl"] as? Bool ?? false
                 let diagnosticParts = [
                     payload["pageTitle"] as? String ?? "",
