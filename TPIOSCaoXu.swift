@@ -517,7 +517,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
 
         // The date control is the observed entry point to Kiếm thêm; do not treat
         // its presence alone as proof that the mission list has loaded.
-        if hasMissionsPage, missionsPageURL != pageURL {
+        if hasMissionsPage, missionsPageURL != pageURL,
+           pageURL != checkInPageURL || (!hasCheckInCard && !hasOpenMissionsControl) {
             missionsPageURL = pageURL
             changed = true
             lastMissionEntryPromptURL = nil
