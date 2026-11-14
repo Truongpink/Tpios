@@ -434,6 +434,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
 
         guard let webView = lazadaWebView else {
             processObservedLines(lines, pageURL: pageURL)
+            if isLazadaProcess { driveNativeAutomation(in: root) }
             return
         }
 
@@ -464,6 +465,189 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             self.processObservedLines(lines, pageURL: pageURL)
             self.driveAutomation(in: webView)
         }
+    }
+
+    private func driveNativeAutomation(in root: UIView) {
+        guard sessionActive, automationEnabled else { return }
+        guard let window = root.window else { return }
+
+        if automationTaskIndex == nil {
+            let count = taskNames.count
+            guard count > 0 else { return }
+            let next = (0..<count).map { (automationScanCursor + $0) % count }.first {
+                !completedTasks[$0] && !attemptedTaskIndices.contains($0) &&
+                taskNames[$0].localizedCaseInsensitiveContains("lướt")
+            }
+            guard let next else { return }
+            automationTaskIndex = next
+            let name = taskNames[next]
+            automationDuration = min(180, max(5, secondsRequired(in: name + " " + taskDetails[next]) ?? 15))
+            automationPhase = .selecting
+        }
+
+        guard let index = automationTaskIndex, taskNames.indices.contains(index) else {
+            automationTaskIndex = nil
+            automationPhase = .selecting
+            return
+        }
+        let taskName = taskNames[index]
+
+        switch automationPhase {
+        case .selecting:
+            let actionLabels = ["làm ngay", "thực hiện", "đi ngay", "xem ngay", "bắt đầu", "tham gia"]
+            var matches: [(UIButton, String)] = []
+            func visit(_ view: UIView) {
+                guard !view.isHidden, view.alpha > 0.01 else { return }
+                if let button = view as? UIButton {
+                    let label = normalizedTaskText([button.currentTitle, button.accessibilityLabel].compactMap { $0 }.joined(separator: " "))
+                    if actionLabels.contains(where: { label.localizedCaseInsensitiveContains($0) }) {
+                        var ancestor: UIView? = button
+                        for _ in 0..<7 {
+                            guard let card = ancestor else { break }
+                            let cardText = nativeText(in: card)
+                            if cardText.localizedCaseInsensitiveContains(taskName) {
+                                matches.append((button, cardText))
+                                break
+                            }
+                            ancestor = card.superview
+                        }
+                    }
+                }
+                view.subviews.forEach(visit)
+            }
+            visit(root)
+
+            guard matches.count == 1, let button = matches.first?.0,
+                  button.window === window, button.bounds.width > 0, button.bounds.height > 0,
+                  TPIOSAutoClickEngine.backendAvailable() else {
+                if lastAutomationLogIndex != index {
+                    lastAutomationLogIndex = index
+                    appendLog("Native: chưa tìm thấy duy nhất nút hành động thuộc thẻ nhiệm vụ: \(taskName) · khớp=\(matches.count)")
+                }
+                return
+            }
+
+            let point = button.convert(CGPoint(x: button.bounds.midX, y: button.bounds.midY), to: window)
+            guard TPIOSAutoClickEngine.shared.dispatchTouch(at: point, down: true) else {
+                appendLog("Native: HID không gửi được chạm DOWN: \(taskName)")
+                return
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+                guard let self else { _ = TPIOSAutoClickEngine.shared.dispatchTouch(at: point, down: false); return }
+                let released = TPIOSAutoClickEngine.shared.dispatchTouch(at: point, down: false)
+                guard released, self.sessionActive, self.automationEnabled else {
+                    self.appendLog("Native: không xác nhận được chạm UP; dừng để tránh kẹt touch")
+                    self.automationEnabled = false
+                    self.automationPhase = .selecting
+                    return
+                }
+                self.automationPhase = .waitingForPage
+                self.automationStartedAt = Date()
+                self.lastAutomationLogIndex = nil
+                self.appendLog("Native: đã chạm nút mở nhiệm vụ: \(taskName)")
+            }
+
+        case .waitingForPage:
+            guard let started = automationStartedAt, Date().timeIntervalSince(started) >= 2 else { return }
+            guard let scrollView = findScrollableView(in: root) else {
+                appendLog("Native: đã mở nhiệm vụ nhưng chưa tìm thấy vùng cuộn; giữ tiến độ, không đánh dấu hoàn thành")
+                automationStartedAt = Date()
+                return
+            }
+            nativeAutomationScrollView = scrollView
+            automationPhase = .scrolling
+            automationStartedAt = Date()
+            appendLog("Native: bắt đầu cuộn nhiệm vụ trong \(Int(automationDuration)) giây: \(taskName)")
+
+        case .scrolling:
+            guard let started = automationStartedAt else { return }
+            if Date().timeIntervalSince(started) >= automationDuration {
+                automationPhase = .returning
+                automationStartedAt = Date()
+                appendLog("Native: đã đủ thời lượng cuộn; tìm nút quay lại danh sách nhiệm vụ")
+            } else if let scrollView = nativeAutomationScrollView, scrollView.window === window {
+                let maxY = max(0, scrollView.contentSize.height - scrollView.bounds.height)
+                let nextY = min(maxY, scrollView.contentOffset.y + max(220, scrollView.bounds.height * 0.72))
+                scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: nextY), animated: true)
+            } else {
+                appendLog("Native: vùng cuộn không còn hợp lệ; dừng nhiệm vụ để giữ an toàn")
+                automationPhase = .selecting
+                automationTaskIndex = nil
+                nativeAutomationScrollView = nil
+            }
+
+        case .returning:
+            let backLabels = ["quay lại", "back", "trở về"]
+            let buttons = allButtons(in: root).filter { button in
+                let label = normalizedTaskText([button.currentTitle, button.accessibilityLabel].compactMap { $0 }.joined(separator: " ")).lowercased()
+                return backLabels.contains(where: { label == $0 || label.contains($0) })
+            }
+            guard buttons.count == 1, let button = buttons.first else {
+                if lastAutomationLogIndex != index {
+                    lastAutomationLogIndex = index
+                    appendLog("Native: không tìm thấy duy nhất nút quay lại; chưa xác nhận kết thúc nhiệm vụ")
+                }
+                return
+            }
+            let point = button.convert(CGPoint(x: button.bounds.midX, y: button.bounds.midY), to: window)
+            guard TPIOSAutoClickEngine.shared.dispatchTouch(at: point, down: true) else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+                let released = TPIOSAutoClickEngine.shared.dispatchTouch(at: point, down: false)
+                guard let self, released, self.sessionActive, self.automationEnabled else { return }
+                self.attemptedTaskIndices.insert(index)
+                self.automationScanCursor = (index + 1) % max(1, self.taskNames.count)
+                self.automationTaskIndex = nil
+                self.automationStartedAt = nil
+                self.nativeAutomationScrollView = nil
+                self.automationPhase = .selecting
+                self.lastAutomationLogIndex = nil
+                self.appendLog("Native: đã cuộn đủ thời lượng và chạm quay lại; chờ Lazada xác nhận: \(taskName)")
+            }
+        }
+    }
+
+    private weak var nativeAutomationScrollView: UIScrollView?
+
+    private func nativeText(in view: UIView) -> String {
+        var values: [String] = []
+        func collect(_ node: UIView) {
+            guard !node.isHidden, node.alpha > 0.01 else { return }
+            if let label = node as? UILabel, let text = label.text, !text.isEmpty { values.append(text) }
+            if let button = node as? UIButton {
+                if let title = button.currentTitle, !title.isEmpty { values.append(title) }
+                if let label = button.accessibilityLabel, !label.isEmpty { values.append(label) }
+            }
+            if let text = node.accessibilityLabel, !text.isEmpty { values.append(text) }
+            node.subviews.forEach(collect)
+        }
+        collect(view)
+        return values.joined(separator: " ").replacingOccurrences(of: #"\\s+"#, with: " ", options: .regularExpression)
+    }
+
+    private func allButtons(in root: UIView) -> [UIButton] {
+        var result: [UIButton] = []
+        func visit(_ view: UIView) {
+            guard !view.isHidden, view.alpha > 0.01 else { return }
+            if let button = view as? UIButton, button.isEnabled, button.window != nil { result.append(button) }
+            view.subviews.forEach(visit)
+        }
+        visit(root)
+        return result
+    }
+
+    private func findScrollableView(in root: UIView) -> UIScrollView? {
+        var candidates: [UIScrollView] = []
+        func visit(_ view: UIView) {
+            guard !view.isHidden, view.alpha > 0.01 else { return }
+            if let scroll = view as? UIScrollView,
+               scroll.contentSize.height > scroll.bounds.height + 30,
+               scroll.bounds.width > 100, scroll.bounds.height > 100 {
+                candidates.append(scroll)
+            }
+            view.subviews.forEach(visit)
+        }
+        visit(root)
+        return candidates.max { ($0.bounds.width * $0.bounds.height) < ($1.bounds.width * $1.bounds.height) }
     }
 
     private func driveAutomation(in webView: WKWebView) {
