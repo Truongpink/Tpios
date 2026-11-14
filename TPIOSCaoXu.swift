@@ -626,7 +626,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             appendLog("Đã thấy nút mở Kiếm thêm; đang chờ danh sách .mission-item-center tải xong")
         }
 
-        if hasMissionsPage, lastMissionEntryTapURL == pageURL {
+        if hasMissionsPage {
+            lastMissionEntryTapURL = nil
             missionEntryTapStartedAt = nil
             missionEntryTapAttempts = 0
             missionEntryTapFailureLogged = false
@@ -646,7 +647,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             guard missionEntryTapAttempts < 3 else {
                 if !missionEntryTapFailureLogged {
                     missionEntryTapFailureLogged = true
-                    appendLog("Kiếm thêm: Lazada chưa chuyển sang danh sách sau 3 lần chạm; dừng thử tự động")
+                    appendLog("Kiếm thêm: Lazada chưa chuyển sang danh sách sau 3 lần thử; dừng thử tự động")
                 }
                 return
             }
@@ -691,13 +692,13 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         }
 
         let windowPoint = webView.convert(webPoint, to: window)
-        guard TPIOSAutoClickEngine.shared.dispatchTouch(at: windowPoint, down: true) else {
-            appendLog("Kiếm thêm: HID không gửi được chạm DOWN")
-            return
-        }
         lastMissionEntryTapURL = pageURL
         missionEntryTapStartedAt = Date()
         missionEntryTapAttempts += 1
+        guard TPIOSAutoClickEngine.shared.dispatchTouch(at: windowPoint, down: true) else {
+            appendLog("Kiếm thêm: HID không gửi được chạm DOWN (lần thử \(missionEntryTapAttempts)/3)")
+            return
+        }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
             let released = TPIOSAutoClickEngine.shared.dispatchTouch(at: windowPoint, down: false)
