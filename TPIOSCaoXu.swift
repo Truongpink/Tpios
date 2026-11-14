@@ -512,7 +512,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     entryPoint: payload["missionEntryPoint"] as? [String: Any]
                 )
             } else if let webLines = result as? [String] {
-                lines.append(contentsOf: webLines)                self.visibleWebMissionTitles = []
+                lines.append(contentsOf: webLines)
+                self.visibleWebMissionTitles = []
             }
             self.processObservedLines(lines, pageURL: pageURL)
             self.driveAutomation(in: webView)
@@ -1054,7 +1055,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     }
 
     private func isLikelyTaskName(_ raw: String) -> Bool {
-        let name = normalizedTaskText(raw)        let lower = name.lowercased()
+        let name = normalizedTaskText(raw)
+        let lower = name.lowercased()
         guard name.count >= 12, name.count <= 140 else { return false }
 
         let excludedLabels: Set<String> = [
