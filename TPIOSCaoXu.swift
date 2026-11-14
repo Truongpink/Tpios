@@ -529,14 +529,14 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             hasOpenMissionsControl: (() => {
               const controls = Array.from(document.querySelectorAll('.lazcoins-check-in-date,a,button,[role="button"],[tabindex]'));
               return controls.some(e => {
-                const label = (e.innerText || e.textContent || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
+                const label = (e.innerText || e.textContent || '').replace(/\\s+/g, ' ').trim().toLocaleLowerCase();
                 return visible(e) && (label === 'kiếm thêm' || label === 'kiếm thêm xu');
               });
             })(),
             missionEntryPoint: (() => {
               const controls = Array.from(document.querySelectorAll('.lazcoins-check-in-date,a,button,[role="button"],[tabindex]'))
                 .filter(e => {
-                  const label = (e.innerText || e.textContent || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
+                  const label = (e.innerText || e.textContent || '').replace(/\\s+/g, ' ').trim().toLocaleLowerCase();
                   return visible(e) && (label === 'kiếm thêm' || label === 'kiếm thêm xu');
                 });
               if (controls.length !== 1) return {count: controls.length};
