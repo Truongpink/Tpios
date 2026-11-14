@@ -451,12 +451,12 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
           const missionTitles = Array.from(document.querySelectorAll('.mission-item-center'))
             .filter(e => visible(e) && !e.parentElement?.closest('.mission-item-center'))
             .map(card => {
-              const raw = (card.innerText || card.textContent || '').replace(/\s+/g, ' ').trim();
-              const progress = raw.match(/\b(\d+)\s*\/\s*(\d+)\b/);
+              const raw = (card.innerText || card.textContent || '').replace(/\\s+/g, ' ').trim();
+              const progress = raw.match(/\\b(\\d+)\\s*\\/\\s*(\\d+)\\b/);
               if (progress && Number(progress[1]) >= Number(progress[2])) return '';
-              return raw.replace(/\b\d+\s*\/\s*\d+\b[\s\S]*$/, '')
-                .replace(/\b(làm ngay|thực hiện|đi ngay|xem ngay|bắt đầu|tham gia|tìm kiếm)\b/gi, ' ')
-                .replace(/\s+/g, ' ').trim();
+              return raw.replace(/\\b\\d+\\s*\\/\\s*\\d+\\b[\\s\\S]*$/, '')
+                .replace(/\\b(làm ngay|thực hiện|đi ngay|xem ngay|bắt đầu|tham gia|tìm kiếm)\\b/gi, ' ')
+                .replace(/\\s+/g, ' ').trim();
             })
             .filter(t => t.length >= 12 && t.length <= 140);
           const bodyLines = (document.body ? document.body.innerText : '').split(/\\n+/);
