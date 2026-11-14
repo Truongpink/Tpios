@@ -30,7 +30,12 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
 
     private var taskNames: [String] = []
     private var completedTasks: [Bool] = []
+    private var taskDetails: [String] = []
+    private var taskURLs: [String] = []
     private var sessionActive = false
+    private var lastObservedPageURL: String?
+    private var lastObservedScreenSignature: String?
+
     private var logs: [String] = []
     private var resizeStartFrame = CGRect.zero
     private var resizeStartPoint = CGPoint.zero
@@ -50,6 +55,17 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         loadState()
         setup()
         refresh()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(appWillResignActive),
+            name: UIApplication.willResignActiveNotification, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(appDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification, object: nil
+        )
+        sessionActive = true
+        startObserver()
+        appendLog("Tự động bắt đầu ghi nhận khi mở Cào xu")
     }
 
     required init?(coder: NSCoder) {
@@ -58,6 +74,19 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
 
     deinit {
         stopObserver()
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func appWillResignActive() {
+        guard sessionActive else { return }
+        stopObserver()
+        appendLog("Lazada tạm mất trạng thái hoạt động; đã dừng quan sát và giữ tiến trình")
+    }
+
+    @objc private func appDidBecomeActive() {
+        guard sessionActive, observerTimer == nil else { return }
+        appendLog("Lazada hoạt động trở lại; tiếp tục quan sát")
+        startObserver()
     }
 
     private func setup() {
@@ -235,6 +264,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
            let state = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             taskNames = state["tasks"] as? [String] ?? []
             completedTasks = state["completed"] as? [Bool] ?? []
+            taskDetails = state["details"] as? [String] ?? []
+            taskURLs = state["urls"] as? [String] ?? []
         }
         if completedTasks.count < taskNames.count {
             completedTasks.append(contentsOf: repeatElement(false, count: taskNames.count - completedTasks.count))
@@ -247,12 +278,25 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             taskNames = validIndices.map { taskNames[$0] }
             completedTasks = validIndices.map { completedTasks[$0] }
         }
+        if taskDetails.count < taskNames.count {
+            taskDetails.append(contentsOf: repeatElement("", count: taskNames.count - taskDetails.count))
+        } else if taskDetails.count > taskNames.count {
+            taskDetails = Array(taskDetails.prefix(taskNames.count))
+        }
+        if taskURLs.count < taskNames.count {
+            taskURLs.append(contentsOf: repeatElement("", count: taskNames.count - taskURLs.count))
+        } else if taskURLs.count > taskNames.count {
+            taskURLs = Array(taskURLs.prefix(taskNames.count))
+        }
         logs = defaults.stringArray(forKey: logKey) ?? []
         sessionActive = false
     }
 
     private func saveState() {
-        let state: [String: Any] = ["tasks": taskNames, "completed": completedTasks]
+        let state: [String: Any] = [
+            "tasks": taskNames, "completed": completedTasks,
+            "details": taskDetails, "urls": taskURLs
+        ]
         if let data = try? JSONSerialization.data(withJSONObject: state) {
             UserDefaults.standard.set(data, forKey: stateKey)
         }
@@ -341,6 +385,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             $0.window != nil && !$0.isHidden && $0.alpha > 0.01 &&
             ($0.url?.host?.lowercased().contains("lazada") == true)
         }
+        let pageURL = lazadaWebView.flatMap { sanitizedPageURL($0.url) }
         let isLazadaTarget = isLazadaProcess || lazadaWebView != nil
 
         var lines: [String] = []
@@ -365,7 +410,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         guard isLazadaTarget else { return }
 
         guard let webView = lazadaWebView else {
-            processObservedLines(lines)
+            processObservedLines(lines, pageURL: pageURL)
             return
         }
 
@@ -393,8 +438,18 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             if let webLines = result as? [String] {
                 lines.append(contentsOf: webLines)
             }
-            self.processObservedLines(lines)
+            self.processObservedLines(lines, pageURL: pageURL)
         }
+    }
+
+    private func sanitizedPageURL(_ url: URL?) -> String? {
+        guard let url, let host = url.host?.lowercased(),
+              host.contains("lazada") else { return nil }
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.query = nil
+        components?.fragment = nil
+        guard let components else { return nil }
+        return "\(components.scheme ?? "https")://\(host)\(components.path)"
     }
 
     private func visibleAppRoot() -> UIView? {
@@ -517,7 +572,25 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         return taskWords.contains(where: { lower.contains($0) })
     }
 
-    private func processObservedLines(_ rawLines: [String]) {
+    private func processObservedLines(_ rawLines: [String], pageURL: String? = nil) {
+        let uniqueLines = rawLines.reduce(into: [String]()) { result, line in
+            let normalized = normalizedTaskText(line)
+            guard !normalized.isEmpty,
+                  !result.contains(where: {
+                      $0.compare(normalized, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+                  }) else { return }
+            result.append(normalized)
+        }
+        let candidateNames = uniqueLines.filter { isLikelyTaskName($0) }
+        let screenSignature = uniqueLines.prefix(14).joined(separator: "|")
+        let signature = String(screenSignature.hashValue)
+        if pageURL != lastObservedPageURL || signature != lastObservedScreenSignature {
+            lastObservedPageURL = pageURL
+            lastObservedScreenSignature = signature
+            let pageDescription = pageURL ?? "URL chưa đọc được"
+            appendLog("Màn hình thay đổi: \(pageDescription) · text=\(uniqueLines.count) · ứng viên nhiệm vụ=\(candidateNames.count)")
+        }
+
         let doneWords = [
             "đã hoàn thành", "hoàn thành", "đã nhận", "nhận thành công",
             "completed", "claimed", "done"
@@ -525,7 +598,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         var changed = false
         var seenThisPass = Set<String>()
 
-        for raw in rawLines {
+        for (lineIndex, raw) in uniqueLines.enumerated() {
             let name = normalizedTaskText(raw)
             guard isLikelyTaskName(name) else { continue }
             let key = name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
@@ -536,8 +609,30 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             }) {
                 taskNames.append(name)
                 completedTasks.append(false)
+                taskDetails.append("")
+                taskURLs.append("")
                 changed = true
                 appendLog("Nhận diện nhiệm vụ trên màn hình: \(name)")
+            }
+
+            if let index = taskNames.firstIndex(where: {
+                normalizedTaskText($0).compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+            }) {
+                let detailLines = uniqueLines.dropFirst(lineIndex + 1).prefix(3).filter {
+                    !$0.isEmpty && !$0.lowercased().contains("nhận xu") &&
+                    !$0.lowercased().contains("kiếm thêm") && !$0.lowercased().contains("làm ngay")
+                }
+                let detail = detailLines.joined(separator: " · ").prefix(240).description
+                if !detail.isEmpty && taskDetails[index] != detail {
+                    taskDetails[index] = detail
+                    changed = true
+                    appendLog("Đã lưu hướng dẫn cho nhiệm vụ: \(name)")
+                }
+                if candidateNames.count == 1, let pageURL, taskURLs[index] != pageURL {
+                    taskURLs[index] = pageURL
+                    changed = true
+                    appendLog("Đã gắn URL trang nhiệm vụ: \(name) → \(pageURL)")
+                }
             }
 
             let lower = raw.lowercased()
