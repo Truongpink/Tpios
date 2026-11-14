@@ -37,6 +37,9 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private var missionsPageURL: String?
     private var lastMissionEntryPromptURL: String?
     private var lastMissionEntryTapURL: String?
+    private var missionEntryTapStartedAt: Date?
+    private var missionEntryTapAttempts = 0
+    private var missionEntryTapFailureLogged = false
     private var sessionActive = false
     private var lastObservedPageURL: String?
     private var lastObservedScreenSignature: String?
@@ -524,22 +527,21 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             })(),
             hasMissionsPage: Array.from(document.querySelectorAll('.mission-item-center')).some(visible),
             hasOpenMissionsControl: (() => {
-              const exactLabel = e => /^kiếm thêm(?:\\s+xu)?$/i.test(
-                (e.innerText || e.textContent || '').replace(/\\s+/g, ' ').trim()
-              );
-              return Array.from(document.querySelectorAll('.lazcoins-check-in-date,a,button,[role="button"],[tabindex]'))
-                .some(e => visible(e) && exactLabel(e));
+              const controls = Array.from(document.querySelectorAll('.lazcoins-check-in-date,a,button,[role="button"],[tabindex]'));
+              return controls.some(e => {
+                const label = (e.innerText || e.textContent || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
+                return visible(e) && (label === 'kiếm thêm' || label === 'kiếm thêm xu');
+              });
             })(),
             missionEntryPoint: (() => {
-              const exactLabel = e => /^kiếm thêm(?:\\s+xu)?$/i.test(
-                (e.innerText || e.textContent || '').replace(/\\s+/g, ' ').trim()
-              );
               const controls = Array.from(document.querySelectorAll('.lazcoins-check-in-date,a,button,[role="button"],[tabindex]'))
-                .filter(e => visible(e) && exactLabel(e));
+                .filter(e => {
+                  const label = (e.innerText || e.textContent || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
+                  return visible(e) && (label === 'kiếm thêm' || label === 'kiếm thêm xu');
+                });
               if (controls.length !== 1) return {count: controls.length};
               const r = controls[0].getBoundingClientRect();
-              return {count: 1, x: r.left + r.width / 2, y: r.top + r.height / 2,
-                label: (controls[0].innerText || controls[0].textContent || '').trim()};
+              return {count: 1, x: r.left + r.width / 2, y: r.top + r.height / 2};
             })()
           };
         })();
@@ -581,6 +583,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     in: webView,
                     pageURL: pageURL,
                     hasCheckInCard: hasCheckInCard,
+                    hasMissionsPage: hasMissionsPage,
                     hasOpenMissionsControl: hasOpenMissionsControl,
                     entryPoint: payload["missionEntryPoint"] as? [String: Any]
                 )
@@ -604,15 +607,15 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
 
         if hasCheckInCard, checkInPageURL != pageURL {
             checkInPageURL = pageURL
+            lastMissionEntryTapURL = nil
+            missionEntryTapStartedAt = nil
+            missionEntryTapAttempts = 0
+            missionEntryTapFailureLogged = false
             changed = true
             appendLog("Đã xác nhận và lưu URL trang Điểm danh nhận xu: \(pageURL)")
         }
 
-        // The date control is the observed entry point to Kiếm thêm; do not treat
-        // its presence alone as proof that the mission list has loaded.
-        if hasMissionsPage, missionsPageURL != pageURL,
-           pageURL != checkInPageURL || (!hasCheckInCard && !hasOpenMissionsControl) ||
-            lastMissionEntryTapURL == pageURL {
+        if hasMissionsPage, missionsPageURL != pageURL {
             missionsPageURL = pageURL
             changed = true
             lastMissionEntryPromptURL = nil
@@ -622,16 +625,37 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             lastMissionEntryPromptURL = pageURL
             appendLog("Đã thấy nút mở Kiếm thêm; đang chờ danh sách .mission-item-center tải xong")
         }
+
+        if hasMissionsPage, lastMissionEntryTapURL == pageURL {
+            missionEntryTapStartedAt = nil
+            missionEntryTapAttempts = 0
+            missionEntryTapFailureLogged = false
+        }
         if changed { saveState() }
     }
 
     private func tapMissionEntryIfNeeded(in webView: WKWebView, pageURL: String?,
-                                         hasCheckInCard: Bool, hasOpenMissionsControl: Bool,
-                                         entryPoint: [String: Any]?) {
-        guard sessionActive, automationEnabled,
-              let pageURL, pageURL == checkInPageURL,
-              pageURL != missionsPageURL,
-              lastMissionEntryTapURL != pageURL else { return }
+                                         hasCheckInCard: Bool, hasMissionsPage: Bool,
+                                         hasOpenMissionsControl: Bool, entryPoint: [String: Any]?) {
+        guard sessionActive, automationEnabled, !hasMissionsPage,
+              let pageURL, pageURL == checkInPageURL else { return }
+
+        if lastMissionEntryTapURL == pageURL {
+            let elapsed = missionEntryTapStartedAt.map { Date().timeIntervalSince($0) } ?? 0
+            guard elapsed >= 8 else { return }
+            guard missionEntryTapAttempts < 3 else {
+                if !missionEntryTapFailureLogged {
+                    missionEntryTapFailureLogged = true
+                    appendLog("Kiếm thêm: Lazada chưa chuyển sang danh sách sau 3 lần chạm; dừng thử tự động")
+                }
+                return
+            }
+            missionEntryTapStartedAt = Date()
+            appendLog("Kiếm thêm: chưa thấy danh sách sau 8 giây; thử chạm lại lần \(missionEntryTapAttempts + 1)/3")
+        } else {
+            missionEntryTapAttempts = 0
+            missionEntryTapFailureLogged = false
+        }
 
         guard hasCheckInCard else {
             if lastMissionEntryPromptURL != pageURL {
@@ -667,12 +691,13 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         }
 
         let windowPoint = webView.convert(webPoint, to: window)
-        lastMissionEntryTapURL = pageURL
         guard TPIOSAutoClickEngine.shared.dispatchTouch(at: windowPoint, down: true) else {
-            lastMissionEntryTapURL = nil
             appendLog("Kiếm thêm: HID không gửi được chạm DOWN")
             return
         }
+        lastMissionEntryTapURL = pageURL
+        missionEntryTapStartedAt = Date()
+        missionEntryTapAttempts += 1
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
             let released = TPIOSAutoClickEngine.shared.dispatchTouch(at: windowPoint, down: false)
