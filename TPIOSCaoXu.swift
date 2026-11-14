@@ -61,6 +61,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private var automationScanCursor = 0
     private var lastAutomationLogIndex: Int?
     private var visibleWebMissionTitles: [String] = []
+    private var hasCurrentMissionSnapshot = false
 
     private let stateKey = "TPIOSCaoXuObservedState"
     private let logKey = "TPIOSCaoXuLogs"
@@ -80,7 +81,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         )
         sessionActive = true
         startObserver()
-        appendLog("Tự động bắt đầu ghi nhận khi mở Cào xu; chờ anh bấm Bắt đầu để chạy nhiệm vụ")
+        appendLog("Đang quan sát Lazada; chờ anh bấm Bắt đầu để chạy nhiệm vụ")
     }
 
     required init?(coder: NSCoder) {
@@ -94,8 +95,12 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
 
     @objc private func appWillResignActive() {
         guard sessionActive else { return }
+        sessionActive = false
+        automationEnabled = false
         stopObserver()
-        appendLog("Lazada tạm mất trạng thái hoạt động; đã dừng quan sát và giữ tiến trình")
+        resetAutomationPosition()
+        refresh()
+        appendLog("Lazada mất trạng thái foreground; đã tạm dừng và giữ tiến độ")
     }
 
     @objc private func appDidBecomeActive() {
@@ -340,13 +345,17 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private func refresh() {
         let total = taskNames.count
         let completed = completedTasks.filter { $0 }.count
-        progressLabel.text = "\(completed)/\(total) hoàn thành · còn \(max(0, total - completed))"
-        startCaption.text = sessionActive ? "Đang theo dõi" : "Tiếp tục"
-        progressView.progress = total == 0 ? 0 : Float(completed) / Float(total)
+        progressLabel.text = hasCurrentMissionSnapshot
+            ? "\(completed)/\(total) hoàn thành · còn \(max(0, total - completed))"
+            : "Chờ đồng bộ danh sách nhiệm vụ Lazada"
+        startCaption.text = automationEnabled ? "Đang chạy" : (sessionActive ? "Bắt đầu" : "Tiếp tục")
+        progressView.progress = !hasCurrentMissionSnapshot || total == 0 ? 0 : Float(completed) / Float(total)
         if !sessionActive {
-            statusLabel.text = total == 0 ? "Chưa ghi nhận nhiệm vụ · Mở trang nhiệm vụ Lazada" : "Đã tạm dừng · \(total) nhiệm vụ đã nhận diện"
+            statusLabel.text = "Đã tạm dừng · tiến độ đã lưu"
+        } else if automationEnabled {
+            statusLabel.text = total == 0 ? "Đang chạy · chờ danh sách nhiệm vụ" : "Đang tự động · \(total - completed) nhiệm vụ còn lại"
         } else {
-            statusLabel.text = total == 0 ? "Đang quan sát màn hình Lazada…" : "Đang quan sát · \(total - completed) nhiệm vụ còn lại"
+            statusLabel.text = "Đang quan sát Lazada · chờ bấm Bắt đầu"
         }
         refreshLog()
     }
@@ -367,12 +376,12 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         guard !automationEnabled else { return }
         sessionActive = true
         automationEnabled = true
-        automationPhase = .selecting
-        automationTaskIndex = nil
+        attemptedTaskIndices.removeAll()
         automationScanCursor = 0
+        resetAutomationPosition()
         lastAutomationLogIndex = nil
         didLogObserverDiagnostics = false
-        appendLog("Bật tự động Cào xu; ưu tiên nhiệm vụ lướt có thời lượng xác định")
+        appendLog("Bật tự động Cào xu; xử lý nhiệm vụ theo danh sách Lazada")
         startObserver()
         refresh()
     }
@@ -381,8 +390,16 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         sessionActive = false
         automationEnabled = false
         stopObserver()
-        appendLog("Đã tạm dừng tự động; tiến độ được giữ lại")
+        resetAutomationPosition()
+        appendLog("Đã tạm dừng tự động; tiến độ đã xác nhận được giữ lại")
         refresh()
+    }
+
+    private func resetAutomationPosition() {
+        automationPhase = .selecting
+        automationTaskIndex = nil
+        automationStartedAt = nil
+        nativeAutomationScrollView = nil
     }
 
     private func startObserver() {
@@ -505,6 +522,9 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     hasMissionsPage: hasMissionsPage,
                     hasOpenMissionsControl: hasOpenMissionsControl
                 )
+                if hasMissionsPage {
+                    self.syncMissionTasks(self.visibleWebMissionTitles)
+                }
                 self.tapMissionEntryIfNeeded(
                     in: webView,
                     pageURL: pageURL,
@@ -516,7 +536,11 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 lines.append(contentsOf: webLines)
                 self.visibleWebMissionTitles = []
             }
-            self.processObservedLines(lines, pageURL: pageURL)
+            self.processObservedLines(
+                lines,
+                pageURL: pageURL,
+                authoritativeMissionTitles: hasMissionsPage ? self.visibleWebMissionTitles : nil
+            )
             self.driveAutomation(in: webView)
         }
     }
@@ -591,6 +615,59 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         }
     }
 
+    private func missionKind(for raw: String) -> String {
+        let text = raw.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).lowercased()
+        if text.contains("tìm kiếm") || text.contains("tìm '") || text.contains("tìm \"") { return "search" }
+        if text.contains("vào game") || text.contains("trò chơi") || text.contains("mini game") { return "game" }
+        if text.contains("video") || text.contains("livestream") || text.contains("live stream") { return "video" }
+        if text.contains("lướt") || text.contains("ghé thăm") || text.contains("visit") { return "scroll" }
+        if text.contains("xem") && text.contains("sản phẩm") { return "product" }
+        return "other"
+    }
+
+    private func syncMissionTasks(_ rawNames: [String]) {
+        var names: [String] = []
+        var seen = Set<String>()
+        for raw in rawNames {
+            let name = normalizedTaskText(raw)
+            guard isLikelyTaskName(name) else { continue }
+            let key = name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            guard seen.insert(key).inserted else { continue }
+            names.append(name)
+        }
+
+        let old = Dictionary(uniqueKeysWithValues: taskNames.enumerated().map { index, name in
+            let key = normalizedTaskText(name).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            return (key, (completedTasks.indices.contains(index) ? completedTasks[index] : false,
+                          taskDetails.indices.contains(index) ? taskDetails[index] : "",
+                          taskURLs.indices.contains(index) ? taskURLs[index] : ""))
+        })
+        let changed = names != taskNames
+        taskNames = names
+        completedTasks = names.map { name in
+            let key = normalizedTaskText(name).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            return old[key]?.0 ?? false
+        }
+        taskDetails = names.map { name in
+            let key = normalizedTaskText(name).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            return old[key]?.1 ?? ""
+        }
+        taskURLs = names.map { name in
+            let key = normalizedTaskText(name).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            return old[key]?.2 ?? ""
+        }
+        hasCurrentMissionSnapshot = true
+        if changed {
+            attemptedTaskIndices.removeAll()
+            automationScanCursor = 0
+            resetAutomationPosition()
+            appendLog("Đã đồng bộ danh sách nhiệm vụ hiện tại từ Lazada: \(names.count) nhiệm vụ")
+            saveObservedTasks()
+        } else {
+            refresh()
+        }
+    }
+
     private func driveNativeAutomation(in root: UIView) {
         guard sessionActive, automationEnabled else { return }
         guard let window = root.window else { return }
@@ -600,7 +677,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             guard count > 0 else { return }
             let next = (0..<count).map { (automationScanCursor + $0) % count }.first {
                 !completedTasks[$0] && !attemptedTaskIndices.contains($0) &&
-                taskNames[$0].localizedCaseInsensitiveContains("lướt")
+                missionKind(for: taskNames[$0]) == "scroll"
             }
             guard let next else { return }
             automationTaskIndex = next
@@ -791,12 +868,14 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 let key = normalizedTaskText(taskNames[$0])
                     .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
                 return !completedTasks[$0] && !attemptedTaskIndices.contains($0) &&
-                    visibleKeys.contains(key) && taskNames[$0].localizedCaseInsensitiveContains("lướt")
+                    visibleKeys.contains(key) && missionKind(for: taskNames[$0]) == "scroll"
             }
             guard let next else {
                 if lastAutomationLogIndex != -1 {
                     lastAutomationLogIndex = -1
-                    appendLog("WebView: không có nhiệm vụ lướt đang hiển thị/chưa hoàn thành trong .mission-item-center; bỏ qua tên cũ đã lưu")
+                    let waiting = Dictionary(grouping: taskNames.indices.filter { !completedTasks[$0] }, by: { missionKind(for: taskNames[$0]) })
+                        .map { "\($0.key): \($0.value.count)" }.sorted().joined(separator: ", ")
+                    appendLog("Chưa có nhiệm vụ lướt đủ điều kiện tự động; nhiệm vụ còn lại theo loại: \(waiting.isEmpty ? "không có" : waiting)")
                 }
                 return
             }
@@ -1084,7 +1163,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         return taskWords.contains(where: { lower.contains($0) })
     }
 
-    private func processObservedLines(_ rawLines: [String], pageURL: String? = nil) {
+    private func processObservedLines(_ rawLines: [String], pageURL: String? = nil,
+                                      authoritativeMissionTitles: [String]? = nil) {
         let uniqueLines = rawLines.reduce(into: [String]()) { result, line in
             let normalized = normalizedTaskText(line)
             guard !normalized.isEmpty,
@@ -1093,7 +1173,10 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                   }) else { return }
             result.append(normalized)
         }
-        let candidateNames = uniqueLines.filter { isLikelyTaskName($0) }
+        let candidateNames = authoritativeMissionTitles ?? uniqueLines.filter { isLikelyTaskName($0) }
+        let authoritativeKeys = authoritativeMissionTitles.map {
+            Set($0.map { normalizedTaskText($0).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current) })
+        }
         let screenSignature = uniqueLines.prefix(14).joined(separator: "|")
         let signature = String(screenSignature.hashValue)
         if pageURL != lastObservedPageURL || signature != lastObservedScreenSignature {
@@ -1119,6 +1202,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             let name = normalizedTaskText(raw)
             guard isLikelyTaskName(name) else { continue }
             let key = name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            if let authoritativeKeys, !authoritativeKeys.contains(key) { continue }
             guard seenThisPass.insert(key).inserted else { continue }
 
             if !taskNames.contains(where: {
@@ -1186,6 +1270,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         stopObserver()
         sessionActive = false
         automationEnabled = false
+        resetAutomationPosition()
         saveState()
         onBack?()
     }
@@ -1194,6 +1279,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         stopObserver()
         sessionActive = false
         automationEnabled = false
+        resetAutomationPosition()
         saveState()
         onClose?()
     }
