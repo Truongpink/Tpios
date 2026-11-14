@@ -353,7 +353,9 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         if !sessionActive {
             statusLabel.text = "Đã tạm dừng · tiến độ đã lưu"
         } else if automationEnabled {
-            statusLabel.text = total == 0 ? "Đang chạy · chờ danh sách nhiệm vụ" : "Đang tự động · \(total - completed) nhiệm vụ còn lại"
+            statusLabel.text = hasCurrentMissionSnapshot && total > 0
+                ? "Đang tự động · \(total - completed) nhiệm vụ còn lại"
+                : "Đang chạy · chờ danh sách nhiệm vụ Lazada"
         } else {
             statusLabel.text = "Đang quan sát Lazada · chờ bấm Bắt đầu"
         }
@@ -636,12 +638,14 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             names.append(name)
         }
 
-        let old = Dictionary(uniqueKeysWithValues: taskNames.enumerated().map { index, name in
+        guard !names.isEmpty else { return }
+        var old: [String: (Bool, String, String)] = [:]
+        for (index, name) in taskNames.enumerated() {
             let key = normalizedTaskText(name).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            return (key, (completedTasks.indices.contains(index) ? completedTasks[index] : false,
-                          taskDetails.indices.contains(index) ? taskDetails[index] : "",
-                          taskURLs.indices.contains(index) ? taskURLs[index] : ""))
-        })
+            old[key] = (completedTasks.indices.contains(index) ? completedTasks[index] : false,
+                        taskDetails.indices.contains(index) ? taskDetails[index] : "",
+                        taskURLs.indices.contains(index) ? taskURLs[index] : "")
+        }
         let changed = names != taskNames
         taskNames = names
         completedTasks = names.map { name in
