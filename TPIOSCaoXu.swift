@@ -56,6 +56,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private var attemptedTaskIndices = Set<Int>()
     private var automationScanCursor = 0
     private var lastAutomationLogIndex: Int?
+    private var visibleWebMissionTitles: [String] = []
 
     private let stateKey = "TPIOSCaoXuObservedState"
     private let logKey = "TPIOSCaoXuLogs"
@@ -447,20 +448,40 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
               r.top < window.innerHeight && r.left < window.innerWidth &&
               s.display !== 'none' && s.visibility !== 'hidden';
           };
+          const missionTitles = Array.from(document.querySelectorAll('.mission-item-center'))
+            .filter(e => visible(e) && !e.parentElement?.closest('.mission-item-center'))
+            .map(card => {
+              const raw = (card.innerText || card.textContent || '').replace(/\s+/g, ' ').trim();
+              const progress = raw.match(/\b(\d+)\s*\/\s*(\d+)\b/);
+              if (progress && Number(progress[1]) >= Number(progress[2])) return '';
+              return raw.replace(/\b\d+\s*\/\s*\d+\b[\s\S]*$/, '')
+                .replace(/\b(làm ngay|thực hiện|đi ngay|xem ngay|bắt đầu|tham gia|tìm kiếm)\b/gi, ' ')
+                .replace(/\s+/g, ' ').trim();
+            })
+            .filter(t => t.length >= 12 && t.length <= 140);
           const bodyLines = (document.body ? document.body.innerText : '').split(/\\n+/);
           const leafLines = Array.from(document.querySelectorAll('body *'))
             .filter(e => e.children.length === 0 && visible(e))
             .map(e => (e.innerText || e.textContent || '').trim());
-          return bodyLines.concat(leafLines)
-            .map(t => t.trim())
-            .filter(t => t.length > 1 && t.length < 180)
-            .slice(0, 700);
+          return {
+            lines: bodyLines.concat(leafLines)
+              .map(t => t.trim())
+              .filter(t => t.length > 1 && t.length < 180)
+              .slice(0, 700),
+            missionTitles: missionTitles
+          };
         })();
         """
         webView.evaluateJavaScript(script) { [weak self] result, _ in
             guard let self, self.sessionActive else { return }
-            if let webLines = result as? [String] {
+            if let payload = result as? [String: Any] {
+                if let webLines = payload["lines"] as? [String] {
+                    lines.append(contentsOf: webLines)
+                }
+                self.visibleWebMissionTitles = payload["missionTitles"] as? [String] ?? []
+            } else if let webLines = result as? [String] {
                 lines.append(contentsOf: webLines)
+                self.visibleWebMissionTitles = []
             }
             self.processObservedLines(lines, pageURL: pageURL)
             self.driveAutomation(in: webView)
@@ -658,14 +679,19 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
 
         if automationTaskIndex == nil {
             let count = taskNames.count
+            let visibleKeys = Set(visibleWebMissionTitles.map {
+                normalizedTaskText($0).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            })
             let next = (0..<count).map { (automationScanCursor + $0) % count }.first {
-                !completedTasks[$0] && !attemptedTaskIndices.contains($0) &&
-                taskNames[$0].localizedCaseInsensitiveContains("lướt")
+                let key = normalizedTaskText(taskNames[$0])
+                    .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                return !completedTasks[$0] && !attemptedTaskIndices.contains($0) &&
+                    visibleKeys.contains(key) && taskNames[$0].localizedCaseInsensitiveContains("lướt")
             }
             guard let next else {
                 if lastAutomationLogIndex != -1 {
                     lastAutomationLogIndex = -1
-                    appendLog("Chưa còn nhiệm vụ lướt phù hợp; các nhiệm vụ tìm sản phẩm/game chưa được tự chạy ở phiên này")
+                    appendLog("WebView: không có nhiệm vụ lướt đang hiển thị/chưa hoàn thành trong .mission-item-center; bỏ qua tên cũ đã lưu")
                 }
                 return
             }
@@ -691,41 +717,95 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             (function(){
               const title = \(json)[0].normalize('NFC').toLowerCase();
               const norm = s => (s || '').replace(/\\s+/g,' ').trim().normalize('NFC').toLowerCase();
-              const visible = e => { const r=e.getBoundingClientRect(),s=getComputedStyle(e); return r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth&&s.display!=='none'&&s.visibility!=='hidden'; };
+              const visible = e => {
+                const r=e.getBoundingClientRect(),s=getComputedStyle(e);
+                return r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth&&s.display!=='none'&&s.visibility!=='hidden';
+              };
+              const center = e => {
+                const r=e.getBoundingClientRect();
+                return {status:'ready',x:r.left+r.width/2,y:r.top+r.height/2};
+              };
+              const cards = Array.from(document.querySelectorAll('.mission-item-center'))
+                .filter(e => visible(e) && !e.parentElement?.closest('.mission-item-center'));
+              if (cards.length) {
+                const matches = cards.filter(card => {
+                  const raw = norm(card.innerText || card.textContent);
+                  const cardTitle = raw.replace(/\\b\\d+\\s*\\/\\s*\\d+\\b[\\s\\S]*$/, '')
+                    .replace(/\\b(làm ngay|thực hiện|đi ngay|xem ngay|bắt đầu|tham gia|tìm kiếm)\\b/gi, ' ')
+                    .replace(/\\s+/g, ' ').trim();
+                  return cardTitle === title || cardTitle.includes(title) || title.includes(cardTitle);
+                });
+                if (!matches.length) return {status:'mission_not_found'};
+                if (matches.length !== 1) return {status:'mission_ambiguous'};
+                const card = matches[0];
+                const go = card.querySelector('.mission-item-btn-go');
+                if (go && visible(go) && norm(go.innerText || go.textContent) !== 'tìm kiếm') return center(go);
+                const action = Array.from(card.querySelectorAll('a,button,[role="button"],[onclick]'))
+                  .find(e => visible(e) && /làm ngay|thực hiện|đi ngay|xem ngay|tham gia|bắt đầu/i.test(norm(e.innerText || e.textContent)));
+                return action ? center(action) : {status:'mission_action_not_found'};
+              }
               const clickable = 'a,button,[role="button"],[onclick]';
               const titleNodes = Array.from(document.querySelectorAll('body *')).filter(e => {
                 if (!visible(e)) return false;
                 const t = norm(e.innerText || e.textContent);
                 return t && t.includes(title) && t.length <= title.length + 100;
               }).sort((a,b) => (a.innerText || a.textContent || '').length - (b.innerText || b.textContent || '').length);
-              if (!titleNodes.length) return 'title_not_found';
+              if (!titleNodes.length) return {status:'title_not_found'};
               const titleNode = titleNodes[0];
               const direct = titleNode.closest(clickable);
-              if (direct && visible(direct)) { direct.click(); return 'clicked_title'; }
+              if (direct && visible(direct)) return center(direct);
               let card = titleNode;
               for (let depth=0; depth<6 && card; depth++, card=card.parentElement) {
                 const actions = Array.from(card.querySelectorAll(clickable)).filter(visible);
                 const action = actions.find(e => /làm ngay|thực hiện|đi ngay|xem ngay|tham gia|bắt đầu/i.test(norm(e.innerText || e.textContent)));
-                if (action) { action.click(); return 'clicked_action'; }
+                if (action) return center(action);
               }
-              return 'title_found_no_action';
+              return {status:'title_found_no_action'};
             })();
             """
             webView.evaluateJavaScript(script) { [weak self] result, error in
                 guard let self, self.sessionActive, self.automationEnabled else { return }
-                let clickResult = result as? String ?? "no_result"
-                if clickResult.hasPrefix("clicked_") {
-                    self.automationPhase = .waitingForPage
-                    self.automationStartedAt = Date()
-                    self.lastAutomationLogIndex = nil
-                    self.appendLog("Đã bấm mở nhiệm vụ (\(clickResult)): \(taskName)")
+                let payload = result as? [String: Any]
+                let clickResult = payload?["status"] as? String ?? "no_result"
+                if clickResult == "ready",
+                   let x = payload?["x"] as? Double,
+                   let y = payload?["y"] as? Double,
+                   let window = webView.window,
+                   TPIOSAutoClickEngine.backendAvailable() {
+                    let webPoint = CGPoint(x: x, y: y)
+                    guard webView.bounds.insetBy(dx: 1, dy: 1).contains(webPoint) else {
+                        self.appendLog("WebView: tọa độ nút nhiệm vụ nằm ngoài vùng hiển thị; bỏ qua chạm")
+                        self.automationTaskIndex = nil
+                        self.automationPhase = .selecting
+                        return
+                    }
+                    let windowPoint = webView.convert(webPoint, to: window)
+                    guard TPIOSAutoClickEngine.shared.dispatchTouch(at: windowPoint, down: true) else {
+                        self.appendLog("WebView: HID không gửi được chạm DOWN: \(taskName)")
+                        self.automationTaskIndex = nil
+                        return
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+                        let released = TPIOSAutoClickEngine.shared.dispatchTouch(at: windowPoint, down: false)
+                        guard let self else { return }
+                        guard released, self.sessionActive, self.automationEnabled else {
+                            self.appendLog("WebView: không xác nhận được chạm UP; dừng tự động để tránh kẹt touch")
+                            self.automationEnabled = false
+                            self.automationPhase = .selecting
+                            return
+                        }
+                        self.automationPhase = .waitingForPage
+                        self.automationStartedAt = Date()
+                        self.lastAutomationLogIndex = nil
+                        self.appendLog("Đã chạm nút nhiệm vụ bằng DOM + HID: \(taskName)")
+                    }
                 } else {
-                    if self.lastAutomationLogIndex != index {
+                    if clickResult == "ready" {
+                        self.appendLog("WebView: đã tìm thấy nút nhưng HID chưa sẵn sàng hoặc WebView không còn cửa sổ")
+                    } else if self.lastAutomationLogIndex != index {
                         self.lastAutomationLogIndex = index
                         self.appendLog("Chưa mở được nhiệm vụ: \(taskName) · kết quả=\(clickResult)")
                     }
-                    // Chưa hiển thị trên màn hình hiện tại: thử nhiệm vụ lướt kế tiếp,
-                    // không loại nhiệm vụ vĩnh viễn khỏi phiên chạy.
                     self.automationScanCursor = (index + 1) % max(1, self.taskNames.count)
                     self.automationTaskIndex = nil
                     self.automationPhase = .selecting
