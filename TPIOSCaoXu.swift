@@ -110,7 +110,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
 
         configureSmallButton(addTaskButton, title: "＋ Thêm", action: #selector(addTaskTapped))
         configureSmallButton(listTasksButton, title: "Danh sách", action: #selector(listTasksTapped))
-        configureSmallButton(completeTaskButton, title: "✓ Hoàn thành", action: #selector(completeTaskTapped))
+        configureSmallButton(completeTaskButton, title: "✓ Xong", action: #selector(completeTaskTapped))
         addSubview(addTaskButton)
         addSubview(listTasksButton)
         addSubview(completeTaskButton)
