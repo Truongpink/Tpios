@@ -66,6 +66,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private var automationScanCursor = 0
     private var lastAutomationLogIndex: Int?
     private var visibleWebMissionTitles: [String] = []
+    private var collectedMissionNames: [String] = []
     private var hasCurrentMissionSnapshot = false
 
     private let stateKey = "TPIOSCaoXuObservedState"
@@ -800,8 +801,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     }
 
     private func syncMissionTasks(_ rawNames: [String]) {
-        var names = taskNames
-        var seen = Set(taskNames.map {
+        var names = collectedMissionNames
+        var seen = Set(collectedMissionNames.map {
             normalizedTaskText($0).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
         })
         for raw in rawNames {
@@ -820,7 +821,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                         taskURLs.indices.contains(index) ? taskURLs[index] : "")
         }
         let previousCount = taskNames.count
-        let changed = names.count != previousCount
+        let changed = names != taskNames
+        collectedMissionNames = names
         taskNames = names
         completedTasks = names.map { name in
             let key = normalizedTaskText(name).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
