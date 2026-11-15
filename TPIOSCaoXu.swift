@@ -841,13 +841,15 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     }
 
     private func missionKind(for raw: String) -> String {
-        // Normalize away Vietnamese diacritics before matching; keep keywords unaccented too.
         let text = raw.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).lowercased()
-        if text.contains("tim kiem") || text.contains("tim '") || text.contains("tim \"") { return "search" }
-        if text.contains("vao game") || text.contains("tro choi") || text.contains("mini game") { return "game" }
+        if text.contains("tim '") || text.contains("tim kiem") || text.contains("tim \"") { return "search" }
+        if text.contains("choi ") || text.contains("vao game") || text.contains("tro choi") || text.contains("mini game") { return "game" }
         if text.contains("video") || text.contains("livestream") || text.contains("live stream") { return "video" }
-        if text.contains("luot") || text.contains("ghe tham") || text.contains("visit") { return "scroll" }
-        if text.contains("xem") && text.contains("san pham") { return "product" }
+        if text.contains("thong bao") { return "notification" }
+        if text.contains("view any") || (text.contains("tim san pham") && text.contains("deals")) ||
+           (text.contains("xem") && text.contains("san pham")) { return "product" }
+        if text.contains("luot") || text.contains("ghe tham") || text.contains("visit") ||
+           text.contains("xem trang") || text.contains("thu thach dang nhap") { return "scroll" }
         return "other"
     }
 
@@ -1507,9 +1509,10 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
 
         let taskWords = [
             "điểm danh", "livestream", "live", "theo dõi", "xem sản phẩm", "xem 3 sản phẩm",
-            "xem video", "chia sẻ", "thêm vào giỏ", "mua hàng", "đánh giá", "tìm kiếm",
-            "tìm ", "nhận xu", "check-in", "watch", "share", "visit", "lướt xem",
-            "lướt", "siêu tiết kiệm", "vào game", "trò chơi"
+            "xem video", "xem trang", "thử thách đăng nhập", "thông báo điểm danh",
+            "dailyrewards", "lazmall", "chia sẻ", "thêm vào giỏ", "mua hàng", "đánh giá",
+            "tìm kiếm", "tìm ", "nhận xu", "check-in", "watch", "view any", "share",
+            "visit", "lướt xem", "lướt", "siêu tiết kiệm", "chơi ", "vào game", "trò chơi"
         ]
         return taskWords.contains(where: { lower.contains($0) })
     }
