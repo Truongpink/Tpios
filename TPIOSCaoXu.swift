@@ -1041,14 +1041,91 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         case .returning:
             if lastAutomationLogIndex == -2 {
                 guard let started = automationStartedAt, Date().timeIntervalSince(started) >= 3 else { return }
-                attemptedTaskIndices.insert(index)
-                automationScanCursor = (index + 1) % max(1, taskNames.count)
-                automationTaskIndex = nil
-                automationStartedAt = nil
-                nativeAutomationScrollView = nil
-                automationPhase = .selecting
-                lastAutomationLogIndex = nil
-                appendLog("Native: đã gửi chạm Nhận xu; chờ Lazada cập nhật trạng thái nhiệm vụ: \(taskName)")
+                lastAutomationLogIndex = -3
+                automationStartedAt = Date()
+                appendLog("Native: đã chờ Lazada phản hồi sau chạm Nhận xu; đang tìm nút quay lại danh sách: \\(taskName)")
+                return
+            }
+
+            if lastAutomationLogIndex == -3 {
+                var explicitBackTargets: [UIView] = []
+                var topLeftControls: [UIView] = []
+                func visitBackControls(_ view: UIView) {
+                    guard !view.isHidden, view.alpha > 0.01, view.window === window else { return }
+                    let frame = view.convert(view.bounds, to: window)
+                    let isControl = view is UIButton || view is UIControl ||
+                        view.accessibilityTraits.contains(.button) ||
+                        !(view.gestureRecognizers ?? []).isEmpty
+                    if isControl, frame.minX >= 0, frame.minX < 100,
+                       frame.minY >= 0, frame.minY < 120,
+                       frame.width >= 20, frame.width <= 90,
+                       frame.height >= 20, frame.height <= 90 {
+                        if !topLeftControls.contains(where: { $0 === view }) {
+                            topLeftControls.append(view)
+                        }
+                        let label = normalizedTaskText(nativeText(in: view)).lowercased()
+                        if ["back", "quay lại", "trở về", "返回"].contains(where: { label.contains($0) }),
+                           !explicitBackTargets.contains(where: { $0 === view }) {
+                            explicitBackTargets.append(view)
+                        }
+                    }
+                    view.subviews.forEach(visitBackControls)
+                }
+                visitBackControls(root)
+                let candidates = explicitBackTargets.isEmpty ? topLeftControls : explicitBackTargets
+                guard candidates.count == 1, let target = candidates.first,
+                      TPIOSAutoClickEngine.backendAvailable() else {
+                    if lastAutomationLogIndex != -5 {
+                        lastAutomationLogIndex = -5
+                        appendLog("Native: chưa xác định duy nhất nút quay lại · nút vùng góc trái trên=\\(topLeftControls.count) · nút có nhãn=\\(explicitBackTargets.count); giữ nguyên nhiệm vụ")
+                    }
+                    return
+                }
+
+                let point = target.convert(CGPoint(x: target.bounds.midX, y: target.bounds.midY), to: window)
+                guard TPIOSAutoClickEngine.shared.dispatchTouch(at: point, down: true) else {
+                    appendLog("Native quay lại: HID DOWN thất bại; chưa chuyển nhiệm vụ")
+                    return
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+                    guard let self else { _ = TPIOSAutoClickEngine.shared.dispatchTouch(at: point, down: false); return }
+                    let released = TPIOSAutoClickEngine.shared.dispatchTouch(at: point, down: false)
+                    guard released, self.sessionActive, self.automationEnabled else {
+                        self.automationEnabled = false
+                        self.appendLog("Native quay lại: HID UP thất bại; đã dừng để tránh kẹt touch")
+                        return
+                    }
+                    self.lastAutomationLogIndex = -4
+                    self.automationStartedAt = Date()
+                    self.appendLog("Native: đã chạm HID nút quay lại; chờ danh sách nhiệm vụ xuất hiện")
+                }
+                return
+            }
+
+            if lastAutomationLogIndex == -4 {
+                let visibleText = normalizedTaskText(nativeText(in: root)).folding(
+                    options: [.caseInsensitive, .diacriticInsensitive], locale: .current
+                )
+                let matchingTasks = taskNames.filter { name in
+                    let key = normalizedTaskText(name).folding(
+                        options: [.caseInsensitive, .diacriticInsensitive], locale: .current
+                    )
+                    return key.count >= 12 && visibleText.contains(key)
+                }
+                if matchingTasks.count >= 2 {
+                    attemptedTaskIndices.insert(index)
+                    automationScanCursor = (index + 1) % max(1, taskNames.count)
+                    automationTaskIndex = nil
+                    automationStartedAt = nil
+                    nativeAutomationScrollView = nil
+                    automationPhase = .selecting
+                    lastAutomationLogIndex = nil
+                    appendLog("Native: đã xác nhận danh sách nhiệm vụ trở lại (\\(matchingTasks.count) thẻ); chuyển sang nhiệm vụ tiếp theo")
+                } else if let started = automationStartedAt, Date().timeIntervalSince(started) >= 12,
+                          lastAutomationLogIndex != -6 {
+                    lastAutomationLogIndex = -6
+                    appendLog("Native: chưa thấy danh sách nhiệm vụ sau khi quay lại; không tự mở nhiệm vụ khác để tránh chạm nhầm")
+                }
                 return
             }
 
@@ -1092,7 +1169,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 if lastAutomationLogIndex != index {
                     lastAutomationLogIndex = index
                     let observed = claimLabels.prefix(5).joined(separator: " | ")
-                    appendLog("Native: chưa tìm thấy duy nhất nút Nhận xu · khớp=\(claimTargets.count) · nhãn=\(observed.isEmpty ? "không có" : observed)")
+                    appendLog("Native: chưa tìm thấy duy nhất nút Nhận xu · khớp=\\(claimTargets.count) · nhãn=\\(observed.isEmpty ? "không có" : observed)")
                 }
                 return
             }
@@ -1112,7 +1189,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 }
                 self.automationStartedAt = Date()
                 self.lastAutomationLogIndex = -2
-                self.appendLog("Native: đã chạm HID nút Nhận xu; chờ Lazada phản hồi: \(taskName)")
+                self.appendLog("Native: đã chạm HID nút Nhận xu; chờ Lazada phản hồi: \\(taskName)")
             }
         }
     }
