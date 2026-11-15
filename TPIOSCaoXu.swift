@@ -727,24 +727,30 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         lastMissionEntryTapURL = pageURL
         missionEntryTapStartedAt = Date()
         missionEntryTapAttempts += 1
-        guard TPIOSAutoClickEngine.shared.dispatchTouch(at: windowPoint, down: true) else {
-            let diagnostic = TPIOSCHMTouchLastDiagnostic().map { String(cString: $0) } ?? "không có chẩn đoán backend"
-            appendLog("Kiếm thêm: HID DOWN thất bại · \(diagnostic)")
-            return
-        }
-        let diagnostic = TPIOSCHMTouchLastDiagnostic().map { String(cString: $0) } ?? "không có chẩn đoán backend"
-        appendLog("Kiếm thêm: HID DOWN · \(diagnostic)")
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
-            let released = TPIOSAutoClickEngine.shared.dispatchTouch(at: windowPoint, down: false)
-            guard let self else { return }
-            guard released else {
-                self.automationEnabled = false
-                self.appendLog("Kiếm thêm: không xác nhận được chạm UP; đã dừng tự động để tránh kẹt touch")
-                return
+        // WKWebView owns this control's DOM event handlers; invoke the exact
+        // hit-tested clickable element instead of synthesizing a UIKit/HID touch.
+        let clickScript = """
+        (() => {
+          const hit = document.elementFromPoint(\(x), \(y));
+          const target = hit && (
+            hit.closest('a,button,[role="button"],[onclick],.lazcoins-check-in-date') || hit
+          );
+          if (!target || typeof target.click !== 'function') return false;
+          target.click();
+          return true;
+        })();
+        """
+        webView.evaluateJavaScript(clickScript) { [weak self] result, error in
+            guard let self, self.sessionActive, self.automationEnabled else { return }
+            if result as? Bool == true {
+                self.appendLog("Đã gọi click DOM trên nút Kiếm thêm; chờ Lazada chuyển trang và tải danh sách")
+            } else {
+                self.appendLog("Kiếm thêm: không kích hoạt được click DOM trên phần tử mục tiêu")
             }
-            guard self.sessionActive, self.automationEnabled else { return }
-            self.appendLog("Đã chạm nút Kiếm thêm bằng DOM + HID; chờ Lazada chuyển trang và tải danh sách")
+            if let error {
+                self.appendLog("Kiếm thêm: lỗi click DOM · \(error.localizedDescription)")
+            }
         }
     }
 
