@@ -260,6 +260,8 @@ static BOOL CHMDispatchHIDTouch(CGPoint point, CHMTouchPhase phase, CHMTouchBack
         CGPoint hitLayerPoint = [hitView.layer convertPoint:point fromLayer:window.layer];
         CGPoint roundTripPoint = [window convertPoint:hitLocalPoint fromView:hitView];
         CGRect hitWindowFrame = [hitView convertRect:hitView.bounds toView:window];
+        UIScrollView *hitScrollView = [hitView isKindOfClass:UIScrollView.class] ? (UIScrollView *)hitView : nil;
+        CGPoint hitScrollOffset = hitScrollView ? hitScrollView.contentOffset : CGPointZero;
         NSMutableString *hitHierarchy = [NSMutableString string];
         UIView *ancestor = hitView;
         NSUInteger depth = 0;
@@ -267,10 +269,11 @@ static BOOL CHMDispatchHIDTouch(CGPoint point, CHMTouchPhase phase, CHMTouchBack
             if (depth > 0) [hitHierarchy appendString:@" <- "];
             CGAffineTransform t = ancestor.transform;
             CATransform3D lt = ancestor.layer.transform;
-            [hitHierarchy appendFormat:@"%@{f=%.1f,%.1f %.1fx%.1f b=%.1fx%.1f t=%.3f,%.3f,%.3f,%.3f,%.1f,%.1f l=%.3f,%.3f,%.3f,%.3f,%.1f,%.1f}",
+            [hitHierarchy appendFormat:@"%@{f=%.1f,%.1f %.1fx%.1f b=%.1f,%.1f %.1fx%.1f t=%.3f,%.3f,%.3f,%.3f,%.1f,%.1f l=%.3f,%.3f,%.3f,%.3f,%.1f,%.1f}",
              NSStringFromClass(ancestor.class),
              ancestor.frame.origin.x, ancestor.frame.origin.y,
              ancestor.frame.size.width, ancestor.frame.size.height,
+             ancestor.bounds.origin.x, ancestor.bounds.origin.y,
              ancestor.bounds.size.width, ancestor.bounds.size.height,
              t.a, t.b, t.c, t.d, t.tx, t.ty,
              lt.m11, lt.m12, lt.m21, lt.m22, lt.m41, lt.m42];
@@ -278,12 +281,14 @@ static BOOL CHMDispatchHIDTouch(CGPoint point, CHMTouchPhase phase, CHMTouchBack
             depth++;
         }
         snprintf(CHMLastTouchDiagnostic, sizeof(CHMLastTouchDiagnostic),
-                 "DOWN p=(%.1f,%.1f) win=%p %s hit=%s local=(%.1f,%.1f) layer=(%.1f,%.1f) back=(%.1f,%.1f) bounds=%.1fx%.1f inside=%d frame=(%.1f,%.1f %.1fx%.1f) chain=%s hid=(%.1f,%.1f)",
+                 "DOWN p=(%.1f,%.1f) win=%p %s hit=%s local=(%.1f,%.1f) layer=(%.1f,%.1f) back=(%.1f,%.1f) bounds=(%.1f,%.1f %.1fx%.1f) scroll=(%.1f,%.1f) inside=%d frame=(%.1f,%.1f %.1fx%.1f) chain=%s hid=(%.1f,%.1f)",
                  point.x, point.y, (__bridge void *)window, NSStringFromClass(window.class).UTF8String,
                  NSStringFromClass(hitView.class).UTF8String,
                  hitLocalPoint.x, hitLocalPoint.y, hitLayerPoint.x, hitLayerPoint.y,
                  roundTripPoint.x, roundTripPoint.y,
+                 hitView.bounds.origin.x, hitView.bounds.origin.y,
                  hitView.bounds.size.width, hitView.bounds.size.height,
+                 hitScrollOffset.x, hitScrollOffset.y,
                  CGRectContainsPoint(hitView.bounds, hitLocalPoint),
                  hitWindowFrame.origin.x, hitWindowFrame.origin.y,
                  hitWindowFrame.size.width, hitWindowFrame.size.height,
