@@ -1228,6 +1228,17 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             }
         case .returning:
             guard let started = automationStartedAt else { return }
+            if lastAutomationLogIndex == -2 {
+                guard Date().timeIntervalSince(started) >= 3 else { return }
+                attemptedTaskIndices.insert(index)
+                automationScanCursor = (index + 1) % max(1, taskNames.count)
+                automationTaskIndex = nil
+                automationStartedAt = nil
+                automationPhase = .selecting
+                lastAutomationLogIndex = nil
+                appendLog("Đã chạm Nhận xu; chờ Lazada cập nhật trạng thái nhiệm vụ: \\(taskName)")
+                return
+            }
             if Date().timeIntervalSince(started) >= 2 {
                 webView.evaluateJavaScript("""
                 (() => {
@@ -1268,8 +1279,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                             self.lastAutomationLogIndex = -2
                             self.appendLog("Đã chạm HID nút Nhận xu; chờ Lazada phản hồi: \\(taskName)")
                         }
-                    } else if self.lastAutomationLogIndex != -2 {
-                        self.lastAutomationLogIndex = -2
+                    } else if self.lastAutomationLogIndex != -3 {
+                        self.lastAutomationLogIndex = -3
                         let labels = (payload["labels"] as? [String] ?? []).joined(separator:" | ")
                         self.appendLog("Nhận xu: chưa tìm thấy nút duy nhất · trạng thái=\\(status) · nhãn=\\(labels)")
                     }
