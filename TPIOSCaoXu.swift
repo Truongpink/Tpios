@@ -955,18 +955,23 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         switch automationPhase {
         case .selecting:
             let actionLabels = ["làm ngay", "thực hiện", "đi ngay", "xem ngay", "bắt đầu", "tham gia"]
-            var matches: [(UIButton, String)] = []
+            var matches: [(UIView, String)] = []
             func visit(_ view: UIView) {
                 guard !view.isHidden, view.alpha > 0.01 else { return }
-                if let button = view as? UIButton {
-                    let label = normalizedTaskText([button.currentTitle, button.accessibilityLabel].compactMap { $0 }.joined(separator: " "))
+                let isActionControl = view is UIControl ||
+                    view.accessibilityTraits.contains(.button) ||
+                    !(view.gestureRecognizers ?? []).isEmpty
+                if isActionControl {
+                    let label = normalizedTaskText(nativeText(in: view))
                     if actionLabels.contains(where: { label.localizedCaseInsensitiveContains($0) }) {
-                        var ancestor: UIView? = button
+                        var ancestor: UIView? = view
                         for _ in 0..<7 {
                             guard let card = ancestor else { break }
                             let cardText = nativeText(in: card)
                             if cardText.localizedCaseInsensitiveContains(taskName) {
-                                matches.append((button, cardText))
+                                if !matches.contains(where: { $0.0 === view }) {
+                                    matches.append((view, cardText))
+                                }
                                 break
                             }
                             ancestor = card.superview
@@ -1423,9 +1428,20 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 (() => {
                   const norm = e => (e.innerText || e.textContent || e.getAttribute('aria-label') || '').replace(/\\s+/g,' ').trim().toLowerCase();
                   const visible = e => { const r=e.getBoundingClientRect(),s=getComputedStyle(e); return r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth&&s.display!=='none'&&s.visibility!=='hidden'; };
-                  const nodes = Array.from(document.querySelectorAll('button,a,[role="button"],[onclick]')).filter(e => visible(e) && /nhận xu/.test(norm(e)));
+                  const nodes = Array.from(document.querySelectorAll('button,a,[role="button"],[onclick]')).filter(e => {
+                    if (!visible(e)) return false;
+                    const label = norm(e);
+                    if (/nhận xu/.test(label)) return true;
+                    if (label !== 'nhận') return false;
+                    const context = norm(e.parentElement || e);
+                    return /xu|lazcoins|nhiệm vụ|điểm danh/i.test(context);
+                  });
                   const targets = [...new Set(nodes.map(e => e.closest('button,a,[role="button"],[onclick]') || e))];
-                  if (targets.length !== 1) return {status: targets.length ? 'ambiguous' : 'not_found', count: targets.length, labels: nodes.slice(0,5).map(norm)};
+                  if (targets.length !== 1) return {
+                    status: targets.length ? 'ambiguous' : 'not_found',
+                    count: targets.length,
+                    labels: nodes.slice(0,5).map(e => norm(e) + ' [' + norm(e.parentElement || e).slice(0,90) + ']')
+                  };
                   const r=targets[0].getBoundingClientRect();
                   return {status:'ready',x:r.left+r.width/2,y:r.top+r.height/2,label:norm(targets[0])};
                 })()
