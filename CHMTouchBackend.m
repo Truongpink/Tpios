@@ -4,6 +4,7 @@
 #import <dlfcn.h>
 #import <mach/mach_time.h>
 #import <math.h>
+#import <stdio.h>
 
 typedef struct __IOHIDEvent *CHMIOHIDEventRef;
 typedef struct __IOHIDEventSystemClient *CHMIOHIDEventSystemClientRef;
@@ -74,6 +75,9 @@ static CHMDispatchEventFn CHMDispatchEvent;
 static CHMSetDigitizerInfoFn CHMSetDigitizerInfo;
 
 NSString * const CHMTouchBackendErrorDomain = @"com.tpios.autoclicker.touch";
+
+static char CHMLastTouchDiagnostic[768] = "No touch dispatched";
+const char *TPIOSCHMTouchLastDiagnostic(void) { return CHMLastTouchDiagnostic; }
 
 static void CHMSetError(NSError **error, NSInteger code, NSString *message) {
     if (error) {
@@ -156,6 +160,7 @@ static BOOL CHMDispatchHIDTouch(CGPoint point, CHMTouchPhase phase, CHMTouchBack
     }
 
     BOOL isDown = phase == CHMTouchPhaseDown;
+    snprintf(CHMLastTouchDiagnostic, sizeof(CHMLastTouchDiagnostic), "%s", "Dispatch started");
     UIWindow *window = nil;
     UIView *hitView = nil;
     uint32_t contextID = 0;
@@ -249,6 +254,13 @@ static BOOL CHMDispatchHIDTouch(CGPoint point, CHMTouchPhase phase, CHMTouchBack
             overlayView.hidden = NO;
         }
         hitView = hitView ?: window.rootViewController.view;
+        snprintf(CHMLastTouchDiagnostic, sizeof(CHMLastTouchDiagnostic),
+                 "DOWN point=(%.1f,%.1f) window=%p %@ bounds=(%.1f,%.1f %.1fx%.1f) hit=%@ hitFrame=(%.1f,%.1f %.1fx%.1f) hid=(%.1f,%.1f)",
+                 point.x, point.y, (__bridge void *)window, NSStringFromClass(window.class).UTF8String,
+                 window.bounds.origin.x, window.bounds.origin.y, window.bounds.size.width, window.bounds.size.height,
+                 NSStringFromClass(hitView.class).UTF8String,
+                 hitView.frame.origin.x, hitView.frame.origin.y, hitView.frame.size.width, hitView.frame.size.height,
+                 hidPoint.x, hidPoint.y);
     }
     UITouch *touch = backend.activeTouch;
     if (!touch && phase == CHMTouchPhaseUp) {
