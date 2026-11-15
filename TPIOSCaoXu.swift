@@ -728,29 +728,32 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         missionEntryTapStartedAt = Date()
         missionEntryTapAttempts += 1
 
-        // WKWebView owns this control's DOM event handlers; invoke the exact
-        // hit-tested clickable element instead of synthesizing a UIKit/HID touch.
-        let clickScript = """
-        (() => {
-          const hit = document.elementFromPoint(\(x), \(y));
-          const target = hit && (
-            hit.closest('a,button,[role="button"],[onclick],.lazcoins-check-in-date') || hit
-          );
-          if (!target || typeof target.click !== 'function') return false;
-          target.click();
-          return true;
-        })();
-        """
-        webView.evaluateJavaScript(clickScript) { [weak self] result, error in
-            guard let self, self.sessionActive, self.automationEnabled else { return }
-            if result as? Bool == true {
-                self.appendLog("Đã gọi click DOM trên nút Kiếm thêm; chờ Lazada chuyển trang và tải danh sách")
-            } else {
-                self.appendLog("Kiếm thêm: không kích hoạt được click DOM trên phần tử mục tiêu")
+        guard window.bounds.insetBy(dx: 1, dy: 1).contains(windowPoint) else {
+            appendLog("Kiếm thêm: tọa độ sau convert nằm ngoài cửa sổ app; không gửi touch")
+            return
+        }
+
+        lastMissionEntryTapURL = pageURL
+        missionEntryTapStartedAt = Date()
+        missionEntryTapAttempts += 1
+
+        // Use the same real HID DOWN/UP path as the working Chạm panel.
+        guard TPIOSAutoClickEngine.shared.dispatchTouch(at: windowPoint, down: true) else {
+            appendLog("Kiếm thêm: HID DOWN lỗi · \(TPIOSAutoClickEngine.lastDiagnostic())")
+            return
+        }
+        appendLog("Kiếm thêm: HID DOWN · \(TPIOSAutoClickEngine.lastDiagnostic())")
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            let released = TPIOSAutoClickEngine.shared.dispatchTouch(at: windowPoint, down: false)
+            guard let self else { return }
+            guard released else {
+                self.appendLog("Kiếm thêm: HID UP lỗi · \(TPIOSAutoClickEngine.lastDiagnostic()); tạm dừng tự động")
+                self.automationEnabled = false
+                self.automationPhase = .selecting
+                return
             }
-            if let error {
-                self.appendLog("Kiếm thêm: lỗi click DOM · \(error.localizedDescription)")
-            }
+            self.appendLog("Kiếm thêm: đã gửi HID UP; chờ Lazada mở danh sách nhiệm vụ")
         }
     }
 
