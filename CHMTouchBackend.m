@@ -80,6 +80,8 @@ static char CHMLastTouchDiagnostic[768] = "No touch dispatched";
 const char *TPIOSCHMTouchLastDiagnostic(void) { return CHMLastTouchDiagnostic; }
 
 static void CHMSetError(NSError **error, NSInteger code, NSString *message) {
+    snprintf(CHMLastTouchDiagnostic, sizeof(CHMLastTouchDiagnostic),
+             "ERROR %ld: %.500s", (long)code, message.UTF8String ?: "unknown");
     if (error) {
         *error = [NSError errorWithDomain:CHMTouchBackendErrorDomain
                                      code:code
