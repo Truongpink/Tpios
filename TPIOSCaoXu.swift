@@ -45,6 +45,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private var lastObservedPageURL: String?
     private var lastObservedScreenSignature: String?
     private var lastDOMDiagnosticSignature: String?
+    private var lastNativeDiagnosticSignature: String?
 
     private var logs: [String] = []
     private var resizeStartFrame = CGRect.zero
@@ -469,7 +470,15 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
 
         guard let webView = lazadaWebView else {
             processObservedLines(lines, pageURL: pageURL)
-            if isLazadaProcess { driveNativeAutomation(in: root) }
+            if isLazadaProcess {
+                let diagnostic = nativeDiagnostic(in: root)
+                let signature = String(diagnostic.hashValue)
+                if !diagnostic.isEmpty, signature != lastNativeDiagnosticSignature {
+                    lastNativeDiagnosticSignature = signature
+                    appendLog("Native UI: " + diagnostic)
+                }
+                driveNativeAutomation(in: root)
+            }
             return
         }
 
@@ -1417,6 +1426,56 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
 
         visit(root)
         return (result, viewCount, accessibilityCount)
+    }
+
+    private func nativeDiagnostic(in root: UIView) -> String {
+        var texts: [String] = []
+        var buttons: [String] = []
+        var fields: [String] = []
+        var scrolls: [String] = []
+        var seen = Set<String>()
+
+        func add(_ raw: String?, to values: inout [String], limit: Int) {
+            guard values.count < limit,
+                  let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  value.count >= 2, value.count <= 120 else { return }
+            let normalized = value.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            let lower = normalized.lowercased()
+            guard !lower.contains("đánh giá"), !lower.contains("đã bán"),
+                  !lower.contains("freeship"), !lower.contains("₫") else { return }
+            if seen.insert(normalized.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)).inserted {
+                values.append(normalized)
+            }
+        }
+
+        func visit(_ view: UIView) {
+            guard !view.isHidden, view.alpha > 0.01 else { return }
+            if let label = view as? UILabel { add(label.text, to: &texts, limit: 8) }
+            if let button = view as? UIButton {
+                let label = [button.currentTitle, button.accessibilityLabel].compactMap { $0 }.joined(separator: " / ")
+                add(label, to: &buttons, limit: 10)
+            }
+            if let field = view as? UITextField {
+                add(field.placeholder ?? field.accessibilityLabel, to: &fields, limit: 4)
+            } else if let search = view as? UISearchBar {
+                add(search.placeholder ?? search.text, to: &fields, limit: 4)
+            }
+            if let scroll = view as? UIScrollView,
+               scroll.contentSize.height > scroll.bounds.height + 30,
+               scroll.bounds.width > 100, scroll.bounds.height > 100,
+               scrolls.count < 3 {
+                scrolls.append("\(NSStringFromClass(type(of: scroll))):\(Int(scroll.bounds.width))x\(Int(scroll.bounds.height)) content=\(Int(scroll.contentSize.height))")
+            }
+            view.subviews.forEach(visit)
+        }
+        visit(root)
+
+        var parts: [String] = []
+        if !texts.isEmpty { parts.append("text=[" + texts.joined(separator: " | ") + "]") }
+        if !buttons.isEmpty { parts.append("buttons=[" + buttons.joined(separator: " | ") + "]") }
+        if !fields.isEmpty { parts.append("fields=[" + fields.joined(separator: " | ") + "]") }
+        if !scrolls.isEmpty { parts.append("scroll=[" + scrolls.joined(separator: " | ") + "]") }
+        return String(parts.joined(separator: " · ").prefix(850))
     }
 
     private func normalizedTaskText(_ raw: String) -> String {
