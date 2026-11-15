@@ -1282,20 +1282,22 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     } else if self.lastAutomationLogIndex != -3 {
                         self.lastAutomationLogIndex = -3
                         let labels = (payload["labels"] as? [String] ?? []).joined(separator:" | ")
-                        self.appendLog("Nhận xu: chưa tìm thấy nút duy nhất · trạng thái=\\(status) · nhãn=\\(labels)")
+                        self.appendLog("Nhận xu: chưa tìm thấy nút duy nhất · trạng thái=\(status) · nhãn=\(labels)")
                     }
-                    if let error { self.appendLog("Nhận xu: lỗi đọc DOM · \\(error.localizedDescription)") }
+                    if let error { self.appendLog("Nhận xu: lỗi đọc DOM · \(error.localizedDescription)") }
                 }
                 return
             }
-            if lastAutomationLogIndex == -2 { return }
+            if lastAutomationLogIndex == -2 || lastAutomationLogIndex == -3 {
+                return
+            }
             attemptedTaskIndices.insert(index)
             automationScanCursor = (index + 1) % max(1, taskNames.count)
             automationTaskIndex = nil
             automationStartedAt = nil
             automationPhase = .selecting
             lastAutomationLogIndex = nil
-            appendLog("Đã gửi thao tác Nhận xu; tiếp tục chờ trạng thái nhiệm vụ Lazada: \(taskName)")
+            appendLog("Đã kết thúc bước nhận xu; chờ trạng thái nhiệm vụ Lazada: \(taskName)")
         }
     }
 
