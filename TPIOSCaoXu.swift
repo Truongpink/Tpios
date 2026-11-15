@@ -509,6 +509,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             .filter(t => t.length >= 12 && t.length <= 140);
           const visibleMissionTitles = missionCards.filter(visible).map(missionTitle)
             .filter(t => t.length >= 12 && t.length <= 140);
+          const compact = s => (s || '').replace(/\\s+/g, ' ').trim().slice(0, 100);
           const missionActions = missionCards.map(card => {
             const title = missionTitle(card);
             if (!title) return null;
@@ -555,7 +556,6 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
           const leafLines = Array.from(document.querySelectorAll('body *'))
             .filter(e => e.children.length === 0 && visible(e))
             .map(e => (e.innerText || e.textContent || '').trim());
-          const compact = s => (s || '').replace(/\\s+/g, ' ').trim().slice(0, 100);
           const interactive = Array.from(document.querySelectorAll('input,textarea,button,a,[role="button"],[contenteditable="true"]'))
             .filter(visible).slice(0, 45).map(e => {
               const tag = e.tagName.toLowerCase();
