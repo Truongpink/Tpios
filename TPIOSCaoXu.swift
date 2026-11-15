@@ -622,17 +622,18 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                         "missionScroll=\((payload["missionScroll"] as? [String: Any]).map { "top=\($0["top"] ?? 0) max=\($0["max"] ?? 0)" } ?? "none")"
                     ]
                 } else if activeTaskName != nil {
+                    let relevantPageLines = (payload["lines"] as? [String] ?? []).filter { line in
+                        let value = line.lowercased()
+                        return value.contains("tìm") || value.contains("search") || value.contains("sản phẩm") ||
+                            value.contains("xem") || value.contains("video") || value.contains("giây") ||
+                            value.contains("nhận xu") || value.contains("làm ngay") || value.contains("tiếp tục")
+                    }.prefix(18).joined(separator: " | ")
                     diagnosticParts = [
                         "activeTask=\(activeTaskName ?? "none") kind=\(activeTaskKind ?? "none")",
                         "page=\(payload["pageTitle"] as? String ?? "")",
                         "headings=\((payload["headings"] as? [String] ?? []).joined(separator: " | "))",
                         "controls=\((payload["interactive"] as? [String] ?? []).prefix(18).joined(separator: " || "))",
-                        "pageText=\((payload["lines"] as? [String] ?? []).filter { line in
-                            let value = line.lowercased()
-                            return value.contains("tìm") || value.contains("search") || value.contains("sản phẩm") ||
-                                value.contains("xem") || value.contains("video") || value.contains("giây") ||
-                                value.contains("nhận xu") || value.contains("làm ngay") || value.contains("tiếp tục")
-                        }.prefix(18).joined(separator: " | "))"
+                        "pageText=\(relevantPageLines)"
                     ]
                 } else {
                     diagnosticParts = []
@@ -642,7 +643,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 if !diagnostic.isEmpty, diagnosticSignature != self.lastDOMDiagnosticSignature {
                     self.lastDOMDiagnosticSignature = diagnosticSignature
                     let clipped = String(diagnostic.prefix(hasMissionsPage ? 900 : 1600))
-                    self.appendLog("DOM nhiệm vụ: \\(clipped)")
+                    self.appendLog("DOM nhiệm vụ: \(clipped)")
                 }
                 self.captureLazadaPageURLs(
                     pageURL: pageURL,
