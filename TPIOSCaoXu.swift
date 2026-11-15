@@ -523,7 +523,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
               .filter(e => visible(e) && !e.contains(card) && !card.contains(e))
               .map(e => {
                 const tag = e.tagName.toLowerCase();
-                const cls = typeof e.className === 'string' ? e.className.split(/\s+/).slice(0, 3).join('.') : '';
+                const cls = typeof e.className === 'string' ? e.className.split(/\\s+/).slice(0, 3).join('.') : '';
                 const text = compact(e.innerText || e.textContent || e.getAttribute('aria-label') || e.getAttribute('title'));
                 const href = e.getAttribute('href') || e.closest('a')?.getAttribute('href') || '';
                 return [tag, cls, text, href ? 'href=' + href.slice(0, 100) : ''].filter(Boolean).join(':');
@@ -645,14 +645,15 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 let activeTaskKind = self.automationTaskIndex.flatMap { self.taskNames.indices.contains($0) ? self.missionKind(for: self.taskNames[$0]) : nil }
                 let diagnosticParts: [String]
                 if hasMissionsPage {
+                    let missionActionSummary = (payload["missionActions"] as? [[String: Any]] ?? []).map { item -> String in
+                        let title = item["title"] as? String ?? ""
+                        let controls = (item["controls"] as? [String] ?? []).joined(separator: ",")
+                        return title + " => " + (controls.isEmpty ? "no-control" : controls)
+                    }.joined(separator: " || ")
                     diagnosticParts = [
                         "missionCards=\(payload["missionCardCount"] as? Int ?? 0) all=\((payload["missionTitles"] as? [String] ?? []).count) visible=\(self.visibleWebMissionTitles.count)",
                         "allTitles=\((payload["missionTitles"] as? [String] ?? []).joined(separator: " | "))",
-                        "actions=\((payload["missionActions"] as? [[String: Any]] ?? []).map { item in
-                            let title = item["title"] as? String ?? ""
-                            let controls = (item["controls"] as? [String] ?? []).joined(separator: ",")
-                            return title + " => " + (controls.isEmpty ? "no-control" : controls)
-                        }.joined(separator: " || "))",
+                        "actions=\(missionActionSummary)",
                         "missionScroll=\((payload["missionScroll"] as? [String: Any]).map { "top=\($0["top"] ?? 0) max=\($0["max"] ?? 0)" } ?? "none")"
                     ]
                 } else if activeTaskName != nil {
