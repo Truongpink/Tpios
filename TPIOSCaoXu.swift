@@ -612,25 +612,37 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 let hasCheckInCard = payload["hasCheckInCard"] as? Bool ?? false
                 hasMissionsPage = payload["hasMissionsPage"] as? Bool ?? false
                 let hasOpenMissionsControl = payload["hasOpenMissionsControl"] as? Bool ?? false
-                let diagnosticParts = [
-                    payload["pageTitle"] as? String ?? "",
-                    (payload["headings"] as? [String] ?? []).joined(separator: " ; "),
-                    (payload["interactive"] as? [String] ?? []).joined(separator: " || "),
-                    (payload["productCards"] as? [String] ?? []).joined(separator: " || "),
-                    "pageText=\((payload["lines"] as? [String] ?? []).prefix(45).joined(separator: " | "))",
-                    "activeTask=\(self.automationTaskIndex.flatMap { self.taskNames.indices.contains($0) ? self.taskNames[$0] : nil } ?? "none") kind=\(self.automationTaskIndex.flatMap { self.taskNames.indices.contains($0) ? self.missionKind(for: self.taskNames[$0]) : nil } ?? "none")",
-                    "missionCards=\(payload["missionCardCount"] as? Int ?? 0) all=\((payload["missionTitles"] as? [String] ?? []).count) visible=\(self.visibleWebMissionTitles.count)",
-                    "allTitles=\((payload["missionTitles"] as? [String] ?? []).joined(separator: " | "))",
-                    "visibleTitles=\(self.visibleWebMissionTitles.joined(separator: " | "))",
-                    "missionScroll=\((payload["missionScroll"] as? [String: Any]).map { "found=\($0["found"] ?? false) top=\($0["top"] ?? 0) max=\($0["max"] ?? 0)" } ?? "none")"
-                ]
+                let activeTaskName = self.automationTaskIndex.flatMap { self.taskNames.indices.contains($0) ? self.taskNames[$0] : nil }
+                let activeTaskKind = self.automationTaskIndex.flatMap { self.taskNames.indices.contains($0) ? self.missionKind(for: self.taskNames[$0]) : nil }
+                let diagnosticParts: [String]
+                if hasMissionsPage {
+                    diagnosticParts = [
+                        "missionCards=\(payload["missionCardCount"] as? Int ?? 0) all=\((payload["missionTitles"] as? [String] ?? []).count) visible=\(self.visibleWebMissionTitles.count)",
+                        "allTitles=\((payload["missionTitles"] as? [String] ?? []).joined(separator: " | "))",
+                        "missionScroll=\((payload["missionScroll"] as? [String: Any]).map { "top=\($0["top"] ?? 0) max=\($0["max"] ?? 0)" } ?? "none")"
+                    ]
+                } else if activeTaskName != nil {
+                    diagnosticParts = [
+                        "activeTask=\(activeTaskName ?? "none") kind=\(activeTaskKind ?? "none")",
+                        "page=\(payload["pageTitle"] as? String ?? "")",
+                        "headings=\((payload["headings"] as? [String] ?? []).joined(separator: " | "))",
+                        "controls=\((payload["interactive"] as? [String] ?? []).prefix(18).joined(separator: " || "))",
+                        "pageText=\((payload["lines"] as? [String] ?? []).filter { line in
+                            let value = line.lowercased()
+                            return value.contains("tìm") || value.contains("search") || value.contains("sản phẩm") ||
+                                value.contains("xem") || value.contains("video") || value.contains("giây") ||
+                                value.contains("nhận xu") || value.contains("làm ngay") || value.contains("tiếp tục")
+                        }.prefix(18).joined(separator: " | "))"
+                    ]
+                } else {
+                    diagnosticParts = []
+                }
                 let diagnostic = diagnosticParts.joined(separator: " ## ")
                 let diagnosticSignature = String(diagnostic.hashValue)
-                if (!self.automationEnabled || hasMissionsPage || hasCheckInCard || self.automationTaskIndex != nil),
-                   !diagnostic.isEmpty, diagnosticSignature != self.lastDOMDiagnosticSignature {
+                if !diagnostic.isEmpty, diagnosticSignature != self.lastDOMDiagnosticSignature {
                     self.lastDOMDiagnosticSignature = diagnosticSignature
-                    let clipped = String(diagnostic.prefix(2800))
-                    self.appendLog("DOM nhiệm vụ: \(clipped)")
+                    let clipped = String(diagnostic.prefix(hasMissionsPage ? 900 : 1600))
+                    self.appendLog("DOM nhiệm vụ: \\(clipped)")
                 }
                 self.captureLazadaPageURLs(
                     pageURL: pageURL,
