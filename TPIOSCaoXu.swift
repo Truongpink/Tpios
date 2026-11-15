@@ -692,13 +692,20 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         }
 
         let windowPoint = webView.convert(webPoint, to: window)
+        let sourceWindowID = Unmanaged.passUnretained(window).toOpaque()
+        appendLog(String(format: "Kiếm thêm: DOM=(%.1f,%.1f) WebView=(%.1f×%.1f) windowPoint=(%.1f,%.1f) sourceWindow=%p",
+                         webPoint.x, webPoint.y, webView.bounds.width, webView.bounds.height,
+                         windowPoint.x, windowPoint.y, sourceWindowID))
         lastMissionEntryTapURL = pageURL
         missionEntryTapStartedAt = Date()
         missionEntryTapAttempts += 1
         guard TPIOSAutoClickEngine.shared.dispatchTouch(at: windowPoint, down: true) else {
-            appendLog("Kiếm thêm: HID không gửi được chạm DOWN (lần thử \(missionEntryTapAttempts)/3)")
+            let diagnostic = TPIOSCHMTouchLastDiagnostic().map { String(cString: $0) } ?? "không có chẩn đoán backend"
+            appendLog("Kiếm thêm: HID DOWN thất bại · \(diagnostic)")
             return
         }
+        let diagnostic = TPIOSCHMTouchLastDiagnostic().map { String(cString: $0) } ?? "không có chẩn đoán backend"
+        appendLog("Kiếm thêm: HID DOWN · \(diagnostic)")
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
             let released = TPIOSAutoClickEngine.shared.dispatchTouch(at: windowPoint, down: false)
