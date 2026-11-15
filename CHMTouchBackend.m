@@ -257,7 +257,7 @@ static BOOL CHMDispatchHIDTouch(CGPoint point, CHMTouchPhase phase, CHMTouchBack
         }
         hitView = hitView ?: window.rootViewController.view;
         snprintf(CHMLastTouchDiagnostic, sizeof(CHMLastTouchDiagnostic),
-                 "DOWN point=(%.1f,%.1f) window=%p %@ bounds=(%.1f,%.1f %.1fx%.1f) hit=%@ hitFrame=(%.1f,%.1f %.1fx%.1f) hid=(%.1f,%.1f)",
+                 "DOWN point=(%.1f,%.1f) window=%p %s bounds=(%.1f,%.1f %.1fx%.1f) hit=%s hitFrame=(%.1f,%.1f %.1fx%.1f) hid=(%.1f,%.1f)",
                  point.x, point.y, (__bridge void *)window, NSStringFromClass(window.class).UTF8String,
                  window.bounds.origin.x, window.bounds.origin.y, window.bounds.size.width, window.bounds.size.height,
                  NSStringFromClass(hitView.class).UTF8String,
