@@ -540,8 +540,28 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                   return visible(e) && (label === 'kiếm thêm' || label === 'kiếm thêm xu');
                 });
               if (controls.length !== 1) return {count: controls.length};
-              const r = controls[0].getBoundingClientRect();
-              return {count: 1, x: r.left + r.width / 2, y: r.top + r.height / 2};
+              const control = controls[0];
+              const exactLabels = [control, ...control.querySelectorAll('*')]
+                .filter(e => {
+                  const label = (e.innerText || e.textContent || '').replace(/\\s+/g, ' ').trim().toLocaleLowerCase();
+                  return visible(e) && (label === 'kiếm thêm' || label === 'kiếm thêm xu');
+                })
+                .sort((a, b) => {
+                  const ar = a.getBoundingClientRect(), br = b.getBoundingClientRect();
+                  return ar.width * ar.height - br.width * br.height;
+                });
+              const labelNode = exactLabels[0] || control;
+              const r = labelNode.getBoundingClientRect();
+              const x = r.left + r.width / 2, y = r.top + r.height / 2;
+              const hit = document.elementFromPoint(x, y);
+              const clickable = hit && hit.closest('a,button,[role="button"],[tabindex],[onclick],.lazcoins-check-in-date');
+              return {
+                count: 1, x: x, y: y,
+                labelTag: labelNode.tagName.toLowerCase(),
+                hitTag: hit ? hit.tagName.toLowerCase() : '',
+                hitClass: hit && typeof hit.className === 'string' ? hit.className.split(/\\s+/).slice(0, 3).join('.') : '',
+                clickableTag: clickable ? clickable.tagName.toLowerCase() : ''
+              };
             })()
           };
         })();
@@ -695,9 +715,12 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         let webWindowAddress = String(describing: Unmanaged.passUnretained(window).toOpaque())
         let webViewFrameInWindow = webView.convert(webView.bounds, to: window)
         let contentOffset = webView.scrollView.contentOffset
-        appendLog(String(format: "Kiếm thêm: DOM=(%.1f,%.1f) WebView=(%.1f×%.1f) webWindow=%@ webViewFrame=(%.1f,%.1f %.1fx%.1f) contentOffset=(%.1f,%.1f) windowPoint=(%.1f,%.1f)",
-                         webPoint.x, webPoint.y, webView.bounds.width, webView.bounds.height,
-                         webWindowAddress,
+        let labelTag = entryPoint["labelTag"] as? String ?? "?"
+        let hitTag = entryPoint["hitTag"] as? String ?? "?"
+        let clickableTag = entryPoint["clickableTag"] as? String ?? "?"
+        appendLog(String(format: "Kiếm thêm: DOM=(%.1f,%.1f) label=%@ hit=%@ clickable=%@ WebView=(%.1f×%.1f) webWindow=%@ webViewFrame=(%.1f,%.1f %.1fx%.1f) contentOffset=(%.1f,%.1f) windowPoint=(%.1f,%.1f)",
+                         webPoint.x, webPoint.y, labelTag, hitTag, clickableTag,
+                         webView.bounds.width, webView.bounds.height, webWindowAddress,
                          webViewFrameInWindow.origin.x, webViewFrameInWindow.origin.y,
                          webViewFrameInWindow.size.width, webViewFrameInWindow.size.height,
                          contentOffset.x, contentOffset.y, windowPoint.x, windowPoint.y))
