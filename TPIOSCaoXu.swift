@@ -1169,12 +1169,16 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             let visibleKeys = Set(visibleWebMissionTitles.map {
                 normalizedTaskText($0).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
             })
-            let next = taskNames.indices.first {
-                let key = normalizedTaskText(taskNames[$0])
+            let next = visibleWebMissionTitles.lazy.compactMap { visibleTitle -> Int? in
+                let visibleKey = normalizedTaskText(visibleTitle)
                     .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-                return !completedTasks[$0] && !attemptedTaskIndices.contains($0) &&
-                    visibleKeys.contains(key)
-            }
+                return taskNames.indices.first { taskIndex in
+                    let key = normalizedTaskText(taskNames[taskIndex])
+                        .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                    return key == visibleKey && !completedTasks[taskIndex] &&
+                        !attemptedTaskIndices.contains(taskIndex)
+                }
+            }.first
             guard let next else {
                 if lastAutomationLogIndex != -1 {
                     lastAutomationLogIndex = -1
