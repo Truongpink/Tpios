@@ -692,10 +692,9 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         }
 
         let windowPoint = webView.convert(webPoint, to: window)
-        let sourceWindowID = Unmanaged.passUnretained(window).toOpaque()
-        appendLog(String(format: "Kiếm thêm: DOM=(%.1f,%.1f) WebView=(%.1f×%.1f) windowPoint=(%.1f,%.1f) sourceWindow=%p",
+        appendLog(String(format: "Kiếm thêm: DOM=(%.1f,%.1f) WebView=(%.1f×%.1f) windowPoint=(%.1f,%.1f)",
                          webPoint.x, webPoint.y, webView.bounds.width, webView.bounds.height,
-                         windowPoint.x, windowPoint.y, sourceWindowID))
+                         windowPoint.x, windowPoint.y))
         lastMissionEntryTapURL = pageURL
         missionEntryTapStartedAt = Date()
         missionEntryTapAttempts += 1
