@@ -643,7 +643,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
 
         if lastMissionEntryTapURL == pageURL {
             let elapsed = missionEntryTapStartedAt.map { Date().timeIntervalSince($0) } ?? 0
-            guard elapsed >= 8 else { return }
+            guard elapsed >= 20 else { return }
             guard missionEntryTapAttempts < 3 else {
                 if !missionEntryTapFailureLogged {
                     missionEntryTapFailureLogged = true
@@ -652,7 +652,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 return
             }
             missionEntryTapStartedAt = Date()
-            appendLog("Kiếm thêm: chưa thấy danh sách sau 8 giây; thử chạm lại lần \(missionEntryTapAttempts + 1)/3")
+            appendLog("Kiếm thêm: chưa thấy danh sách sau 20 giây; thử chạm lại lần \(missionEntryTapAttempts + 1)/3")
         } else {
             missionEntryTapAttempts = 0
             missionEntryTapFailureLogged = false
