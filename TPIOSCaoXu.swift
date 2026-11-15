@@ -481,8 +481,13 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
               r.top < window.innerHeight && r.left < window.innerWidth &&
               s.display !== 'none' && s.visibility !== 'hidden';
           };
-          const missionTitles = Array.from(document.querySelectorAll('.mission-item-center'))
-            .filter(e => visible(e) && !e.parentElement?.closest('.mission-item-center'))
+          const missionCards = Array.from(document.querySelectorAll('.mission-item-center'))
+            .filter(e => {
+              const r = e.getBoundingClientRect(), s = getComputedStyle(e);
+              return r.width > 0 && r.height > 0 && s.display !== 'none' &&
+                s.visibility !== 'hidden' && !e.parentElement?.closest('.mission-item-center');
+            });
+          const missionTitles = missionCards
             .map(card => {
               const raw = (card.innerText || card.textContent || '').replace(/\\s+/g, ' ').trim();
               const progress = raw.match(/\\b(\\d+)\\s*\\/\\s*(\\d+)\\b/);
@@ -522,6 +527,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
               .filter(t => t.length > 1 && t.length < 180)
               .slice(0, 700),
             missionTitles: missionTitles,
+            missionCardCount: missionCards.length,
             hasCheckInCard: (() => {
               const bodyText = document.body ? document.body.innerText : '';
               return Array.from(document.querySelectorAll('.lazcoins-checkin-card')).some(visible) ||
@@ -583,7 +589,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     payload["pageTitle"] as? String ?? "",
                     (payload["headings"] as? [String] ?? []).joined(separator: " ; "),
                     (payload["interactive"] as? [String] ?? []).joined(separator: " || "),
-                    (payload["productCards"] as? [String] ?? []).joined(separator: " || ")
+                    (payload["productCards"] as? [String] ?? []).joined(separator: " || "),
+                    "missionCards=\(payload["missionCardCount"] as? Int ?? 0) titles=\(self.visibleWebMissionTitles.count)"
                 ]
                 let diagnostic = diagnosticParts.joined(separator: " ## ")
                 let diagnosticSignature = String(diagnostic.hashValue)
@@ -790,14 +797,15 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     }
 
     private func syncMissionTasks(_ rawNames: [String]) {
-        var names: [String] = []
-        var seen = Set<String>()
+        var names = taskNames
+        var seen = Set(taskNames.map {
+            normalizedTaskText($0).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        })
         for raw in rawNames {
             let name = normalizedTaskText(raw)
             guard isLikelyTaskName(name) else { continue }
             let key = name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            guard seen.insert(key).inserted else { continue }
-            names.append(name)
+            if seen.insert(key).inserted { names.append(name) }
         }
 
         guard !names.isEmpty else { return }
@@ -808,7 +816,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                         taskDetails.indices.contains(index) ? taskDetails[index] : "",
                         taskURLs.indices.contains(index) ? taskURLs[index] : "")
         }
-        let changed = names != taskNames
+        let previousCount = taskNames.count
+        let changed = names.count != previousCount
         taskNames = names
         completedTasks = names.map { name in
             let key = normalizedTaskText(name).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
@@ -827,7 +836,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             attemptedTaskIndices.removeAll()
             automationScanCursor = 0
             resetAutomationPosition()
-            appendLog("Đã đồng bộ danh sách nhiệm vụ hiện tại từ Lazada: \(names.count) nhiệm vụ")
+            appendLog("Đã bổ sung nhiệm vụ từ Lazada: tổng \(names.count), mới \(names.count - previousCount)")
             saveObservedTasks()
         } else {
             refresh()
