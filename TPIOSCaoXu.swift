@@ -617,6 +617,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     (payload["headings"] as? [String] ?? []).joined(separator: " ; "),
                     (payload["interactive"] as? [String] ?? []).joined(separator: " || "),
                     (payload["productCards"] as? [String] ?? []).joined(separator: " || "),
+                    "pageText=\((payload["lines"] as? [String] ?? []).prefix(45).joined(separator: " | "))",
+                    "activeTask=\(self.automationTaskIndex.flatMap { self.taskNames.indices.contains($0) ? self.taskNames[$0] : nil } ?? "none") kind=\(self.automationTaskIndex.flatMap { self.taskNames.indices.contains($0) ? self.missionKind(for: self.taskNames[$0]) : nil } ?? "none")",
                     "missionCards=\(payload["missionCardCount"] as? Int ?? 0) all=\((payload["missionTitles"] as? [String] ?? []).count) visible=\(self.visibleWebMissionTitles.count)",
                     "allTitles=\((payload["missionTitles"] as? [String] ?? []).joined(separator: " | "))",
                     "visibleTitles=\(self.visibleWebMissionTitles.joined(separator: " | "))",
@@ -624,10 +626,10 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 ]
                 let diagnostic = diagnosticParts.joined(separator: " ## ")
                 let diagnosticSignature = String(diagnostic.hashValue)
-                if (!self.automationEnabled || hasMissionsPage || hasCheckInCard),
+                if (!self.automationEnabled || hasMissionsPage || hasCheckInCard || self.automationTaskIndex != nil),
                    !diagnostic.isEmpty, diagnosticSignature != self.lastDOMDiagnosticSignature {
                     self.lastDOMDiagnosticSignature = diagnosticSignature
-                    let clipped = String(diagnostic.prefix(1800))
+                    let clipped = String(diagnostic.prefix(2800))
                     self.appendLog("DOM nhiệm vụ: \(clipped)")
                 }
                 self.captureLazadaPageURLs(
