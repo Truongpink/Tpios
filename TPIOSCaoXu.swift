@@ -1236,7 +1236,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 automationStartedAt = nil
                 automationPhase = .selecting
                 lastAutomationLogIndex = nil
-                appendLog("Đã chạm Nhận xu; chờ Lazada cập nhật trạng thái nhiệm vụ: \\(taskName)")
+                appendLog("Đã chạm Nhận xu; chờ Lazada cập nhật trạng thái nhiệm vụ: \(taskName)")
                 return
             }
             if Date().timeIntervalSince(started) >= 2 {
@@ -1277,7 +1277,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                             }
                             self.automationStartedAt = Date()
                             self.lastAutomationLogIndex = -2
-                            self.appendLog("Đã chạm HID nút Nhận xu; chờ Lazada phản hồi: \\(taskName)")
+                            self.appendLog("Đã chạm HID nút Nhận xu; chờ Lazada phản hồi: \(taskName)")
                         }
                     } else if self.lastAutomationLogIndex != -3 {
                         self.lastAutomationLogIndex = -3
@@ -1295,7 +1295,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             automationStartedAt = nil
             automationPhase = .selecting
             lastAutomationLogIndex = nil
-            appendLog("Đã gửi thao tác Nhận xu; tiếp tục chờ trạng thái nhiệm vụ Lazada: \\(taskName)")
+            appendLog("Đã gửi thao tác Nhận xu; tiếp tục chờ trạng thái nhiệm vụ Lazada: \(taskName)")
         }
     }
 
