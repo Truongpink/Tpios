@@ -509,6 +509,26 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             .filter(t => t.length >= 12 && t.length <= 140);
           const visibleMissionTitles = missionCards.filter(visible).map(missionTitle)
             .filter(t => t.length >= 12 && t.length <= 140);
+          const missionActions = missionCards.map(card => {
+            const title = missionTitle(card);
+            if (!title) return null;
+            let container = card;
+            for (let depth = 0; depth < 4 && container.parentElement; depth++) {
+              const parent = container.parentElement;
+              if (parent.querySelectorAll('.mission-item-center').length > 1) break;
+              container = parent;
+            }
+            const controls = Array.from(container.querySelectorAll('a,button,[role="button"],[tabindex],[onclick],.mission-item-btn-go'))
+              .filter(e => visible(e) && !e.contains(card) && !card.contains(e))
+              .map(e => {
+                const tag = e.tagName.toLowerCase();
+                const cls = typeof e.className === 'string' ? e.className.split(/\s+/).slice(0, 3).join('.') : '';
+                const text = compact(e.innerText || e.textContent || e.getAttribute('aria-label') || e.getAttribute('title'));
+                const href = e.getAttribute('href') || e.closest('a')?.getAttribute('href') || '';
+                return [tag, cls, text, href ? 'href=' + href.slice(0, 100) : ''].filter(Boolean).join(':');
+              }).filter(Boolean).slice(0, 5);
+            return {title:title, controls:controls};
+          }).filter(Boolean);
           const shouldAutoScroll = \(automationEnabled && automationTaskIndex == nil ? "true" : "false");
           let missionScroll = {found:false, top:0, max:0};
           if (shouldAutoScroll && missionCards.length) {
@@ -628,6 +648,11 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     diagnosticParts = [
                         "missionCards=\(payload["missionCardCount"] as? Int ?? 0) all=\((payload["missionTitles"] as? [String] ?? []).count) visible=\(self.visibleWebMissionTitles.count)",
                         "allTitles=\((payload["missionTitles"] as? [String] ?? []).joined(separator: " | "))",
+                        "actions=\((payload["missionActions"] as? [[String: Any]] ?? []).map { item in
+                            let title = item["title"] as? String ?? ""
+                            let controls = (item["controls"] as? [String] ?? []).joined(separator: ",")
+                            return title + " => " + (controls.isEmpty ? "no-control" : controls)
+                        }.joined(separator: " || "))",
                         "missionScroll=\((payload["missionScroll"] as? [String: Any]).map { "top=\($0["top"] ?? 0) max=\($0["max"] ?? 0)" } ?? "none")"
                     ]
                 } else if activeTaskName != nil {
@@ -651,7 +676,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 let diagnosticSignature = String(diagnostic.hashValue)
                 if !diagnostic.isEmpty, diagnosticSignature != self.lastDOMDiagnosticSignature {
                     self.lastDOMDiagnosticSignature = diagnosticSignature
-                    let clipped = String(diagnostic.prefix(hasMissionsPage ? 900 : 1600))
+                    let clipped = String(diagnostic.prefix(hasMissionsPage ? 1800 : 1600))
                     self.appendLog("DOM nhiệm vụ: \(clipped)")
                 }
                 self.captureLazadaPageURLs(
