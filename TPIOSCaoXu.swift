@@ -500,6 +500,30 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             .filter(t => t.length >= 12 && t.length <= 140);
           const visibleMissionTitles = missionCards.filter(visible).map(missionTitle)
             .filter(t => t.length >= 12 && t.length <= 140);
+          const shouldAutoScroll = \(automationEnabled && automationTaskIndex == nil ? "true" : "false");
+          let missionScroll = {found:false, top:0, max:0};
+          if (shouldAutoScroll && missionCards.length) {
+            let node = missionCards[0].parentElement, scrollTarget = null;
+            for (let depth = 0; node && depth < 8; depth++, node = node.parentElement) {
+              const style = getComputedStyle(node);
+              if (node.scrollHeight > node.clientHeight + 40 &&
+                  /(auto|scroll)/.test(style.overflowY)) { scrollTarget = node; break; }
+            }
+            if (!scrollTarget) {
+              const pageScroller = document.scrollingElement;
+              if (pageScroller && pageScroller.scrollHeight > pageScroller.clientHeight + 40) scrollTarget = pageScroller;
+            }
+            if (scrollTarget) {
+              const max = Math.max(0, scrollTarget.scrollHeight - scrollTarget.clientHeight);
+              const top = scrollTarget.scrollTop;
+              missionScroll = {found:true, top:top, max:max};
+              if (top >= max - 8) {
+                if (top > 0) scrollTarget.scrollTo({top:0, behavior:'instant'});
+              } else {
+                scrollTarget.scrollTo({top:Math.min(max, top + Math.max(240, scrollTarget.clientHeight * 0.68)), behavior:'instant'});
+              }
+            }
+          }
           const bodyLines = (document.body ? document.body.innerText : '').split(/\\n+/);
           const leafLines = Array.from(document.querySelectorAll('body *'))
             .filter(e => e.children.length === 0 && visible(e))
@@ -532,6 +556,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             missionTitles: missionTitles,
             visibleMissionTitles: visibleMissionTitles,
             missionCardCount: missionCards.length,
+            missionScroll: missionScroll,
             hasCheckInCard: (() => {
               const bodyText = document.body ? document.body.innerText : '';
               return Array.from(document.querySelectorAll('.lazcoins-checkin-card')).some(visible) ||
@@ -594,7 +619,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     (payload["headings"] as? [String] ?? []).joined(separator: " ; "),
                     (payload["interactive"] as? [String] ?? []).joined(separator: " || "),
                     (payload["productCards"] as? [String] ?? []).joined(separator: " || "),
-                    "missionCards=\(payload["missionCardCount"] as? Int ?? 0) titles=\(self.visibleWebMissionTitles.count)"
+                    "missionCards=\(payload["missionCardCount"] as? Int ?? 0) titles=\(self.visibleWebMissionTitles.count)",
+                    "missionScroll=\((payload["missionScroll"] as? [String: Any]).map { "found=\($0["found"] ?? false) top=\($0["top"] ?? 0) max=\($0["max"] ?? 0)" } ?? "none")"
                 ]
                 let diagnostic = diagnosticParts.joined(separator: " ## ")
                 let diagnosticSignature = String(diagnostic.hashValue)
@@ -1102,11 +1128,21 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 if (!matches.length) return {status:'mission_not_found'};
                 if (matches.length !== 1) return {status:'mission_ambiguous'};
                 const card = matches[0];
-                const go = card.querySelector('.mission-item-btn-go');
-                if (go && visible(go) && norm(go.innerText || go.textContent) !== 'tìm kiếm') return center(go);
-                const action = Array.from(card.querySelectorAll('a,button,[role="button"],[onclick]'))
-                  .find(e => visible(e) && /làm ngay|thực hiện|đi ngay|xem ngay|tham gia|bắt đầu/i.test(norm(e.innerText || e.textContent)));
-                return action ? center(action) : {status:'mission_action_not_found'};
+                let container = card, go = null;
+                for (let depth = 0; container && depth < 5; depth++, container = container.parentElement) {
+                  go = container.querySelector('.mission-item-btn-go');
+                  if (go && visible(go)) break;
+                  go = null;
+                }
+                if (go) return center(go);
+                container = card;
+                for (let depth = 0; container && depth < 5; depth++, container = container.parentElement) {
+                  const actions = Array.from(container.querySelectorAll('a,button,[role="button"],[onclick],.mission-item-btn-go'))
+                    .filter(e => visible(e) && !e.contains(card));
+                  const action = actions.find(e => /làm ngay|thực hiện|đi ngay|xem ngay|tham gia|bắt đầu|tìm kiếm|đi xem|khám phá/i.test(norm(e.innerText || e.textContent)));
+                  if (action) return center(action);
+                }
+                return {status:'mission_action_not_found'};
               }
               const clickable = 'a,button,[role="button"],[onclick]';
               const titleNodes = Array.from(document.querySelectorAll('body *')).filter(e => {
