@@ -1047,7 +1047,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 return
             }
 
-            if lastAutomationLogIndex == -3 {
+            if lastAutomationLogIndex == -3 || lastAutomationLogIndex == -5 {
                 var explicitBackTargets: [UIView] = []
                 var topLeftControls: [UIView] = []
                 func visitBackControls(_ view: UIView) {
