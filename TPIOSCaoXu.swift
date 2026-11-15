@@ -696,7 +696,20 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             }
             return
         }
-        guard let window = webView.window else { return }
+        guard let window = webView.window else {
+            appendLog("Kiếm thêm: WebView chưa gắn với UIWindow; không thể xác định tọa độ chạm")
+            return
+        }
+        guard let hidWindow = TPIOSAutoClickEngine.appWindow() else {
+            appendLog("Kiếm thêm: Chạm không tìm thấy cửa sổ app để phát HID")
+            return
+        }
+        guard hidWindow === window else {
+            let webAddress = String(describing: Unmanaged.passUnretained(window).toOpaque())
+            let hidAddress = String(describing: Unmanaged.passUnretained(hidWindow).toOpaque())
+            appendLog("Kiếm thêm: SAI CỬA SỔ · WebView=\(webAddress) Chạm=\(hidAddress); không gửi touch")
+            return
+        }
         guard TPIOSAutoClickEngine.backendAvailable() else {
             if lastMissionEntryPromptURL != pageURL {
                 lastMissionEntryPromptURL = pageURL
@@ -718,12 +731,16 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         let labelTag = entryPoint["labelTag"] as? String ?? "?"
         let hitTag = entryPoint["hitTag"] as? String ?? "?"
         let clickableTag = entryPoint["clickableTag"] as? String ?? "?"
-        appendLog(String(format: "Kiếm thêm: DOM=(%.1f,%.1f) label=%@ hit=%@ clickable=%@ WebView=(%.1f×%.1f) webWindow=%@ webViewFrame=(%.1f,%.1f %.1fx%.1f) contentOffset=(%.1f,%.1f) windowPoint=(%.1f,%.1f)",
+        appendLog(String(format: "Kiếm thêm: DOM=(%.1f,%.1f) label=%@ hit=%@ clickable=%@ WebView=(%.1f×%.1f) zoom=%.3f scale=%.2f webWindow=%@ frame=(%.1f,%.1f %.1fx%.1f) offset=(%.1f,%.1f) inset=(%.1f,%.1f,%.1f,%.1f) window=(%.1f×%.1f) point=(%.1f,%.1f)",
                          webPoint.x, webPoint.y, labelTag, hitTag, clickableTag,
-                         webView.bounds.width, webView.bounds.height, webWindowAddress,
+                         webView.bounds.width, webView.bounds.height, webView.scrollView.zoomScale,
+                         window.screen.scale, webWindowAddress,
                          webViewFrameInWindow.origin.x, webViewFrameInWindow.origin.y,
                          webViewFrameInWindow.size.width, webViewFrameInWindow.size.height,
-                         contentOffset.x, contentOffset.y, windowPoint.x, windowPoint.y))
+                         contentOffset.x, contentOffset.y,
+                         webView.scrollView.contentInset.top, webView.scrollView.contentInset.left,
+                         webView.scrollView.contentInset.bottom, webView.scrollView.contentInset.right,
+                         window.bounds.width, window.bounds.height, windowPoint.x, windowPoint.y))
         guard window.bounds.insetBy(dx: 1, dy: 1).contains(windowPoint) else {
             appendLog("Kiếm thêm: tọa độ sau convert nằm ngoài cửa sổ app; không gửi touch")
             return
