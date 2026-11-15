@@ -934,9 +934,15 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         if automationTaskIndex == nil {
             let count = taskNames.count
             guard count > 0 else { return }
-            let next = (0..<count).map { (automationScanCursor + $0) % count }.first {
-                !completedTasks[$0] && !attemptedTaskIndices.contains($0) &&
-                missionKind(for: taskNames[$0]) == "scroll"
+            let visibleText = normalizedTaskText(nativeText(in: root)).folding(
+                options: [.caseInsensitive, .diacriticInsensitive], locale: .current
+            )
+            let next = taskNames.indices.first {
+                let key = normalizedTaskText(taskNames[$0]).folding(
+                    options: [.caseInsensitive, .diacriticInsensitive], locale: .current
+                )
+                return !completedTasks[$0] && !attemptedTaskIndices.contains($0) &&
+                    key.count >= 12 && visibleText.contains(key)
             }
             guard let next else { return }
             automationTaskIndex = next
@@ -954,7 +960,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
 
         switch automationPhase {
         case .selecting:
-            let actionLabels = ["làm ngay", "thực hiện", "đi ngay", "xem ngay", "bắt đầu", "tham gia"]
+            let actionLabels = ["nhận xu", "nhận", "làm ngay", "thực hiện", "đi ngay", "xem ngay", "bắt đầu", "tham gia"]
             var matches: [(UIView, String)] = []
             func visit(_ view: UIView) {
                 guard !view.isHidden, view.alpha > 0.01 else { return }
@@ -1006,10 +1012,14 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     self.automationPhase = .selecting
                     return
                 }
-                self.automationPhase = .waitingForPage
+                let actionLabel = normalizedTaskText(self.nativeText(in: button)).lowercased()
+                let isClaim = actionLabel == "nhận" || actionLabel == "nhận xu"
+                self.automationPhase = isClaim ? .returning : .waitingForPage
                 self.automationStartedAt = Date()
-                self.lastAutomationLogIndex = nil
-                self.appendLog("Native: đã chạm nút mở nhiệm vụ: \(taskName)")
+                self.lastAutomationLogIndex = isClaim ? -2 : nil
+                self.appendLog(isClaim
+                    ? "Native: đã chạm HID Nhận xu trên danh sách; chờ Lazada cập nhật"
+                    : "Native: đã chạm nút mở nhiệm vụ: \(taskName)")
             }
 
         case .waitingForPage:
@@ -1069,8 +1079,6 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     return key.count >= 12 && visibleText.contains(key)
                 }
                 if matchingTasks.count >= 2 {
-                    attemptedTaskIndices.insert(index)
-                    automationScanCursor = (index + 1) % max(1, taskNames.count)
                     automationTaskIndex = nil
                     automationStartedAt = nil
                     nativeAutomationScrollView = nil
@@ -1153,11 +1161,11 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             let visibleKeys = Set(visibleWebMissionTitles.map {
                 normalizedTaskText($0).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
             })
-            let next = (0..<count).map { (automationScanCursor + $0) % count }.first {
+            let next = taskNames.indices.first {
                 let key = normalizedTaskText(taskNames[$0])
                     .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
                 return !completedTasks[$0] && !attemptedTaskIndices.contains($0) &&
-                    visibleKeys.contains(key) && missionKind(for: taskNames[$0]) == "scroll"
+                    visibleKeys.contains(key)
             }
             guard let next else {
                 if lastAutomationLogIndex != -1 {
@@ -1334,8 +1342,6 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 webView.evaluateJavaScript("Array.from(document.querySelectorAll('.mission-item-center')).some(e => { const r=e.getBoundingClientRect(); return r.width>0 && r.height>0 && r.bottom>0 && r.top<innerHeight; })") { [weak self] result, _ in
                     guard let self, self.sessionActive, self.automationEnabled,
                           (result as? Bool) == true else { return }
-                    self.attemptedTaskIndices.insert(index)
-                    self.automationScanCursor = (index + 1) % max(1, self.taskNames.count)
                     self.automationTaskIndex = nil
                     self.automationStartedAt = nil
                     self.automationPhase = .selecting
