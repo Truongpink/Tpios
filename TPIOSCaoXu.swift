@@ -40,6 +40,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private var missionEntryTapStartedAt: Date?
     private var missionEntryTapAttempts = 0
     private var missionEntryTapFailureLogged = false
+    private var missionEntryNotBefore: Date?
     private var sessionActive = false
     private var lastObservedPageURL: String?
     private var lastObservedScreenSignature: String?
@@ -385,6 +386,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         attemptedTaskIndices.removeAll()
         automationScanCursor = 0
         resetAutomationPosition()
+        missionEntryNotBefore = Date().addingTimeInterval(2)
         lastAutomationLogIndex = nil
         didLogObserverDiagnostics = false
         appendLog("Bật tự động Cào xu; xử lý nhiệm vụ theo danh sách Lazada")
@@ -660,6 +662,12 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                                          hasOpenMissionsControl: Bool, entryPoint: [String: Any]?) {
         guard sessionActive, automationEnabled, !hasMissionsPage,
               let pageURL, pageURL == checkInPageURL else { return }
+
+        if let notBefore = missionEntryNotBefore {
+            guard Date() >= notBefore else { return }
+            missionEntryNotBefore = nil
+            appendLog("Kiếm thêm: đã chờ 2 giây sau khi bắt đầu; chuẩn bị chạm nút")
+        }
 
         if lastMissionEntryTapURL == pageURL {
             let elapsed = missionEntryTapStartedAt.map { Date().timeIntervalSince($0) } ?? 0
