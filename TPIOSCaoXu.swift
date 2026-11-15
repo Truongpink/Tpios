@@ -998,6 +998,16 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 return
             }
 
+            let actionLabel = normalizedTaskText(nativeText(in: button)).lowercased()
+            let isClaim = actionLabel == "nhận" || actionLabel == "nhận xu"
+            guard isClaim || missionKind(for: taskName) == "scroll" else {
+                if lastAutomationLogIndex != index {
+                    lastAutomationLogIndex = index
+                    appendLog("Native: nhiệm vụ \(missionKind(for: taskName)) chưa có bộ xử lý riêng; giữ nguyên, không cuộn thay thế")
+                }
+                return
+            }
+
             let point = button.convert(CGPoint(x: button.bounds.midX, y: button.bounds.midY), to: window)
             guard TPIOSAutoClickEngine.shared.dispatchTouch(at: point, down: true) else {
                 appendLog("Native: HID không gửi được chạm DOWN: \(taskName)")
@@ -1012,8 +1022,6 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     self.automationPhase = .selecting
                     return
                 }
-                let actionLabel = normalizedTaskText(self.nativeText(in: button)).lowercased()
-                let isClaim = actionLabel == "nhận" || actionLabel == "nhận xu"
                 self.automationPhase = isClaim ? .returning : .waitingForPage
                 self.automationStartedAt = Date()
                 self.lastAutomationLogIndex = isClaim ? -2 : nil
@@ -1267,6 +1275,14 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                    let y = payload?["y"] as? Double,
                    let window = webView.window,
                    TPIOSAutoClickEngine.backendAvailable() {
+                    let action = payload?["action"] as? String ?? "perform"
+                    guard action == "claim" || self.missionKind(for: taskName) == "scroll" else {
+                        if self.lastAutomationLogIndex != index {
+                            self.lastAutomationLogIndex = index
+                            self.appendLog("Nhiệm vụ \(self.missionKind(for: taskName)) chưa có bộ xử lý riêng; giữ nguyên, không cuộn thay thế")
+                        }
+                        return
+                    }
                     let webPoint = CGPoint(x: x, y: y)
                     guard webView.bounds.insetBy(dx: 1, dy: 1).contains(webPoint) else {
                         self.appendLog("WebView: tọa độ nút nhiệm vụ nằm ngoài vùng hiển thị; bỏ qua chạm")
