@@ -487,15 +487,17 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
               return r.width > 0 && r.height > 0 && s.display !== 'none' &&
                 s.visibility !== 'hidden' && !e.parentElement?.closest('.mission-item-center');
             });
-          const missionTitles = missionCards
-            .map(card => {
-              const raw = (card.innerText || card.textContent || '').replace(/\\s+/g, ' ').trim();
-              const progress = raw.match(/\\b(\\d+)\\s*\\/\\s*(\\d+)\\b/);
-              if (progress && Number(progress[1]) >= Number(progress[2])) return '';
-              return raw.replace(/\\b\\d+\\s*\\/\\s*\\d+\\b[\\s\\S]*$/, '')
-                .replace(/\\b(làm ngay|thực hiện|đi ngay|xem ngay|bắt đầu|tham gia|tìm kiếm)\\b/gi, ' ')
-                .replace(/\\s+/g, ' ').trim();
-            })
+          const missionTitle = card => {
+            const raw = (card.innerText || card.textContent || '').replace(/\\s+/g, ' ').trim();
+            const progress = raw.match(/\\b(\\d+)\\s*\\/\\s*(\\d+)\\b/);
+            if (progress && Number(progress[1]) >= Number(progress[2])) return '';
+            return raw.replace(/\\b\\d+\\s*\\/\\s*\\d+\\b[\\s\\S]*$/, '')
+              .replace(/\\b(làm ngay|thực hiện|đi ngay|xem ngay|bắt đầu|tham gia|tìm kiếm)\\b/gi, ' ')
+              .replace(/\\s+/g, ' ').trim();
+          };
+          const missionTitles = missionCards.map(missionTitle)
+            .filter(t => t.length >= 12 && t.length <= 140);
+          const visibleMissionTitles = missionCards.filter(visible).map(missionTitle)
             .filter(t => t.length >= 12 && t.length <= 140);
           const bodyLines = (document.body ? document.body.innerText : '').split(/\\n+/);
           const leafLines = Array.from(document.querySelectorAll('body *'))
@@ -527,6 +529,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
               .filter(t => t.length > 1 && t.length < 180)
               .slice(0, 700),
             missionTitles: missionTitles,
+            visibleMissionTitles: visibleMissionTitles,
             missionCardCount: missionCards.length,
             hasCheckInCard: (() => {
               const bodyText = document.body ? document.body.innerText : '';
@@ -581,7 +584,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 if let webLines = payload["lines"] as? [String] {
                     lines.append(contentsOf: webLines)
                 }
-                self.visibleWebMissionTitles = payload["missionTitles"] as? [String] ?? []
+                self.visibleWebMissionTitles = payload["visibleMissionTitles"] as? [String] ?? []
                 let hasCheckInCard = payload["hasCheckInCard"] as? Bool ?? false
                 hasMissionsPage = payload["hasMissionsPage"] as? Bool ?? false
                 let hasOpenMissionsControl = payload["hasOpenMissionsControl"] as? Bool ?? false
