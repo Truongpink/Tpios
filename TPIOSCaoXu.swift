@@ -1220,24 +1220,71 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         case .scrolling:
             guard let started = automationStartedAt else { return }
             if Date().timeIntervalSince(started) >= automationDuration {
-                webView.evaluateJavaScript("window.history.back();") { [weak self] _, _ in
-                    guard let self, self.sessionActive, self.automationEnabled else { return }
-                    self.automationPhase = .returning
-                    self.automationStartedAt = Date()
-                    self.appendLog("Đã kết thúc thời gian lướt; quay lại danh sách nhiệm vụ: \(taskName)")
-                }
+                automationPhase = .returning
+                automationStartedAt = Date()
+                appendLog("Đã đủ thời lượng lướt; đang tìm nút Nhận xu: \(taskName)")
             } else {
                 webView.evaluateJavaScript("window.scrollBy({top: Math.max(240, window.innerHeight * 0.72), behavior: 'smooth'});", completionHandler: nil)
             }
         case .returning:
-            guard let started = automationStartedAt, Date().timeIntervalSince(started) >= 2 else { return }
+            guard let started = automationStartedAt else { return }
+            if Date().timeIntervalSince(started) >= 2 {
+                webView.evaluateJavaScript("""
+                (() => {
+                  const norm = e => (e.innerText || e.textContent || e.getAttribute('aria-label') || '').replace(/\\s+/g,' ').trim().toLowerCase();
+                  const visible = e => { const r=e.getBoundingClientRect(),s=getComputedStyle(e); return r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth&&s.display!=='none'&&s.visibility!=='hidden'; };
+                  const nodes = Array.from(document.querySelectorAll('button,a,[role="button"],[onclick]')).filter(e => visible(e) && /nhận xu/.test(norm(e)));
+                  const targets = [...new Set(nodes.map(e => e.closest('button,a,[role="button"],[onclick]') || e))];
+                  if (targets.length !== 1) return {status: targets.length ? 'ambiguous' : 'not_found', count: targets.length, labels: nodes.slice(0,5).map(norm)};
+                  const r=targets[0].getBoundingClientRect();
+                  return {status:'ready',x:r.left+r.width/2,y:r.top+r.height/2,label:norm(targets[0])};
+                })()
+                """) { [weak self] result, error in
+                    guard let self, self.sessionActive, self.automationEnabled else { return }
+                    let payload = result as? [String: Any] ?? [:]
+                    let status = payload["status"] as? String ?? "no_result"
+                    if status == "ready",
+                       let x = payload["x"] as? Double, let y = payload["y"] as? Double,
+                       let window = webView.window, TPIOSAutoClickEngine.backendAvailable() {
+                        let webPoint = CGPoint(x:x,y:y)
+                        guard webView.bounds.insetBy(dx:1,dy:1).contains(webPoint) else {
+                            self.appendLog("Nhận xu: tọa độ nút nằm ngoài WebView; giữ nhiệm vụ")
+                            return
+                        }
+                        let point = webView.convert(webPoint,to:window)
+                        guard TPIOSAutoClickEngine.shared.dispatchTouch(at:point,down:true) else {
+                            self.appendLog("Nhận xu: HID DOWN thất bại; sẽ thử lại")
+                            return
+                        }
+                        DispatchQueue.main.asyncAfter(deadline:.now()+0.12) { [weak self] in
+                            guard let self else { return }
+                            let released = TPIOSAutoClickEngine.shared.dispatchTouch(at:point,down:false)
+                            guard released, self.sessionActive, self.automationEnabled else {
+                                self.automationEnabled = false
+                                self.appendLog("Nhận xu: HID UP thất bại; đã dừng để tránh kẹt touch")
+                                return
+                            }
+                            self.automationStartedAt = Date()
+                            self.lastAutomationLogIndex = -2
+                            self.appendLog("Đã chạm HID nút Nhận xu; chờ Lazada phản hồi: \\(taskName)")
+                        }
+                    } else if self.lastAutomationLogIndex != -2 {
+                        self.lastAutomationLogIndex = -2
+                        let labels = (payload["labels"] as? [String] ?? []).joined(separator:" | ")
+                        self.appendLog("Nhận xu: chưa tìm thấy nút duy nhất · trạng thái=\\(status) · nhãn=\\(labels)")
+                    }
+                    if let error { self.appendLog("Nhận xu: lỗi đọc DOM · \\(error.localizedDescription)") }
+                }
+                return
+            }
+            if lastAutomationLogIndex == -2 { return }
             attemptedTaskIndices.insert(index)
             automationScanCursor = (index + 1) % max(1, taskNames.count)
             automationTaskIndex = nil
             automationStartedAt = nil
             automationPhase = .selecting
             lastAutomationLogIndex = nil
-            appendLog("Đã chạy xong thao tác lướt; chờ Lazada xác nhận hoàn thành: \(taskName)")
+            appendLog("Đã gửi thao tác Nhận xu; tiếp tục chờ trạng thái nhiệm vụ Lazada: \\(taskName)")
         }
     }
 
