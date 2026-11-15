@@ -617,7 +617,9 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     (payload["headings"] as? [String] ?? []).joined(separator: " ; "),
                     (payload["interactive"] as? [String] ?? []).joined(separator: " || "),
                     (payload["productCards"] as? [String] ?? []).joined(separator: " || "),
-                    "missionCards=\(payload["missionCardCount"] as? Int ?? 0) titles=\(self.visibleWebMissionTitles.count)",
+                    "missionCards=\(payload["missionCardCount"] as? Int ?? 0) all=\((payload["missionTitles"] as? [String] ?? []).count) visible=\(self.visibleWebMissionTitles.count)",
+                    "allTitles=\((payload["missionTitles"] as? [String] ?? []).joined(separator: " | "))",
+                    "visibleTitles=\(self.visibleWebMissionTitles.joined(separator: " | "))",
                     "missionScroll=\((payload["missionScroll"] as? [String: Any]).map { "found=\($0["found"] ?? false) top=\($0["top"] ?? 0) max=\($0["max"] ?? 0)" } ?? "none")"
                 ]
                 let diagnostic = diagnosticParts.joined(separator: " ## ")
@@ -635,7 +637,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     hasOpenMissionsControl: hasOpenMissionsControl
                 )
                 if hasMissionsPage {
-                    self.syncMissionTasks(self.visibleWebMissionTitles)
+                    self.syncMissionTasks(payload["missionTitles"] as? [String] ?? [])
                 }
                 self.tapMissionEntryIfNeeded(
                     in: webView,
