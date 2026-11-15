@@ -1290,7 +1290,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         guard !excludedLabels.contains(lower) else { return false }
 
         // Exclude seller/product counters such as "200+ đánh giá có hình ảnh".
-        let metadataPattern = #"^\d+[\d.,]*\s*\+?\s*(đánh giá|người theo dõi|lượt theo dõi|reviews?|followers?)"#
+        let metadataPattern = #"^\d+[\d.,]*\s*[kmb]?\s*\+?\s*(đánh giá|người theo dõi|lượt theo dõi|reviews?|followers?)"#
         if lower.range(of: metadataPattern, options: .regularExpression) != nil { return false }
 
         // This is a page/category slogan, not an individual task card.
