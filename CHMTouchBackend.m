@@ -256,12 +256,31 @@ static BOOL CHMDispatchHIDTouch(CGPoint point, CHMTouchPhase phase, CHMTouchBack
             overlayView.hidden = NO;
         }
         hitView = hitView ?: window.rootViewController.view;
+        CGPoint hitLocalPoint = [hitView convertPoint:point fromView:window];
+        CGRect hitWindowFrame = [hitView convertRect:hitView.bounds toView:window];
+        NSMutableString *hitHierarchy = [NSMutableString string];
+        UIView *ancestor = hitView;
+        NSUInteger depth = 0;
+        while (ancestor && depth < 6) {
+            if (depth > 0) [hitHierarchy appendString:@" <- "];
+            [hitHierarchy appendFormat:@"%@{frame=%.1f,%.1f %.1fx%.1f bounds=%.1fx%.1f}",
+             NSStringFromClass(ancestor.class),
+             ancestor.frame.origin.x, ancestor.frame.origin.y,
+             ancestor.frame.size.width, ancestor.frame.size.height,
+             ancestor.bounds.size.width, ancestor.bounds.size.height];
+            ancestor = ancestor.superview;
+            depth++;
+        }
         snprintf(CHMLastTouchDiagnostic, sizeof(CHMLastTouchDiagnostic),
-                 "DOWN point=(%.1f,%.1f) window=%p %s bounds=(%.1f,%.1f %.1fx%.1f) hit=%s hitFrame=(%.1f,%.1f %.1fx%.1f) hid=(%.1f,%.1f)",
+                 "DOWN point=(%.1f,%.1f) window=%p %s bounds=(%.1f,%.1f %.1fx%.1f) hit=%s local=(%.1f,%.1f) hitBounds=(%.1fx%.1f) inside=%d hitWindowFrame=(%.1f,%.1f %.1fx%.1f) chain=%s hid=(%.1f,%.1f)",
                  point.x, point.y, (__bridge void *)window, NSStringFromClass(window.class).UTF8String,
                  window.bounds.origin.x, window.bounds.origin.y, window.bounds.size.width, window.bounds.size.height,
                  NSStringFromClass(hitView.class).UTF8String,
-                 hitView.frame.origin.x, hitView.frame.origin.y, hitView.frame.size.width, hitView.frame.size.height,
+                 hitLocalPoint.x, hitLocalPoint.y, hitView.bounds.size.width, hitView.bounds.size.height,
+                 CGRectContainsPoint(hitView.bounds, hitLocalPoint),
+                 hitWindowFrame.origin.x, hitWindowFrame.origin.y,
+                 hitWindowFrame.size.width, hitWindowFrame.size.height,
+                 hitHierarchy.UTF8String ?: "",
                  hidPoint.x, hidPoint.y);
     }
     UITouch *touch = backend.activeTouch;
