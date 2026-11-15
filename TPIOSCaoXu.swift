@@ -517,9 +517,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
               const max = Math.max(0, scrollTarget.scrollHeight - scrollTarget.clientHeight);
               const top = scrollTarget.scrollTop;
               missionScroll = {found:true, top:top, max:max};
-              if (top >= max - 8) {
-                if (top > 0) scrollTarget.scrollTop = 0;
-              } else {
+              if (top < max - 8) {
                 scrollTarget.scrollTop = Math.min(max, top + Math.max(240, scrollTarget.clientHeight * 0.68));
               }
             }
