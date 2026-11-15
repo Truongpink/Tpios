@@ -624,7 +624,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 ]
                 let diagnostic = diagnosticParts.joined(separator: " ## ")
                 let diagnosticSignature = String(diagnostic.hashValue)
-                if !diagnostic.isEmpty, diagnosticSignature != self.lastDOMDiagnosticSignature {
+                if (!self.automationEnabled || hasMissionsPage || hasCheckInCard),
+                   !diagnostic.isEmpty, diagnosticSignature != self.lastDOMDiagnosticSignature {
                     self.lastDOMDiagnosticSignature = diagnosticSignature
                     let clipped = String(diagnostic.prefix(1800))
                     self.appendLog("DOM nhiệm vụ: \(clipped)")
@@ -1489,7 +1490,9 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 taskDetails.append("")
                 taskURLs.append("")
                 changed = true
-                appendLog("Nhận diện nhiệm vụ trên màn hình: \(name)")
+                if !automationEnabled {
+                    appendLog("Nhận diện nhiệm vụ trên màn hình: \(name)")
+                }
             }
 
             if let index = taskNames.firstIndex(where: {
@@ -1506,12 +1509,16 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 if !detail.isEmpty && taskDetails[index] != detail {
                     taskDetails[index] = detail
                     changed = true
-                    appendLog("Đã lưu hướng dẫn cho nhiệm vụ: \(name)")
+                    if !automationEnabled {
+                        appendLog("Đã lưu hướng dẫn cho nhiệm vụ: \(name)")
+                    }
                 }
                 if candidateNames.count == 1, let pageURL, taskURLs[index] != pageURL {
                     taskURLs[index] = pageURL
                     changed = true
-                    appendLog("Đã gắn URL trang nhiệm vụ: \(name) → \(pageURL)")
+                    if !automationEnabled {
+                        appendLog("Đã gắn URL trang nhiệm vụ: \(name) → \(pageURL)")
+                    }
                 }
             }
 
