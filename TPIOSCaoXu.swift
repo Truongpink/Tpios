@@ -1047,64 +1047,14 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         case .returning:
             if lastAutomationLogIndex == -2 {
                 guard let started = automationStartedAt, Date().timeIntervalSince(started) >= 3 else { return }
-                lastAutomationLogIndex = -3
-                automationStartedAt = Date()
-                appendLog("Native: đã chờ Lazada phản hồi sau chạm Nhận xu; đang tìm nút quay lại danh sách: \(taskName)")
-                return
-            }
-
-            if lastAutomationLogIndex == -3 || lastAutomationLogIndex == -5 {
-                var explicitBackTargets: [UIView] = []
-                var topLeftControls: [UIView] = []
-                func visitBackControls(_ view: UIView) {
-                    guard !view.isHidden, view.alpha > 0.01, view.window === window else { return }
-                    let frame = view.convert(view.bounds, to: window)
-                    let isControl = view is UIButton || view is UIControl ||
-                        view.accessibilityTraits.contains(.button) ||
-                        !(view.gestureRecognizers ?? []).isEmpty
-                    if isControl, frame.minX >= 0, frame.minX < 100,
-                       frame.minY >= 0, frame.minY < 120,
-                       frame.width >= 20, frame.width <= 90,
-                       frame.height >= 20, frame.height <= 90 {
-                        if !topLeftControls.contains(where: { $0 === view }) {
-                            topLeftControls.append(view)
-                        }
-                        let label = normalizedTaskText(nativeText(in: view)).lowercased()
-                        if ["back", "quay lại", "trở về", "返回"].contains(where: { label.contains($0) }),
-                           !explicitBackTargets.contains(where: { $0 === view }) {
-                            explicitBackTargets.append(view)
-                        }
-                    }
-                    view.subviews.forEach(visitBackControls)
-                }
-                visitBackControls(root)
-                let candidates = explicitBackTargets.isEmpty ? topLeftControls : explicitBackTargets
-                guard candidates.count == 1, let target = candidates.first,
-                      TPIOSAutoClickEngine.backendAvailable() else {
-                    if lastAutomationLogIndex != -5 {
-                        lastAutomationLogIndex = -5
-                        appendLog("Native: chưa xác định duy nhất nút quay lại · nút vùng góc trái trên=\(topLeftControls.count) · nút có nhãn=\(explicitBackTargets.count); giữ nguyên nhiệm vụ")
-                    }
-                    return
-                }
-
-                let point = target.convert(CGPoint(x: target.bounds.midX, y: target.bounds.midY), to: window)
-                guard TPIOSAutoClickEngine.shared.dispatchTouch(at: point, down: true) else {
-                    appendLog("Native quay lại: HID DOWN thất bại; chưa chuyển nhiệm vụ")
-                    return
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
-                    guard let self else { _ = TPIOSAutoClickEngine.shared.dispatchTouch(at: point, down: false); return }
-                    let released = TPIOSAutoClickEngine.shared.dispatchTouch(at: point, down: false)
-                    guard released, self.sessionActive, self.automationEnabled else {
-                        self.automationEnabled = false
-                        self.appendLog("Native quay lại: HID UP thất bại; đã dừng để tránh kẹt touch")
-                        return
-                    }
-                    self.lastAutomationLogIndex = -4
-                    self.automationStartedAt = Date()
-                    self.appendLog("Native: đã chạm HID nút quay lại; chờ danh sách nhiệm vụ xuất hiện")
-                }
+                attemptedTaskIndices.insert(index)
+                automationScanCursor = (index + 1) % max(1, taskNames.count)
+                automationTaskIndex = nil
+                automationStartedAt = nil
+                nativeAutomationScrollView = nil
+                automationPhase = .selecting
+                lastAutomationLogIndex = nil
+                appendLog("Native: đã chờ Lazada cập nhật sau khi nhận xu; tiếp tục xét nhiệm vụ")
                 return
             }
 
@@ -1126,77 +1076,26 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     nativeAutomationScrollView = nil
                     automationPhase = .selecting
                     lastAutomationLogIndex = nil
-                    appendLog("Native: đã xác nhận danh sách nhiệm vụ trở lại (\(matchingTasks.count) thẻ); chuyển sang nhiệm vụ tiếp theo")
+                    appendLog("Native: đã xác nhận danh sách nhiệm vụ trở lại; tiếp tục xử lý")
                 } else if let started = automationStartedAt, Date().timeIntervalSince(started) >= 12,
                           lastAutomationLogIndex != -6 {
                     lastAutomationLogIndex = -6
-                    appendLog("Native: chưa thấy danh sách nhiệm vụ sau khi quay lại; không tự mở nhiệm vụ khác để tránh chạm nhầm")
+                    appendLog("Native: đã điều hướng nhưng chưa xác nhận được danh sách nhiệm vụ; giữ tiến độ")
                 }
                 return
             }
 
-            var claimTargets: [UIView] = []
-            var claimLabels: [String] = []
-            func visitClaimControls(_ view: UIView) {
-                guard !view.isHidden, view.alpha > 0.01, view.window === window else { return }
-                let rawLabels: [String]
-                if let button = view as? UIButton {
-                    rawLabels = [button.currentTitle, button.accessibilityLabel].compactMap { $0 }
-                } else if let label = view as? UILabel {
-                    rawLabels = [label.text, label.accessibilityLabel].compactMap { $0 }
-                } else {
-                    rawLabels = [view.accessibilityLabel].compactMap { $0 }
-                }
-                let label = normalizedTaskText(rawLabels.joined(separator: " ")).lowercased()
-                if !label.isEmpty, (label.contains("nhận xu") || label == "nhận") {
-                    claimLabels.append(label)
-                    var target: UIView = view
-                    var ancestor = view.superview
-                    for _ in 0..<6 {
-                        guard let candidate = ancestor else { break }
-                        if candidate is UIControl || candidate.accessibilityTraits.contains(.button) ||
-                            !(candidate.gestureRecognizers ?? []).isEmpty {
-                            target = candidate
-                            break
-                        }
-                        ancestor = candidate.superview
-                    }
-                    if target.bounds.width > 0, target.bounds.height > 0,
-                       !claimTargets.contains(where: { $0 === target }) {
-                        claimTargets.append(target)
-                    }
-                }
-                view.subviews.forEach(visitClaimControls)
-            }
-            visitClaimControls(root)
-
-            guard claimTargets.count == 1, let target = claimTargets.first,
-                  TPIOSAutoClickEngine.backendAvailable() else {
-                if lastAutomationLogIndex != index {
-                    lastAutomationLogIndex = index
-                    let observed = claimLabels.prefix(5).joined(separator: " | ")
-                    appendLog("Native: chưa tìm thấy duy nhất nút Nhận xu · khớp=\(claimTargets.count) · nhãn=\(observed.isEmpty ? "không có" : observed)")
-                }
+            guard lastAutomationLogIndex != -5 else { return }
+            let candidates = findWebViews(in: root).filter { $0.window === window && $0.canGoBack }
+            guard candidates.count == 1, let missionWebView = candidates.first else {
+                lastAutomationLogIndex = -5
+                appendLog("Native: không có duy nhất WebView có lịch sử để quay lại danh sách; không chạm nút Back giao diện")
                 return
             }
-
-            let point = target.convert(CGPoint(x: target.bounds.midX, y: target.bounds.midY), to: window)
-            guard TPIOSAutoClickEngine.shared.dispatchTouch(at: point, down: true) else {
-                appendLog("Native Nhận xu: HID DOWN thất bại; sẽ thử lại")
-                return
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
-                guard let self else { _ = TPIOSAutoClickEngine.shared.dispatchTouch(at: point, down: false); return }
-                let released = TPIOSAutoClickEngine.shared.dispatchTouch(at: point, down: false)
-                guard released, self.sessionActive, self.automationEnabled else {
-                    self.automationEnabled = false
-                    self.appendLog("Native Nhận xu: HID UP thất bại; đã dừng để tránh kẹt touch")
-                    return
-                }
-                self.automationStartedAt = Date()
-                self.lastAutomationLogIndex = -2
-                self.appendLog("Native: đã chạm HID nút Nhận xu; chờ Lazada phản hồi: \(taskName)")
-            }
+            missionWebView.goBack()
+            lastAutomationLogIndex = -4
+            automationStartedAt = Date()
+            appendLog("Native: gọi WebView.goBack() để trở về danh sách nhiệm vụ; chờ xác nhận")
         }
     }
 
@@ -1246,8 +1145,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
 
     private func driveAutomation(in webView: WKWebView) {
         guard sessionActive, automationEnabled,
-              let pageURL = sanitizedPageURL(webView.url),
-              missionsPageURL == pageURL else { return }
+              let pageURL = sanitizedPageURL(webView.url) else { return }
+        if missionsPageURL != pageURL && automationPhase != .returning { return }
 
         if automationTaskIndex == nil {
             let count = taskNames.count
@@ -1295,9 +1194,9 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 const r=e.getBoundingClientRect(),s=getComputedStyle(e);
                 return r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth&&s.display!=='none'&&s.visibility!=='hidden';
               };
-              const center = e => {
+              const center = (e, action='perform') => {
                 const r=e.getBoundingClientRect();
-                return {status:'ready',x:r.left+r.width/2,y:r.top+r.height/2};
+                return {status:'ready',action:action,x:r.left+r.width/2,y:r.top+r.height/2};
               };
               const cards = Array.from(document.querySelectorAll('.mission-item-center'))
                 .filter(e => visible(e) && !e.parentElement?.closest('.mission-item-center'));
@@ -1318,7 +1217,11 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                   if (go && visible(go)) break;
                   go = null;
                 }
-                if (go) return center(go);
+                if (go && visible(go)) {
+                  const label = norm(go.innerText || go.textContent || go.getAttribute('aria-label'));
+                  if (/^nhận(?: xu)?$/.test(label)) return center(go, 'claim');
+                  return center(go, 'perform');
+                }
                 container = card;
                 for (let depth = 0; container && depth < 5; depth++, container = container.parentElement) {
                   const actions = Array.from(container.querySelectorAll('a,button,[role="button"],[onclick],.mission-item-btn-go'))
@@ -1378,10 +1281,13 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                             self.automationPhase = .selecting
                             return
                         }
-                        self.automationPhase = .waitingForPage
+                        let action = payload?["action"] as? String ?? "perform"
+                        self.automationPhase = action == "claim" ? .returning : .waitingForPage
                         self.automationStartedAt = Date()
-                        self.lastAutomationLogIndex = nil
-                        self.appendLog("Đã chạm nút nhiệm vụ bằng DOM + HID: \(taskName)")
+                        self.lastAutomationLogIndex = action == "claim" ? -2 : nil
+                        self.appendLog(action == "claim"
+                            ? "Đã chạm HID nút Nhận xu trên danh sách; chờ Lazada cập nhật: \(taskName)"
+                            : "Đã chạm nút nhiệm vụ bằng DOM + HID: \(taskName)")
                     }
                 } else {
                     if clickResult == "ready" {
@@ -1420,79 +1326,36 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 automationStartedAt = nil
                 automationPhase = .selecting
                 lastAutomationLogIndex = nil
-                appendLog("Đã chạm Nhận xu; chờ Lazada cập nhật trạng thái nhiệm vụ: \(taskName)")
+                appendLog("Đã chờ Lazada cập nhật sau khi nhận xu; tiếp tục xét nhiệm vụ")
                 return
             }
-            if Date().timeIntervalSince(started) >= 2 {
-                webView.evaluateJavaScript("""
-                (() => {
-                  const norm = e => (e.innerText || e.textContent || e.getAttribute('aria-label') || '').replace(/\\s+/g,' ').trim().toLowerCase();
-                  const visible = e => { const r=e.getBoundingClientRect(),s=getComputedStyle(e); return r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth&&s.display!=='none'&&s.visibility!=='hidden'; };
-                  const nodes = Array.from(document.querySelectorAll('button,a,[role="button"],[onclick]')).filter(e => {
-                    if (!visible(e)) return false;
-                    const label = norm(e);
-                    if (/nhận xu/.test(label)) return true;
-                    if (label !== 'nhận') return false;
-                    const context = norm(e.parentElement || e);
-                    return /xu|lazcoins|nhiệm vụ|điểm danh/i.test(context);
-                  });
-                  const targets = [...new Set(nodes.map(e => e.closest('button,a,[role="button"],[onclick]') || e))];
-                  if (targets.length !== 1) return {
-                    status: targets.length ? 'ambiguous' : 'not_found',
-                    count: targets.length,
-                    labels: nodes.slice(0,5).map(e => norm(e) + ' [' + norm(e.parentElement || e).slice(0,90) + ']')
-                  };
-                  const r=targets[0].getBoundingClientRect();
-                  return {status:'ready',x:r.left+r.width/2,y:r.top+r.height/2,label:norm(targets[0])};
-                })()
-                """) { [weak self] result, error in
-                    guard let self, self.sessionActive, self.automationEnabled else { return }
-                    let payload = result as? [String: Any] ?? [:]
-                    let status = payload["status"] as? String ?? "no_result"
-                    if status == "ready",
-                       let x = payload["x"] as? Double, let y = payload["y"] as? Double,
-                       let window = webView.window, TPIOSAutoClickEngine.backendAvailable() {
-                        let webPoint = CGPoint(x:x,y:y)
-                        guard webView.bounds.insetBy(dx:1,dy:1).contains(webPoint) else {
-                            self.appendLog("Nhận xu: tọa độ nút nằm ngoài WebView; giữ nhiệm vụ")
-                            return
-                        }
-                        let point = webView.convert(webPoint,to:window)
-                        guard TPIOSAutoClickEngine.shared.dispatchTouch(at:point,down:true) else {
-                            self.appendLog("Nhận xu: HID DOWN thất bại; sẽ thử lại")
-                            return
-                        }
-                        DispatchQueue.main.asyncAfter(deadline:.now()+0.12) { [weak self] in
-                            guard let self else { return }
-                            let released = TPIOSAutoClickEngine.shared.dispatchTouch(at:point,down:false)
-                            guard released, self.sessionActive, self.automationEnabled else {
-                                self.automationEnabled = false
-                                self.appendLog("Nhận xu: HID UP thất bại; đã dừng để tránh kẹt touch")
-                                return
-                            }
-                            self.automationStartedAt = Date()
-                            self.lastAutomationLogIndex = -2
-                            self.appendLog("Đã chạm HID nút Nhận xu; chờ Lazada phản hồi: \(taskName)")
-                        }
-                    } else if self.lastAutomationLogIndex != -3 {
-                        self.lastAutomationLogIndex = -3
-                        let labels = (payload["labels"] as? [String] ?? []).joined(separator:" | ")
-                        self.appendLog("Nhận xu: chưa tìm thấy nút duy nhất · trạng thái=\(status) · nhãn=\(labels)")
-                    }
-                    if let error { self.appendLog("Nhận xu: lỗi đọc DOM · \(error.localizedDescription)") }
+            if lastAutomationLogIndex == -4 {
+                guard pageURL == missionsPageURL else { return }
+                webView.evaluateJavaScript("Array.from(document.querySelectorAll('.mission-item-center')).some(e => { const r=e.getBoundingClientRect(); return r.width>0 && r.height>0 && r.bottom>0 && r.top<innerHeight; })") { [weak self] result, _ in
+                    guard let self, self.sessionActive, self.automationEnabled,
+                          (result as? Bool) == true else { return }
+                    self.attemptedTaskIndices.insert(index)
+                    self.automationScanCursor = (index + 1) % max(1, self.taskNames.count)
+                    self.automationTaskIndex = nil
+                    self.automationStartedAt = nil
+                    self.automationPhase = .selecting
+                    self.lastAutomationLogIndex = nil
+                    self.appendLog("Đã xác nhận danh sách nhiệm vụ trở lại; tiếp tục xét hành động")
                 }
                 return
             }
-            if lastAutomationLogIndex == -2 || lastAutomationLogIndex == -3 {
+            guard Date().timeIntervalSince(started) >= 2 else { return }
+            guard webView.canGoBack else {
+                if lastAutomationLogIndex != -5 {
+                    lastAutomationLogIndex = -5
+                    appendLog("WebView: không có lịch sử điều hướng để trở về danh sách; giữ nhiệm vụ, không chạm nút Back")
+                }
                 return
             }
-            attemptedTaskIndices.insert(index)
-            automationScanCursor = (index + 1) % max(1, taskNames.count)
-            automationTaskIndex = nil
-            automationStartedAt = nil
-            automationPhase = .selecting
-            lastAutomationLogIndex = nil
-            appendLog("Đã kết thúc bước nhận xu; chờ trạng thái nhiệm vụ Lazada: \(taskName)")
+            webView.goBack()
+            lastAutomationLogIndex = -4
+            automationStartedAt = Date()
+            appendLog("Đã gọi WebView.goBack() để trở về danh sách nhiệm vụ; chờ xác nhận")
         }
     }
 
