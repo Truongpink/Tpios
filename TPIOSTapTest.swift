@@ -3,6 +3,7 @@ import Foundation
 
 @_silgen_name("TPIOSCHMTouchAvailable") private func TPIOSCHMTouchAvailable() -> Bool
 @_silgen_name("TPIOSCHMTouchDispatch") private func TPIOSCHMTouchDispatch(_ x: Double, _ y: Double, _ phase: Int32) -> Bool
+@_silgen_name("TPIOSCHMTouchLastDiagnostic") private func TPIOSCHMTouchLastDiagnostic() -> UnsafePointer<CChar>?
 
 final class TPIOSAutoClickEngine {
     static let shared = TPIOSAutoClickEngine()
