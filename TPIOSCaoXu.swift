@@ -724,10 +724,6 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                          webViewFrameInWindow.origin.x, webViewFrameInWindow.origin.y,
                          webViewFrameInWindow.size.width, webViewFrameInWindow.size.height,
                          contentOffset.x, contentOffset.y, windowPoint.x, windowPoint.y))
-        lastMissionEntryTapURL = pageURL
-        missionEntryTapStartedAt = Date()
-        missionEntryTapAttempts += 1
-
         guard window.bounds.insetBy(dx: 1, dy: 1).contains(windowPoint) else {
             appendLog("Kiếm thêm: tọa độ sau convert nằm ngoài cửa sổ app; không gửi touch")
             return
