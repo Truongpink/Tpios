@@ -11,6 +11,10 @@ final class TPIOSAutoClickEngine {
     func dispatchTouch(at point: CGPoint, down: Bool) -> Bool {
         TPIOSCHMTouchDispatch(point.x, point.y, down ? 0 : 3)
     }
+    static func lastDiagnostic() -> String {
+        guard let diagnostic = TPIOSCHMTouchLastDiagnostic() else { return "No touch diagnostic" }
+        return String(cString: diagnostic)
+    }
     static func backendAvailable() -> Bool { TPIOSCHMTouchAvailable() }
     static func appWindow() -> UIWindow? {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
