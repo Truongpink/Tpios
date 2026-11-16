@@ -68,6 +68,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private var lastAutomationLogIndex: Int?
     private var lastClaimScanSignature: String?
     private var claimRetryBlockedTitles = Set<String>()
+    private var taskLookupFailures = [String: Int]()
     private var lastBottomScanSignature: String?
     private var bottomScanCount = 0
     private var visibleWebMissionTitles: [String] = []
@@ -391,6 +392,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         automationEnabled = true
         attemptedTaskIndices.removeAll()
         claimRetryBlockedTitles.removeAll()
+        taskLookupFailures.removeAll()
         lastClaimScanSignature = nil
         lastBottomScanSignature = nil
         bottomScanCount = 0
@@ -1484,6 +1486,34 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     } else if self.lastAutomationLogIndex != index {
                         self.lastAutomationLogIndex = index
                         self.appendLog("Chưa mở được nhiệm vụ: \(taskName) · kết quả=\(clickResult)")
+                    }
+                    if clickResult == "ready" {
+                        self.appendLog("Tìm thấy nút nhưng HID chưa sẵn sàng; tạm dừng để không bỏ nhiệm vụ: " + taskName)
+                        self.automationEnabled = false
+                        self.automationTaskIndex = nil
+                        self.automationPhase = .selecting
+                        self.refresh()
+                        return
+                    }
+                    let retryable: Set<String> = [
+                        "title_not_found", "mission_not_found", "mission_ambiguous",
+                        "mission_action_not_found", "title_found_no_action", "no_result"
+                    ]
+                    if retryable.contains(clickResult) {
+                        let key = self.normalizedTaskText(taskName).lowercased()
+                        let failures = (self.taskLookupFailures[key] ?? 0) + 1
+                        self.taskLookupFailures[key] = failures
+                        if failures < 3 {
+                            self.lastAutomationLogIndex = nil
+                            self.automationTaskIndex = nil
+                            self.automationStartedAt = nil
+                            self.automationPhase = .selecting
+                            self.appendLog("Chưa nhận diện được thẻ nhiệm vụ; sẽ thử lại (\\(failures)/3): " + taskName)
+                            return
+                        }
+                        self.appendLog("Đã thử nhận diện 3 lần nhưng chưa thấy thẻ; tạm bỏ qua để tiếp tục quét/cuộn: " + taskName)
+                    } else if let error {
+                        self.appendLog("Không thực hiện được nhiệm vụ do lỗi WebView: " + error.localizedDescription)
                     }
                     self.attemptedTaskIndices.insert(index)
                     self.automationScanCursor = (index + 1) % max(1, self.taskNames.count)
