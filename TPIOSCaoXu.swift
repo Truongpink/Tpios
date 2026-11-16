@@ -556,6 +556,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
               missionScroll = {found:true, top:top, max:max};
               if (top < max - 8) {
                 scrollTarget.scrollTop = Math.min(max, top + Math.max(240, scrollTarget.clientHeight * 0.68));
+              } else if (top >= max - 8) {
+                scrollTarget.scrollTop = 0;
               }
             } else {
               const docHeight = Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
@@ -564,6 +566,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
               missionScroll = {found:max > 40, top:top, max:max};
               if (max > 40 && top < max - 8) {
                 window.scrollTo(0, Math.min(max, top + Math.max(240, window.innerHeight * 0.68)));
+              } else if (max > 40 && top >= max - 8) {
+                window.scrollTo(0, 0);
               }
             }
           }
