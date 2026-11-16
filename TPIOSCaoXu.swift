@@ -892,6 +892,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         hasCurrentMissionSnapshot = true
         if changed {
             automationScanCursor = 0
+            lastAutomationLogIndex = nil
             resetAutomationPosition()
             appendLog("Đã bổ sung nhiệm vụ từ Lazada: tổng \(names.count), mới \(names.count - previousCount)")
             saveObservedTasks()
