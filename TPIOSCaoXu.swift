@@ -530,47 +530,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
               }).filter(Boolean).slice(0, 5);
             return {title:title, controls:controls};
           }).filter(Boolean);
-          const shouldAutoScroll = \(automationEnabled && automationTaskIndex == nil ? "true" : "false");
-          let missionScroll = {found:false, top:0, max:0};
-          if (shouldAutoScroll && missionCards.length) {
-            const candidates = [];
-            const addCandidate = node => {
-              if (!node) return;
-              const style = getComputedStyle(node);
-              const max = node.scrollHeight - node.clientHeight;
-              if (max > 40 && (node === document.scrollingElement || /(auto|scroll)/.test(style.overflowY))) {
-                if (!candidates.includes(node)) candidates.push(node);
-              }
-            };
-            missionCards.forEach(card => {
-              let node = card;
-              for (let depth = 0; node && depth < 12; depth++, node = node.parentElement) addCandidate(node);
-            });
-            addCandidate(document.scrollingElement);
-            const scrollTarget = candidates.sort((a,b) =>
-              (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight)
-            )[0];
-            if (scrollTarget) {
-              const max = Math.max(0, scrollTarget.scrollHeight - scrollTarget.clientHeight);
-              const top = scrollTarget.scrollTop;
-              missionScroll = {found:true, top:top, max:max};
-              if (top < max - 8) {
-                scrollTarget.scrollTop = Math.min(max, top + Math.max(240, scrollTarget.clientHeight * 0.68));
-              } else if (top >= max - 8) {
-                scrollTarget.scrollTop = 0;
-              }
-            } else {
-              const docHeight = Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
-              const max = Math.max(0, docHeight - window.innerHeight);
-              const top = window.scrollY || 0;
-              missionScroll = {found:max > 40, top:top, max:max};
-              if (max > 40 && top < max - 8) {
-                window.scrollTo(0, Math.min(max, top + Math.max(240, window.innerHeight * 0.68)));
-              } else if (max > 40 && top >= max - 8) {
-                window.scrollTo(0, 0);
-              }
-            }
-          }
+          const missionScroll = {found:false, top:0, max:0};
           const bodyLines = (document.body ? document.body.innerText : '').split(/\\n+/);
           const leafLines = Array.from(document.querySelectorAll('body *'))
             .filter(e => e.children.length === 0 && visible(e))
@@ -664,16 +624,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 let activeTaskKind = self.automationTaskIndex.flatMap { self.taskNames.indices.contains($0) ? self.missionKind(for: self.taskNames[$0]) : nil }
                 let diagnosticParts: [String]
                 if hasMissionsPage {
-                    let missionActionSummary = (payload["missionActions"] as? [[String: Any]] ?? []).map { item -> String in
-                        let title = item["title"] as? String ?? ""
-                        let controls = (item["controls"] as? [String] ?? []).joined(separator: ",")
-                        return title + " => " + (controls.isEmpty ? "no-control" : controls)
-                    }.joined(separator: " || ")
                     diagnosticParts = [
-                        "missionCards=\(payload["missionCardCount"] as? Int ?? 0) all=\((payload["missionTitles"] as? [String] ?? []).count) visible=\(self.visibleWebMissionTitles.count)",
-                        "allTitles=\((payload["missionTitles"] as? [String] ?? []).joined(separator: " | "))",
-                        "actions=\(missionActionSummary)",
-                        "missionScroll=\((payload["missionScroll"] as? [String: Any]).map { "top=\($0["top"] ?? 0) max=\($0["max"] ?? 0)" } ?? "none")"
+                        "Danh sách nhiệm vụ: \(payload["missionCardCount"] as? Int ?? 0) thẻ · \((payload["missionTitles"] as? [String] ?? []).count) nhiệm vụ"
                     ]
                 } else if activeTaskName != nil {
                     let relevantPageLines = (payload["lines"] as? [String] ?? []).filter { line in
@@ -696,8 +648,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 let diagnosticSignature = String(diagnostic.hashValue)
                 if !diagnostic.isEmpty, diagnosticSignature != self.lastDOMDiagnosticSignature {
                     self.lastDOMDiagnosticSignature = diagnosticSignature
-                    let clipped = String(diagnostic.prefix(hasMissionsPage ? 1800 : 1600))
-                    self.appendLog("DOM nhiệm vụ: \(clipped)")
+                    let clipped = String(diagnostic.prefix(hasMissionsPage ? 120 : 600))
+                    self.appendLog(hasMissionsPage ? clipped : "DOM trang nhiệm vụ: \(clipped)")
                 }
                 self.captureLazadaPageURLs(
                     pageURL: pageURL,
@@ -1187,16 +1139,9 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         if missionsPageURL != pageURL && automationPhase != .returning { return }
 
         if automationTaskIndex == nil {
-            let next = visibleWebMissionTitles.lazy.compactMap { [self] visibleTitle -> Int? in
-                let visibleKey = self.normalizedTaskText(visibleTitle)
-                    .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-                return self.taskNames.indices.first { taskIndex in
-                    let key = self.normalizedTaskText(self.taskNames[taskIndex])
-                        .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-                    return key == visibleKey && !self.completedTasks[taskIndex] &&
-                        !self.attemptedTaskIndices.contains(taskIndex)
-                }
-            }.first
+            let next = taskNames.indices.first {
+                !completedTasks[$0] && !attemptedTaskIndices.contains($0)
+            }
             guard let next else {
                 if lastAutomationLogIndex != -1 {
                     lastAutomationLogIndex = -1
@@ -1237,7 +1182,10 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 return {status:'ready',action:action,x:r.left+r.width/2,y:r.top+r.height/2};
               };
               const cards = Array.from(document.querySelectorAll('.mission-item-center'))
-                .filter(e => visible(e) && !e.parentElement?.closest('.mission-item-center'));
+                .filter(e => {
+                  const r=e.getBoundingClientRect(),s=getComputedStyle(e);
+                  return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'&&!e.parentElement?.closest('.mission-item-center');
+                });
               if (cards.length) {
                 const matches = cards.filter(card => {
                   const raw = norm(card.innerText || card.textContent);
@@ -1249,6 +1197,10 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 if (!matches.length) return {status:'mission_not_found'};
                 if (matches.length !== 1) return {status:'mission_ambiguous'};
                 const card = matches[0];
+                if (!visible(card)) {
+                  card.scrollIntoView({block:'center',behavior:'auto'});
+                  return {status:'scrolled'};
+                }
                 let container = card, go = null;
                 for (let depth = 0; container && depth < 5; depth++, container = container.parentElement) {
                   go = container.querySelector('.mission-item-btn-go');
@@ -1292,6 +1244,10 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 guard let self, self.sessionActive, self.automationEnabled else { return }
                 let payload = result as? [String: Any]
                 let clickResult = payload?["status"] as? String ?? "no_result"
+                if clickResult == "scrolled" {
+                    self.lastAutomationLogIndex = -6
+                    return
+                }
                 if clickResult == "ready",
                    let x = payload?["x"] as? Double,
                    let y = payload?["y"] as? Double,
@@ -1345,8 +1301,10 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                         self.lastAutomationLogIndex = index
                         self.appendLog("Chưa mở được nhiệm vụ: \(taskName) · kết quả=\(clickResult)")
                     }
+                    self.attemptedTaskIndices.insert(index)
                     self.automationScanCursor = (index + 1) % max(1, self.taskNames.count)
                     self.automationTaskIndex = nil
+                    self.automationStartedAt = nil
                     self.automationPhase = .selecting
                 }
                 if let error { self.appendLog("Lỗi mở nhiệm vụ: \(error.localizedDescription)") }
