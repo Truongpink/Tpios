@@ -1271,7 +1271,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                   const candidates=[];
                   for(let p=node;p&&p!==document.body;p=p.parentElement){
                     const st=getComputedStyle(p);
-                    if(p.scrollHeight-p.clientHeight>40&&/(auto|scroll|overlay)/.test(st.overflowY))candidates.push(p);
+                    if(p.scrollHeight-p.clientHeight>40&&/(auto|scroll|overlay|hidden)/.test(st.overflowY))candidates.push(p);
                   }
                   const root=document.scrollingElement||document.documentElement;
                   if(root.scrollHeight-root.clientHeight>40&&!candidates.includes(root))candidates.push(root);
