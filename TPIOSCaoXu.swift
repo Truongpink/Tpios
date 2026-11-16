@@ -533,22 +533,37 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
           const shouldAutoScroll = \(automationEnabled && automationTaskIndex == nil ? "true" : "false");
           let missionScroll = {found:false, top:0, max:0};
           if (shouldAutoScroll && missionCards.length) {
-            let node = missionCards[0].parentElement, scrollTarget = null;
-            for (let depth = 0; node && depth < 8; depth++, node = node.parentElement) {
+            const candidates = [];
+            const addCandidate = node => {
+              if (!node) return;
               const style = getComputedStyle(node);
-              if (node.scrollHeight > node.clientHeight + 40 &&
-                  /(auto|scroll)/.test(style.overflowY)) { scrollTarget = node; break; }
-            }
-            if (!scrollTarget) {
-              const pageScroller = document.scrollingElement;
-              if (pageScroller && pageScroller.scrollHeight > pageScroller.clientHeight + 40) scrollTarget = pageScroller;
-            }
+              const max = node.scrollHeight - node.clientHeight;
+              if (max > 40 && (node === document.scrollingElement || /(auto|scroll)/.test(style.overflowY))) {
+                if (!candidates.includes(node)) candidates.push(node);
+              }
+            };
+            missionCards.forEach(card => {
+              let node = card;
+              for (let depth = 0; node && depth < 12; depth++, node = node.parentElement) addCandidate(node);
+            });
+            addCandidate(document.scrollingElement);
+            const scrollTarget = candidates.sort((a,b) =>
+              (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight)
+            )[0];
             if (scrollTarget) {
               const max = Math.max(0, scrollTarget.scrollHeight - scrollTarget.clientHeight);
               const top = scrollTarget.scrollTop;
               missionScroll = {found:true, top:top, max:max};
               if (top < max - 8) {
                 scrollTarget.scrollTop = Math.min(max, top + Math.max(240, scrollTarget.clientHeight * 0.68));
+              }
+            } else {
+              const docHeight = Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
+              const max = Math.max(0, docHeight - window.innerHeight);
+              const top = window.scrollY || 0;
+              missionScroll = {found:max > 40, top:top, max:max};
+              if (max > 40 && top < max - 8) {
+                window.scrollTo(0, Math.min(max, top + Math.max(240, window.innerHeight * 0.68)));
               }
             }
           }
@@ -1001,10 +1016,13 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             let actionLabel = normalizedTaskText(nativeText(in: button)).lowercased()
             let isClaim = actionLabel == "nhận" || actionLabel == "nhận xu"
             guard isClaim || missionKind(for: taskName) == "scroll" else {
-                if lastAutomationLogIndex != index {
-                    lastAutomationLogIndex = index
-                    appendLog("Native: nhiệm vụ \(missionKind(for: taskName)) chưa có bộ xử lý riêng; giữ nguyên, không cuộn thay thế")
-                }
+                attemptedTaskIndices.insert(index)
+                automationScanCursor = (index + 1) % max(1, taskNames.count)
+                automationTaskIndex = nil
+                automationStartedAt = nil
+                automationPhase = .selecting
+                lastAutomationLogIndex = nil
+                appendLog("Native: bỏ qua nhiệm vụ \(missionKind(for: taskName)) chưa có bộ xử lý riêng; tiếp tục tìm nhiệm vụ hỗ trợ")
                 return
             }
 
@@ -1277,10 +1295,13 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                    TPIOSAutoClickEngine.backendAvailable() {
                     let action = payload?["action"] as? String ?? "perform"
                     guard action == "claim" || self.missionKind(for: taskName) == "scroll" else {
-                        if self.lastAutomationLogIndex != index {
-                            self.lastAutomationLogIndex = index
-                            self.appendLog("Nhiệm vụ \(self.missionKind(for: taskName)) chưa có bộ xử lý riêng; giữ nguyên, không cuộn thay thế")
-                        }
+                        self.attemptedTaskIndices.insert(index)
+                        self.automationScanCursor = (index + 1) % max(1, self.taskNames.count)
+                        self.automationTaskIndex = nil
+                        self.automationStartedAt = nil
+                        self.automationPhase = .selecting
+                        self.lastAutomationLogIndex = nil
+                        self.appendLog("Bỏ qua nhiệm vụ \(self.missionKind(for: taskName)) chưa có bộ xử lý riêng; tiếp tục tìm nhiệm vụ hỗ trợ")
                         return
                     }
                     let webPoint = CGPoint(x: x, y: y)
