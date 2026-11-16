@@ -499,8 +499,6 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             });
           const missionTitle = card => {
             const raw = (card.innerText || card.textContent || '').replace(/\\s+/g, ' ').trim();
-            const progress = raw.match(/\\b(\\d+)\\s*\\/\\s*(\\d+)\\b/);
-            if (progress && Number(progress[1]) >= Number(progress[2])) return '';
             return raw.replace(/\\b\\d+\\s*\\/\\s*\\d+\\b[\\s\\S]*$/, '')
               .replace(/\\b(làm ngay|thực hiện|đi ngay|xem ngay|bắt đầu|tham gia|tìm kiếm)\\b/gi, ' ')
               .replace(/\\s+/g, ' ').trim();
@@ -863,12 +861,13 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         }
 
         guard !names.isEmpty else { return }
-        var old: [String: (Bool, String, String)] = [:]
+        var old: [String: (Bool, String, String, Bool)] = [:]
         for (index, name) in taskNames.enumerated() {
             let key = normalizedTaskText(name).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
             old[key] = (completedTasks.indices.contains(index) ? completedTasks[index] : false,
                         taskDetails.indices.contains(index) ? taskDetails[index] : "",
-                        taskURLs.indices.contains(index) ? taskURLs[index] : "")
+                        taskURLs.indices.contains(index) ? taskURLs[index] : "",
+                        attemptedTaskIndices.contains(index))
         }
         let previousCount = taskNames.count
         let changed = names != taskNames
@@ -886,9 +885,12 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             let key = normalizedTaskText(name).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
             return old[key]?.2 ?? ""
         }
+        attemptedTaskIndices = Set(names.indices.filter { index in
+            let key = normalizedTaskText(names[index]).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            return old[key]?.3 ?? false
+        })
         hasCurrentMissionSnapshot = true
         if changed {
-            attemptedTaskIndices.removeAll()
             automationScanCursor = 0
             resetAutomationPosition()
             appendLog("Đã bổ sung nhiệm vụ từ Lazada: tổng \(names.count), mới \(names.count - previousCount)")
@@ -1148,15 +1150,39 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         if missionsPageURL != pageURL && automationPhase != .returning { return }
 
         if automationTaskIndex == nil {
+            guard hasCurrentMissionSnapshot, !taskNames.isEmpty else { return }
             let next = taskNames.indices.first {
                 !completedTasks[$0] && !attemptedTaskIndices.contains($0)
             }
             guard let next else {
-                if lastAutomationLogIndex != -1 {
-                    lastAutomationLogIndex = -1
-                    let waiting = Dictionary(grouping: taskNames.indices.filter { !completedTasks[$0] }, by: { missionKind(for: taskNames[$0]) })
-                        .map { "\($0.key): \($0.value.count)" }.sorted().joined(separator: ", ")
-                    appendLog("Chưa có nhiệm vụ lướt đủ điều kiện tự động; nhiệm vụ còn lại theo loại: \(waiting.isEmpty ? "không có" : waiting)")
+                guard lastAutomationLogIndex != -7 else { return }
+                let scanScript = """
+                (function(){
+                  const cards=Array.from(document.querySelectorAll('.mission-item-center'));
+                  let node=cards.find(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0;})||document.body;
+                  let target=null;
+                  for(let p=node;p&&p!==document.body;p=p.parentElement){
+                    const st=getComputedStyle(p);
+                    if(p.scrollHeight-p.clientHeight>40&&/(auto|scroll)/.test(st.overflowY)){target=p;break;}
+                  }
+                  if(!target)target=document.scrollingElement||document.documentElement;
+                  const max=Math.max(0,target.scrollHeight-target.clientHeight),before=target.scrollTop;
+                  if(before>=max-4)return {state:'end'};
+                  const after=Math.min(max,before+Math.max(240,innerHeight*0.72));
+                  target.scrollTo({top:after,behavior:'auto'});
+                  return {state:after>before+2?'moved':'end'};
+                })();
+                """
+                webView.evaluateJavaScript(scanScript) { [weak self] result, _ in
+                    guard let self, self.sessionActive, self.automationEnabled else { return }
+                    let state=(result as? [String:Any])?["state"] as? String ?? "unknown"
+                    if state == "moved" {
+                        self.lastAutomationLogIndex = nil
+                        self.appendLog("Đã cuộn danh sách để quét các nhiệm vụ tiếp theo")
+                    } else if state == "end" {
+                        self.lastAutomationLogIndex = -7
+                        self.appendLog("Đã quét đến cuối danh sách nhiệm vụ")
+                    }
                 }
                 return
             }
@@ -1186,13 +1212,20 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 const r=e.getBoundingClientRect(),s=getComputedStyle(e);
                 return r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth&&s.display!=='none'&&s.visibility!=='hidden';
               };
-              const center = (e, action='perform') => {
+              const center = (e, action='perform', taskTitle='') => {
                 const r=e.getBoundingClientRect();
-                return {status:'ready',action:action,x:r.left+r.width/2,y:r.top+r.height/2};
+                return {status:'ready',action:action,taskTitle:taskTitle,x:r.left+r.width/2,y:r.top+r.height/2};
               };
+              const cardTitle = card => norm(card.innerText || card.textContent)
+                .replace(/\\b\\d+\\s*\\/\\s*\\d+\\b[\\s\\S]*$/, '')
+                .replace(/\\b(làm ngay|thực hiện|đi ngay|xem ngay|bắt đầu|tham gia|tìm kiếm)\\b/gi, ' ')
+                .replace(/\\s+/g, ' ').trim();
               const claimButtons = Array.from(document.querySelectorAll('.mission-item-btn-go,a,button,[role="button"]'))
                 .filter(e => visible(e) && /^nhận(?: xu)?$/.test(norm(e.innerText || e.textContent || e.getAttribute('aria-label') || e.getAttribute('title'))));
-              if (claimButtons.length) return center(claimButtons[0], 'claim');
+              if (claimButtons.length) {
+                const button=claimButtons[0], card=button.closest('.mission-item-center');
+                if (card) return center(button, 'claim', cardTitle(card));
+              }
               const cards = Array.from(document.querySelectorAll('.mission-item-center'))
                 .filter(e => {
                   const r=e.getBoundingClientRect(),s=getComputedStyle(e);
@@ -1221,8 +1254,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 }
                 if (go && visible(go)) {
                   const label = norm(go.innerText || go.textContent || go.getAttribute('aria-label'));
-                  if (/^nhận(?: xu)?$/.test(label)) return center(go, 'claim');
-                  return center(go, 'perform');
+                  if (/^nhận(?: xu)?$/.test(label)) return center(go, 'claim', cardTitle(card));
+                  return center(go, 'perform', cardTitle(card));
                 }
                 container = card;
                 for (let depth = 0; container && depth < 5; depth++, container = container.parentElement) {
@@ -1267,9 +1300,15 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                    let window = webView.window,
                    TPIOSAutoClickEngine.backendAvailable() {
                     let action = payload?["action"] as? String ?? "perform"
-                    guard action == "claim" || self.missionKind(for: taskName) == "scroll" else {
-                        self.attemptedTaskIndices.insert(index)
-                        self.automationScanCursor = (index + 1) % max(1, self.taskNames.count)
+                    let clickedTaskName = (payload?["taskTitle"] as? String).flatMap { title in
+                        self.taskNames.first(where: {
+                            self.normalizedTaskText($0).compare(self.normalizedTaskText(title), options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+                        })
+                    } ?? taskName
+                    let clickedTaskIndex = self.taskNames.firstIndex(of: clickedTaskName) ?? index
+                    guard action == "claim" || self.missionKind(for: clickedTaskName) == "scroll" else {
+                        self.attemptedTaskIndices.insert(clickedTaskIndex)
+                        self.automationScanCursor = (clickedTaskIndex + 1) % max(1, self.taskNames.count)
                         self.automationTaskIndex = nil
                         self.automationStartedAt = nil
                         self.automationPhase = .selecting
@@ -1303,9 +1342,10 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                         self.automationPhase = action == "claim" ? .returning : .waitingForPage
                         self.automationStartedAt = Date()
                         self.lastAutomationLogIndex = action == "claim" ? -2 : nil
+                        self.automationTaskIndex = clickedTaskIndex
                         self.appendLog(action == "claim"
-                            ? "Đã chạm HID nút Nhận xu trên danh sách; chờ Lazada cập nhật: \(taskName)"
-                            : "Đã chạm nút nhiệm vụ bằng DOM + HID: \(taskName)")
+                            ? "Đã chạm HID nút Nhận xu: \(clickedTaskName)"
+                            : "Đã chạm nút nhiệm vụ bằng DOM + HID: \(clickedTaskName)")
                     }
                 } else {
                     if clickResult == "ready" {
