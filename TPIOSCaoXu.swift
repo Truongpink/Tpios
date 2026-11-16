@@ -1182,6 +1182,9 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             (function(){
               const title = \(json)[0].normalize('NFC').toLowerCase();
               const norm = s => (s || '').replace(/\\s+/g,' ').trim().normalize('NFC').toLowerCase();
+              const claimButtons = Array.from(document.querySelectorAll('.mission-item-btn-go,a,button,[role="button"]'))
+                .filter(e => visible(e) && /^nhận(?: xu)?$/.test(norm(e.innerText || e.textContent || e.getAttribute('aria-label') || e.getAttribute('title'))));
+              if (claimButtons.length) return center(claimButtons[0], 'claim');
               const visible = e => {
                 const r=e.getBoundingClientRect(),s=getComputedStyle(e);
                 return r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth&&s.display!=='none'&&s.visibility!=='hidden';
@@ -1361,11 +1364,15 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             }
             guard Date().timeIntervalSince(started) >= 2 else { return }
             if webView.canGoBack {
+                lastAutomationLogIndex = -4
                 webView.goBack()
-                appendLog("Đã gọi lịch sử WebView để trở về danh sách; chờ xác nhận")
+                automationStartedAt = Date()
+                appendLog("Đã điều hướng WebView về danh sách; chờ xác nhận")
             } else if let listURL = missionsPageURL.flatMap(URL.init(string:)) {
+                lastAutomationLogIndex = -4
                 webView.load(URLRequest(url: listURL))
-                appendLog("Không có lịch sử quay lại; mở lại URL danh sách nhiệm vụ đã xác nhận")
+                automationStartedAt = Date()
+                appendLog("Đã mở lại URL danh sách nhiệm vụ; chờ xác nhận")
             } else {
                 if lastAutomationLogIndex != -5 {
                     lastAutomationLogIndex = -5
