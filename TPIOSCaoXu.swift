@@ -897,6 +897,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         if changed {
             automationScanCursor = 0
             lastAutomationLogIndex = nil
+            lastClaimScanSignature = nil
             resetAutomationPosition()
             appendLog("Đã bổ sung nhiệm vụ từ Lazada: tổng \(names.count), mới \(names.count - previousCount)")
             saveObservedTasks()
@@ -1167,9 +1168,9 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
               };
               const titleOf=card=>norm(card.innerText||card.textContent)
                 .replace(/\\b\\d+\\s*\\/\\s*\\d+\\b[\\s\\S]*$/,'')
-                .replace(/\\b(làm ngay|thực hiện|đi ngay|xem ngay|bắt đầu|tham gia|tìm kiếm|nhận xu?)\\b/gi,' ')
+                .replace(/\\b(làm ngay|thực hiện|đi ngay|xem ngay|bắt đầu|tham gia|tìm kiếm)\\b/gi,' ')
                 .replace(/\\s+/g,' ').trim();
-              const blocked=\\(blockedJSON).map(norm);
+              const blocked=\(blockedJSON).map(norm);
               const cards=Array.from(document.querySelectorAll('.mission-item-center'))
                 .filter(e=>!e.parentElement?.closest('.mission-item-center'));
               const visibleCards=cards.filter(visible);
@@ -1477,7 +1478,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
                 let verifyScript = """
                 (function(){
-                  const wanted=\\(encoded)[0];
+                  const wanted=\(encoded)[0];
                   const norm=s=>(s||'').replace(/\\s+/g,' ').trim().normalize('NFC').toLowerCase();
                   const titleOf=card=>norm(card.innerText||card.textContent)
                     .replace(/\\b\\d+\\s*\\/\\s*\\d+\\b[\\s\\S]*$/,'')
