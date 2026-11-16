@@ -1182,9 +1182,6 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             (function(){
               const title = \(json)[0].normalize('NFC').toLowerCase();
               const norm = s => (s || '').replace(/\\s+/g,' ').trim().normalize('NFC').toLowerCase();
-              const claimButtons = Array.from(document.querySelectorAll('.mission-item-btn-go,a,button,[role="button"]'))
-                .filter(e => visible(e) && /^nhận(?: xu)?$/.test(norm(e.innerText || e.textContent || e.getAttribute('aria-label') || e.getAttribute('title'))));
-              if (claimButtons.length) return center(claimButtons[0], 'claim');
               const visible = e => {
                 const r=e.getBoundingClientRect(),s=getComputedStyle(e);
                 return r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth&&s.display!=='none'&&s.visibility!=='hidden';
@@ -1193,6 +1190,9 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 const r=e.getBoundingClientRect();
                 return {status:'ready',action:action,x:r.left+r.width/2,y:r.top+r.height/2};
               };
+              const claimButtons = Array.from(document.querySelectorAll('.mission-item-btn-go,a,button,[role="button"]'))
+                .filter(e => visible(e) && /^nhận(?: xu)?$/.test(norm(e.innerText || e.textContent || e.getAttribute('aria-label') || e.getAttribute('title'))));
+              if (claimButtons.length) return center(claimButtons[0], 'claim');
               const cards = Array.from(document.querySelectorAll('.mission-item-center'))
                 .filter(e => {
                   const r=e.getBoundingClientRect(),s=getComputedStyle(e);
