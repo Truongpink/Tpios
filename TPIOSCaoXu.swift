@@ -66,6 +66,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private var attemptedTaskIndices = Set<Int>()
     private var automationScanCursor = 0
     private var lastAutomationLogIndex: Int?
+    private var lastClaimScanSignature: String?
+    private var claimRetryBlockedTitles = Set<String>()
     private var visibleWebMissionTitles: [String] = []
     private var collectedMissionNames: [String] = []
     private var hasCurrentMissionSnapshot = false
@@ -386,6 +388,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         sessionActive = true
         automationEnabled = true
         attemptedTaskIndices.removeAll()
+        claimRetryBlockedTitles.removeAll()
+        lastClaimScanSignature = nil
         automationScanCursor = 0
         resetAutomationPosition()
         missionEntryNotBefore = Date().addingTimeInterval(2)
@@ -1150,6 +1154,97 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
               let pageURL = sanitizedPageURL(webView.url) else { return }
         if missionsPageURL != pageURL && automationPhase != .returning { return }
 
+        if automationTaskIndex == nil && automationPhase == .selecting && lastClaimScanSignature == nil {
+            let blocked = claimRetryBlockedTitles.sorted()
+            guard let blockedData = try? JSONSerialization.data(withJSONObject: blocked),
+                  let blockedJSON = String(data: blockedData, encoding: .utf8) else { return }
+            let claimScanScript = """
+            (function(){
+              const norm=s=>(s||'').replace(/\\s+/g,' ').trim().normalize('NFC').toLowerCase();
+              const visible=e=>{
+                const r=e.getBoundingClientRect(),s=getComputedStyle(e);
+                return r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth&&s.display!=='none'&&s.visibility!=='hidden';
+              };
+              const titleOf=card=>norm(card.innerText||card.textContent)
+                .replace(/\\b\\d+\\s*\\/\\s*\\d+\\b[\\s\\S]*$/,'')
+                .replace(/\\b(làm ngay|thực hiện|đi ngay|xem ngay|bắt đầu|tham gia|tìm kiếm|nhận xu?)\\b/gi,' ')
+                .replace(/\\s+/g,' ').trim();
+              const blocked=\\(blockedJSON).map(norm);
+              const cards=Array.from(document.querySelectorAll('.mission-item-center'))
+                .filter(e=>!e.parentElement?.closest('.mission-item-center'));
+              const visibleCards=cards.filter(visible);
+              const signature=visibleCards.map(c=>titleOf(c)).join('|')+'@'+
+                (document.scrollingElement?.scrollTop||0);
+              for(const card of visibleCards){
+                const title=titleOf(card);
+                if(!title||blocked.includes(title))continue;
+                const button=Array.from(card.querySelectorAll('.mission-item-btn-go,a,button,[role="button"]'))
+                  .find(e=>visible(e)&&/^nhận(?: xu)?$/.test(norm(e.innerText||e.textContent||e.getAttribute('aria-label')||e.getAttribute('title'))));
+                if(button){
+                  const r=button.getBoundingClientRect();
+                  return {status:'claim',title:title,x:r.left+r.width/2,y:r.top+r.height/2,signature:signature};
+                }
+              }
+              return {status:'none',signature:signature};
+            })();
+            """
+            webView.evaluateJavaScript(claimScanScript) { [weak self] result, _ in
+                guard let self, self.sessionActive, self.automationEnabled else { return }
+                guard let payload = result as? [String: Any] else { return }
+                let status = payload["status"] as? String ?? "unknown"
+                let signature = payload["signature"] as? String ?? "empty"
+                if status == "none" {
+                    self.lastClaimScanSignature = signature
+                    self.driveAutomation(in: webView)
+                    return
+                }
+                guard status == "claim",
+                      let title = payload["title"] as? String,
+                      let x = payload["x"] as? Double,
+                      let y = payload["y"] as? Double,
+                      let index = self.taskNames.firstIndex(where: {
+                          self.normalizedTaskText($0).compare(self.normalizedTaskText(title),
+                              options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+                      }),
+                      let window = webView.window,
+                      TPIOSAutoClickEngine.backendAvailable() else {
+                    self.lastClaimScanSignature = signature
+                    self.appendLog("Quét nút Nhận: chưa ghép được thẻ với nhiệm vụ hoặc HID chưa sẵn sàng")
+                    self.driveAutomation(in: webView)
+                    return
+                }
+                let point = CGPoint(x: x, y: y)
+                guard webView.bounds.insetBy(dx: 1, dy: 1).contains(point) else {
+                    self.lastClaimScanSignature = signature
+                    self.appendLog("Nút Nhận nằm ngoài vùng WebView; chưa chạm")
+                    self.driveAutomation(in: webView)
+                    return
+                }
+                let windowPoint = webView.convert(point, to: window)
+                guard TPIOSAutoClickEngine.shared.dispatchTouch(at: windowPoint, down: true) else {
+                    self.lastClaimScanSignature = signature
+                    self.appendLog("HID không gửi được DOWN cho nút Nhận: " + title)
+                    self.driveAutomation(in: webView)
+                    return
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+                    let released = TPIOSAutoClickEngine.shared.dispatchTouch(at: windowPoint, down: false)
+                    guard let self, self.sessionActive, self.automationEnabled, released else {
+                        self?.automationEnabled = false
+                        self?.appendLog("Không xác nhận được HID UP khi nhận xu; đã dừng tự động")
+                        return
+                    }
+                    self.automationTaskIndex = index
+                    self.automationPhase = .returning
+                    self.automationStartedAt = Date()
+                    self.lastAutomationLogIndex = -2
+                    self.lastClaimScanSignature = nil
+                    self.appendLog("Đã chạm HID nút Nhận trên danh sách: " + title + " · đang xác minh Lazada")
+                }
+            }
+            return
+        }
+
         if automationTaskIndex == nil {
             guard hasCurrentMissionSnapshot, !taskNames.isEmpty else { return }
             let next = taskNames.indices.first {
@@ -1179,6 +1274,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     let state=(result as? [String:Any])?["state"] as? String ?? "unknown"
                     if state == "moved" {
                         self.lastAutomationLogIndex = nil
+                        self.lastClaimScanSignature = nil
                         self.appendLog("Đã cuộn danh sách để quét các nhiệm vụ tiếp theo")
                     } else if state == "end" {
                         self.lastAutomationLogIndex = -7
@@ -1221,12 +1317,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 .replace(/\\b\\d+\\s*\\/\\s*\\d+\\b[\\s\\S]*$/, '')
                 .replace(/\\b(làm ngay|thực hiện|đi ngay|xem ngay|bắt đầu|tham gia|tìm kiếm)\\b/gi, ' ')
                 .replace(/\\s+/g, ' ').trim();
-              const claimButtons = Array.from(document.querySelectorAll('.mission-item-btn-go,a,button,[role="button"]'))
-                .filter(e => visible(e) && /^nhận(?: xu)?$/.test(norm(e.innerText || e.textContent || e.getAttribute('aria-label') || e.getAttribute('title'))));
-              if (claimButtons.length) {
-                const button=claimButtons[0], card=button.closest('.mission-item-center');
-                if (card) return center(button, 'claim', cardTitle(card));
-              }
+              // Nút Nhận đã được quét độc lập trước khi chọn nhiệm vụ chưa hoàn thành.
               const cards = Array.from(document.querySelectorAll('.mission-item-center'))
                 .filter(e => {
                   const r=e.getBoundingClientRect(),s=getComputedStyle(e);
@@ -1381,13 +1472,48 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             guard let started = automationStartedAt else { return }
             if lastAutomationLogIndex == -2 {
                 guard Date().timeIntervalSince(started) >= 3 else { return }
-                attemptedTaskIndices.insert(index)
-                automationScanCursor = (index + 1) % max(1, taskNames.count)
-                automationTaskIndex = nil
-                automationStartedAt = nil
-                automationPhase = .selecting
-                lastAutomationLogIndex = nil
-                appendLog("Đã chờ Lazada cập nhật sau khi nhận xu; tiếp tục xét nhiệm vụ")
+                let title = taskNames[index]
+                let encoded = (try? JSONSerialization.data(withJSONObject: [title]))
+                    .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+                let verifyScript = """
+                (function(){
+                  const wanted=\\(encoded)[0];
+                  const norm=s=>(s||'').replace(/\\s+/g,' ').trim().normalize('NFC').toLowerCase();
+                  const titleOf=card=>norm(card.innerText||card.textContent)
+                    .replace(/\\b\\d+\\s*\\/\\s*\\d+\\b[\\s\\S]*$/,'')
+                    .replace(/\\b(làm ngay|thực hiện|đi ngay|xem ngay|bắt đầu|tham gia|tìm kiếm|nhận xu?)\\b/gi,' ')
+                    .replace(/\\s+/g,' ').trim();
+                  const cards=Array.from(document.querySelectorAll('.mission-item-center'));
+                  const card=cards.find(e=>titleOf(e)===norm(wanted)||titleOf(e).includes(norm(wanted))||norm(wanted).includes(titleOf(e)));
+                  if(!card)return {state:'card_missing'};
+                  const visible=e=>{
+                    const r=e.getBoundingClientRect(),s=getComputedStyle(e);
+                    return r.width>0&&r.height>0&&r.bottom>0&&r.top<innerHeight&&s.display!=='none'&&s.visibility!=='hidden';
+                  };
+                  const claim=Array.from(card.querySelectorAll('.mission-item-btn-go,a,button,[role="button"]'))
+                    .some(e=>visible(e)&&/^nhận(?: xu)?$/.test(norm(e.innerText||e.textContent||e.getAttribute('aria-label')||e.getAttribute('title'))));
+                  return {state:claim?'still_claimable':'claimed'};
+                })();
+                """
+                webView.evaluateJavaScript(verifyScript) { [weak self] result, _ in
+                    guard let self, self.sessionActive, self.automationEnabled else { return }
+                    let state=(result as? [String:Any])?["state"] as? String ?? "unknown"
+                    if state == "claimed" {
+                        if self.completedTasks.indices.contains(index) { self.completedTasks[index] = true }
+                        self.saveObservedTasks()
+                        self.appendLog("Lazada đã đổi trạng thái nút Nhận; xác nhận nhận xu: " + title)
+                    } else {
+                        self.claimRetryBlockedTitles.insert(self.normalizedTaskText(title).lowercased())
+                        self.attemptedTaskIndices.insert(index)
+                        self.appendLog("Chưa xác nhận được nhận xu (" + state + "); không đánh dấu hoàn thành: " + title)
+                    }
+                    self.automationScanCursor = (index + 1) % max(1, self.taskNames.count)
+                    self.automationTaskIndex = nil
+                    self.automationStartedAt = nil
+                    self.automationPhase = .selecting
+                    self.lastAutomationLogIndex = nil
+                    self.lastClaimScanSignature = nil
+                }
                 return
             }
             if lastAutomationLogIndex == -4 {
@@ -1399,7 +1525,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     self.automationStartedAt = nil
                     self.automationPhase = .selecting
                     self.lastAutomationLogIndex = nil
-                    self.appendLog("Đã xác nhận danh sách nhiệm vụ trở lại; tiếp tục xét hành động")
+                    self.lastClaimScanSignature = nil
+                    self.appendLog("Đã xác nhận danh sách nhiệm vụ trở lại; quét nút Nhận trước")
                 }
                 return
             }
