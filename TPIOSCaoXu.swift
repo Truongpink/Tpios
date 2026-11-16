@@ -1482,12 +1482,6 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     }
                 } else {
                     if clickResult == "ready" {
-                        self.appendLog("WebView: đã tìm thấy nút nhưng HID chưa sẵn sàng hoặc WebView không còn cửa sổ")
-                    } else if self.lastAutomationLogIndex != index {
-                        self.lastAutomationLogIndex = index
-                        self.appendLog("Chưa mở được nhiệm vụ: \(taskName) · kết quả=\(clickResult)")
-                    }
-                    if clickResult == "ready" {
                         self.appendLog("Tìm thấy nút nhưng HID chưa sẵn sàng; tạm dừng để không bỏ nhiệm vụ: " + taskName)
                         self.automationEnabled = false
                         self.automationTaskIndex = nil
@@ -1508,7 +1502,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                             self.automationTaskIndex = nil
                             self.automationStartedAt = nil
                             self.automationPhase = .selecting
-                            self.appendLog("Chưa nhận diện được thẻ nhiệm vụ; sẽ thử lại (\\(failures)/3): " + taskName)
+                            self.appendLog("Chưa nhận diện được thẻ nhiệm vụ; sẽ thử lại (\(failures)/3): " + taskName)
                             return
                         }
                         self.appendLog("Đã thử nhận diện 3 lần nhưng chưa thấy thẻ; tạm bỏ qua để tiếp tục quét/cuộn: " + taskName)
