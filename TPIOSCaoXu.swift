@@ -1545,7 +1545,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden';
               });
               const current=location.href;
-              return {url:current,cards:cards.length,stillList:current===expected&&cards.length>0,
+              const clean=u=>{try{const v=new URL(u,location.href);return v.protocol+'//'+v.host.toLowerCase()+v.pathname;}catch(_){return u;}};
+              return {url:current,cards:cards.length,stillList:clean(current)===clean(expected)&&cards.length>0,
                 title:(document.title||'').slice(0,100)};
             })();
             """
