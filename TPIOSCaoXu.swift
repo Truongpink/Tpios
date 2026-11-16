@@ -62,6 +62,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private var automationPhase: AutomationPhase = .selecting
     private var automationTaskIndex: Int?
     private var automationStartedAt: Date?
+    private var automationEnteredTaskPage = false
     private var automationDuration: TimeInterval = 15
     private var attemptedTaskIndices = Set<Int>()
     private var automationScanCursor = 0
@@ -1161,7 +1162,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private func driveAutomation(in webView: WKWebView) {
         guard sessionActive, automationEnabled,
               let pageURL = sanitizedPageURL(webView.url) else { return }
-        if missionsPageURL != pageURL && automationPhase != .returning { return }
+        if missionsPageURL != pageURL && automationPhase != .returning && automationPhase != .waitingForPage { return }
 
         if automationTaskIndex == nil && automationPhase == .selecting && lastClaimScanSignature == nil {
             let blocked = claimRetryBlockedTitles.sorted()
@@ -1182,19 +1183,30 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
               const cards=Array.from(document.querySelectorAll('.mission-item-center'))
                 .filter(e=>!e.parentElement?.closest('.mission-item-center'));
               const visibleCards=cards.filter(visible);
+              const controlLabels=[];
               const signature=visibleCards.map(c=>titleOf(c)).join('|')+'@'+
                 (document.scrollingElement?.scrollTop||0);
               for(const card of visibleCards){
                 const title=titleOf(card);
                 if(!title||blocked.includes(title))continue;
-                const button=Array.from(card.querySelectorAll('.mission-item-btn-go,a,button,[role="button"]'))
-                  .find(e=>visible(e)&&/^nhận(?: xu)?$/.test(norm(e.innerText||e.textContent||e.getAttribute('aria-label')||e.getAttribute('title'))));
-                if(button){
-                  const r=button.getBoundingClientRect();
-                  return {status:'claim',title:title,x:r.left+r.width/2,y:r.top+r.height/2,signature:signature};
+                let container=card;
+                for(let depth=0;depth<4&&container.parentElement;depth++){
+                  const parent=container.parentElement;
+                  if(parent.querySelectorAll('.mission-item-center').length>1)break;
+                  container=parent;
+                }
+                const controls=Array.from(container.querySelectorAll('.mission-item-btn-go,a,button,[role="button"],[tabindex],[onclick]'))
+                  .filter(e=>!e.contains(card)&&!card.contains(e));
+                for(const control of controls){
+                  const label=norm(control.innerText||control.textContent||control.getAttribute('aria-label')||control.getAttribute('title'));
+                  if(label)controlLabels.push(label.slice(0,50));
+                  if(visible(control)&&/^nhận(?: xu)?$/.test(label)){
+                    const r=control.getBoundingClientRect();
+                    return {status:'claim',title:title,x:r.left+r.width/2,y:r.top+r.height/2,signature:signature};
+                  }
                 }
               }
-              return {status:'none',signature:signature};
+              return {status:'none',signature:signature,cards:visibleCards.length,controls:Array.from(new Set(controlLabels)).slice(0,12)};
             })();
             """
             webView.evaluateJavaScript(claimScanScript) { [weak self] result, _ in
@@ -1204,6 +1216,9 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 let signature = payload["signature"] as? String ?? "empty"
                 if status == "none" {
                     self.lastClaimScanSignature = signature
+                    let count = payload["cards"] as? Int ?? 0
+                    let controls = (payload["controls"] as? [String] ?? []).joined(separator: " | ")
+                    self.appendLog("Quét nút Nhận: thẻ=\(count) · nút cạnh thẻ=\(controls.isEmpty ? "không thấy" : controls)")
                     self.driveAutomation(in: webView)
                     return
                 }
@@ -1325,6 +1340,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 return
             }
             automationTaskIndex = next
+            automationEnteredTaskPage = false
             let name = taskNames[next]
             let duration = secondsRequired(in: name + " " + taskDetails[next])
             automationDuration = min(180, max(5, duration ?? 15))
@@ -1519,9 +1535,40 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             }
         case .waitingForPage:
             guard let started = automationStartedAt, Date().timeIntervalSince(started) >= 2 else { return }
-            automationPhase = .scrolling
-            automationStartedAt = Date()
-            appendLog("Bắt đầu lướt nhiệm vụ trong \(Int(automationDuration)) giây: \(taskName)")
+            guard let expectedData = try? JSONSerialization.data(withJSONObject: [missionsPageURL ?? ""]),
+                  let expectedJSON = String(data: expectedData, encoding: .utf8) else { return }
+            let pageCheckScript = """
+            (function(){
+              const expected=\(expectedJSON)[0];
+              const cards=Array.from(document.querySelectorAll('.mission-item-center')).filter(e=>{
+                const r=e.getBoundingClientRect(),s=getComputedStyle(e);
+                return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden';
+              });
+              const current=location.href;
+              return {url:current,cards:cards.length,stillList:current===expected&&cards.length>0,
+                title:(document.title||'').slice(0,100)};
+            })();
+            """
+            webView.evaluateJavaScript(pageCheckScript) { [weak self] result, error in
+                guard let self, self.sessionActive, self.automationEnabled else { return }
+                let payload=result as? [String:Any] ?? [:]
+                let stillList=payload["stillList"] as? Bool ?? true
+                if stillList {
+                    self.attemptedTaskIndices.insert(index)
+                    self.automationTaskIndex=nil
+                    self.automationStartedAt=nil
+                    self.automationEnteredTaskPage=false
+                    self.automationPhase = .selecting
+                    self.lastAutomationLogIndex=nil
+                    self.appendLog("Nhiệm vụ không mở trang chi tiết (vẫn còn \(payload["cards"] as? Int ?? 0) thẻ trong danh sách); không cuộn và không Back: " + taskName)
+                    return
+                }
+                self.automationEnteredTaskPage=true
+                self.automationPhase = .scrolling
+                self.automationStartedAt = Date()
+                self.appendLog("Đã xác nhận rời danh sách nhiệm vụ; bắt đầu lướt trang nhiệm vụ trong \(Int(self.automationDuration)) giây: " + taskName)
+            }
+            return
         case .scrolling:
             guard let started = automationStartedAt else { return }
             if Date().timeIntervalSince(started) >= automationDuration {
@@ -1582,6 +1629,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                           (result as? Bool) == true else { return }
                     self.automationTaskIndex = nil
                     self.automationStartedAt = nil
+                    self.automationEnteredTaskPage = false
                     self.automationPhase = .selecting
                     self.lastAutomationLogIndex = nil
                     self.lastClaimScanSignature = nil
@@ -1590,6 +1638,15 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 return
             }
             guard Date().timeIntervalSince(started) >= 2 else { return }
+            guard automationEnteredTaskPage else {
+                attemptedTaskIndices.insert(index)
+                automationTaskIndex = nil
+                automationStartedAt = nil
+                automationPhase = .selecting
+                lastAutomationLogIndex = nil
+                appendLog("Chặn điều hướng Back: chưa xác nhận đã mở trang chi tiết nhiệm vụ")
+                return
+            }
             if webView.canGoBack {
                 lastAutomationLogIndex = -4
                 webView.goBack()
