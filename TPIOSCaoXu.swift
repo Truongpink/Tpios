@@ -669,7 +669,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     let chain = tap["chain"] as? String ?? ""
                     let html = tap["html"] as? String ?? ""
                     let href = tap["href"] as? String ?? ""
-                    self.appendLog("[CHẠM TAY] \\(kind) · nhãn=\\(label) · DOM=\\(chain) · href=\\(href) · HTML=\\(html)")
+                    self.appendLog("[CHẠM TAY] \(kind) · nhãn=\(label) · DOM=\(chain) · href=\(href) · HTML=\(html)")
                 }
                 if let webLines = payload["lines"] as? [String] {
                     lines.append(contentsOf: webLines)
