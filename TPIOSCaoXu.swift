@@ -1165,18 +1165,14 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         if missionsPageURL != pageURL && automationPhase != .returning { return }
 
         if automationTaskIndex == nil {
-            let count = taskNames.count
-            let visibleKeys = Set(visibleWebMissionTitles.map {
-                normalizedTaskText($0).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            })
-            let next = visibleWebMissionTitles.lazy.compactMap { visibleTitle -> Int? in
-                let visibleKey = normalizedTaskText(visibleTitle)
+            let next = visibleWebMissionTitles.lazy.compactMap { [self] visibleTitle -> Int? in
+                let visibleKey = self.normalizedTaskText(visibleTitle)
                     .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-                return taskNames.indices.first { taskIndex in
-                    let key = normalizedTaskText(taskNames[taskIndex])
+                return self.taskNames.indices.first { taskIndex in
+                    let key = self.normalizedTaskText(self.taskNames[taskIndex])
                         .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-                    return key == visibleKey && !completedTasks[taskIndex] &&
-                        !attemptedTaskIndices.contains(taskIndex)
+                    return key == visibleKey && !self.completedTasks[taskIndex] &&
+                        !self.attemptedTaskIndices.contains(taskIndex)
                 }
             }.first
             guard let next else {
