@@ -176,7 +176,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             addSubview(label)
         }
 
-        logTitleLabel.text = "LOG CÀO XU"
+        logTitleLabel.text = "LOG CHẠM ĐIỂM DANH / NHẬN XU"
         logTitleLabel.textColor = UIColor.white.withAlphaComponent(0.82)
         logTitleLabel.font = .systemFont(ofSize: 11, weight: .bold)
         addSubview(logTitleLabel)
@@ -376,8 +376,9 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     }
 
     private func refreshLog() {
-        logView.text = logs.joined(separator: "\n")
-        if !logs.isEmpty {
+        let visibleLogs = logs.filter { $0.contains("[CHẠM TAY]") }
+        logView.text = visibleLogs.joined(separator: "\n")
+        if !visibleLogs.isEmpty {
             logView.scrollRangeToVisible(NSRange(location: max(0, logView.text.count - 1), length: 1))
         }
     }
@@ -495,6 +496,44 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
 
         let script = """
         (function() {
+          const normTap = s => (s || '').replace(/\\s+/g, ' ').trim().normalize('NFC').toLocaleLowerCase();
+          if (!window.__tpiManualTargetTapListener) {
+            window.__tpiManualTargetTapListener = true;
+            window.__tpiManualTargetTaps = [];
+            document.addEventListener('click', event => {
+              if (!event.isTrusted || Date.now() < (window.__tpiAutoTouchUntil || 0)) return;
+              const path = event.composedPath ? event.composedPath() : [event.target];
+              const elements = path.filter(node => node instanceof Element);
+              const matches = [];
+              for (const element of elements) {
+                const label = normTap(element.innerText || element.textContent ||
+                  element.getAttribute('aria-label') || element.getAttribute('title'));
+                const kind = /^điểm danh(?:\\s+ngay)?$/.test(label) ? 'Điểm danh' :
+                  /^nhận(?:\\s+xu)?$/.test(label) ? 'Nhận xu' : '';
+                if (kind) matches.push({element, label, kind});
+              }
+              if (!matches.length) return;
+              matches.sort((a, b) => a.label.length - b.label.length);
+              const {element, label, kind} = matches[0];
+              const describe = node => {
+                const cls = typeof node.className === 'string' ? node.className.trim().replace(/\\s+/g, '.').slice(0, 140) : '';
+                return node.tagName.toLowerCase() + (node.id ? '#' + node.id : '') + (cls ? '.' + cls : '');
+              };
+              const chain = [];
+              for (let node = element, depth = 0; node && depth < 5; node = node.parentElement, depth++) {
+                chain.push(describe(node));
+              }
+              window.__tpiManualTargetTaps.push({
+                kind, label, tag: element.tagName.toLowerCase(),
+                className: typeof element.className === 'string' ? element.className.slice(0, 180) : '',
+                id: element.id || '', href: element.getAttribute('href') || '',
+                chain: chain.join(' > '),
+                html: (element.outerHTML || '').replace(/\\s+/g, ' ').slice(0, 500)
+              });
+              if (window.__tpiManualTargetTaps.length > 8) window.__tpiManualTargetTaps.shift();
+            }, true);
+          }
+          const manualTargetTaps = (window.__tpiManualTargetTaps || []).splice(0, 8);
           const visible = e => {
             const r = e.getBoundingClientRect(), s = getComputedStyle(e);
             return r.width > 0 && r.height > 0 &&
@@ -560,6 +599,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
           const headings = Array.from(document.querySelectorAll('h1,h2,h3,[role="heading"]'))
             .filter(visible).map(e => compact(e.innerText || e.textContent)).filter(Boolean).slice(0, 8);
           return {
+            manualTargetTaps: manualTargetTaps,
             pageTitle: compact(document.title),
             headings: headings,
             interactive: interactive,
@@ -622,6 +662,15 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             guard let self, self.sessionActive else { return }
             var hasMissionsPage = false
             if let payload = result as? [String: Any] {
+                let manualTaps = payload["manualTargetTaps"] as? [[String: Any]] ?? []
+                for tap in manualTaps {
+                    let kind = tap["kind"] as? String ?? "Nút mục tiêu"
+                    let label = tap["label"] as? String ?? ""
+                    let chain = tap["chain"] as? String ?? ""
+                    let html = tap["html"] as? String ?? ""
+                    let href = tap["href"] as? String ?? ""
+                    self.appendLog("[CHẠM TAY] \\(kind) · nhãn=\\(label) · DOM=\\(chain) · href=\\(href) · HTML=\\(html)")
+                }
                 if let webLines = payload["lines"] as? [String] {
                     lines.append(contentsOf: webLines)
                 }
@@ -826,6 +875,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         missionEntryTapStartedAt = Date()
         missionEntryTapAttempts += 1
 
+        // Mark the automated touch so the manual-touch recorder does not log it.
+        webView.evaluateJavaScript("window.__tpiAutoTouchUntil = Date.now() + 1500")
         // Use the same real HID DOWN/UP path as the working Chạm panel.
         guard TPIOSAutoClickEngine.shared.dispatchTouch(at: windowPoint, down: true) else {
             appendLog("Kiếm thêm: HID DOWN lỗi · \(TPIOSAutoClickEngine.lastDiagnostic())")
@@ -1247,6 +1298,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     return
                 }
                 let windowPoint = webView.convert(point, to: window)
+                webView.evaluateJavaScript("window.__tpiAutoTouchUntil = Date.now() + 1500")
                 guard TPIOSAutoClickEngine.shared.dispatchTouch(at: windowPoint, down: true) else {
                     self.lastClaimScanSignature = signature
                     self.appendLog("HID không gửi được DOWN cho nút Nhận: " + title)
@@ -1958,7 +2010,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     }
 
     @objc private func copyTapped() {
-        UIPasteboard.general.string = logs.joined(separator: "\n")
+        UIPasteboard.general.string = logs.filter { $0.contains("[CHẠM TAY]") }.joined(separator: "\n")
         appendLog("Đã sao chép log")
     }
 
