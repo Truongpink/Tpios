@@ -1076,16 +1076,25 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             }
 
             guard lastAutomationLogIndex != -5 else { return }
-            let candidates = findWebViews(in: root).filter { $0.window === window && $0.canGoBack }
+            let candidates = findWebViews(in: root).filter { $0.window === window }
             guard candidates.count == 1, let missionWebView = candidates.first else {
                 lastAutomationLogIndex = -5
-                appendLog("Native: không có duy nhất WebView có lịch sử để quay lại danh sách; không chạm nút Back giao diện")
+                appendLog("Native: không xác định duy nhất WebView để quay lại danh sách; không chạm Back giao diện")
                 return
             }
-            missionWebView.goBack()
+            if missionWebView.canGoBack {
+                missionWebView.goBack()
+                appendLog("Native: gọi lịch sử WebView để trở về danh sách; chờ xác nhận")
+            } else if let listURL = missionsPageURL.flatMap(URL.init(string:)) {
+                missionWebView.load(URLRequest(url: listURL))
+                appendLog("Native: mở lại URL danh sách nhiệm vụ đã xác nhận")
+            } else {
+                lastAutomationLogIndex = -5
+                appendLog("Native: thiếu lịch sử và URL danh sách; giữ nhiệm vụ")
+                return
+            }
             lastAutomationLogIndex = -4
             automationStartedAt = Date()
-            appendLog("Native: gọi WebView.goBack() để trở về danh sách nhiệm vụ; chờ xác nhận")
         }
     }
 
@@ -1203,9 +1212,9 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 }
                 let container = card, go = null;
                 for (let depth = 0; container && depth < 5; depth++, container = container.parentElement) {
-                  go = container.querySelector('.mission-item-btn-go');
-                  if (go && visible(go)) break;
-                  go = null;
+                  if (container.querySelectorAll('.mission-item-center').length > 1) break;
+                  go = Array.from(container.querySelectorAll('.mission-item-btn-go')).find(visible) || null;
+                  if (go) break;
                 }
                 if (go && visible(go)) {
                   const label = norm(go.innerText || go.textContent || go.getAttribute('aria-label'));
@@ -1214,9 +1223,10 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 }
                 container = card;
                 for (let depth = 0; container && depth < 5; depth++, container = container.parentElement) {
+                  if (container.querySelectorAll('.mission-item-center').length > 1) break;
                   const actions = Array.from(container.querySelectorAll('a,button,[role="button"],[onclick],.mission-item-btn-go'))
                     .filter(e => visible(e) && !e.contains(card));
-                  const action = actions.find(e => /làm ngay|thực hiện|đi ngay|xem ngay|tham gia|bắt đầu|tìm kiếm|đi xem|khám phá/i.test(norm(e.innerText || e.textContent)));
+                  const action = actions.find(e => /^nhận(?: xu)?$|làm ngay|thực hiện|đi ngay|xem ngay|tham gia|bắt đầu|tìm kiếm|đi xem|khám phá/i.test(norm(e.innerText || e.textContent)));
                   if (action) return center(action);
                 }
                 return {status:'mission_action_not_found'};
@@ -1350,17 +1360,21 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 return
             }
             guard Date().timeIntervalSince(started) >= 2 else { return }
-            guard webView.canGoBack else {
+            if webView.canGoBack {
+                webView.goBack()
+                appendLog("Đã gọi lịch sử WebView để trở về danh sách; chờ xác nhận")
+            } else if let listURL = missionsPageURL.flatMap(URL.init(string:)) {
+                webView.load(URLRequest(url: listURL))
+                appendLog("Không có lịch sử quay lại; mở lại URL danh sách nhiệm vụ đã xác nhận")
+            } else {
                 if lastAutomationLogIndex != -5 {
                     lastAutomationLogIndex = -5
-                    appendLog("WebView: không có lịch sử điều hướng để trở về danh sách; giữ nhiệm vụ, không chạm nút Back")
+                    appendLog("Không có lịch sử hoặc URL danh sách nhiệm vụ; giữ nhiệm vụ, không chạm Back")
                 }
                 return
             }
-            webView.goBack()
             lastAutomationLogIndex = -4
             automationStartedAt = Date()
-            appendLog("Đã gọi WebView.goBack() để trở về danh sách nhiệm vụ; chờ xác nhận")
         }
     }
 
