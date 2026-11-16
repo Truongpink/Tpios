@@ -68,6 +68,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private var lastAutomationLogIndex: Int?
     private var lastClaimScanSignature: String?
     private var claimRetryBlockedTitles = Set<String>()
+    private var lastBottomScanSignature: String?
+    private var bottomScanCount = 0
     private var visibleWebMissionTitles: [String] = []
     private var collectedMissionNames: [String] = []
     private var hasCurrentMissionSnapshot = false
@@ -390,6 +392,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         attemptedTaskIndices.removeAll()
         claimRetryBlockedTitles.removeAll()
         lastClaimScanSignature = nil
+        lastBottomScanSignature = nil
+        bottomScanCount = 0
         automationScanCursor = 0
         resetAutomationPosition()
         missionEntryNotBefore = Date().addingTimeInterval(2)
@@ -898,6 +902,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             automationScanCursor = 0
             lastAutomationLogIndex = nil
             lastClaimScanSignature = nil
+            lastBottomScanSignature = nil
+            bottomScanCount = 0
             resetAutomationPosition()
             appendLog("Đã bổ sung nhiệm vụ từ Lazada: tổng \(names.count), mới \(names.count - previousCount)")
             saveObservedTasks()
@@ -1204,8 +1210,10 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                       let x = payload["x"] as? Double,
                       let y = payload["y"] as? Double,
                       let index = self.taskNames.firstIndex(where: {
-                          self.normalizedTaskText($0).compare(self.normalizedTaskText(title),
-                              options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+                          let task = self.normalizedTaskText($0)
+                          let card = self.normalizedTaskText(title)
+                          return task.compare(card, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame ||
+                              task.localizedCaseInsensitiveContains(card) || card.localizedCaseInsensitiveContains(task)
                       }),
                       let window = webView.window,
                       TPIOSAutoClickEngine.backendAvailable() else {
@@ -1256,18 +1264,30 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 let scanScript = """
                 (function(){
                   const cards=Array.from(document.querySelectorAll('.mission-item-center'));
-                  let node=cards.find(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0;})||document.body;
-                  let target=null;
+                  const card=cards.find(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0;});
+                  const node=card||document.body;
+                  const candidates=[];
                   for(let p=node;p&&p!==document.body;p=p.parentElement){
                     const st=getComputedStyle(p);
-                    if(p.scrollHeight-p.clientHeight>40&&/(auto|scroll)/.test(st.overflowY)){target=p;break;}
+                    if(p.scrollHeight-p.clientHeight>40&&/(auto|scroll|overlay)/.test(st.overflowY))candidates.push(p);
                   }
-                  if(!target)target=document.scrollingElement||document.documentElement;
-                  const max=Math.max(0,target.scrollHeight-target.clientHeight),before=target.scrollTop;
-                  if(before>=max-4)return {state:'end'};
-                  const after=Math.min(max,before+Math.max(240,innerHeight*0.72));
-                  target.scrollTo({top:after,behavior:'auto'});
-                  return {state:after>before+2?'moved':'end'};
+                  const root=document.scrollingElement||document.documentElement;
+                  if(root.scrollHeight-root.clientHeight>40&&!candidates.includes(root))candidates.push(root);
+                  const describe=e=>e===root?'document':e.tagName.toLowerCase()+(typeof e.className==='string'&&e.className.trim()?'.'+e.className.trim().split(/\\s+/).slice(0,2).join('.'): '');
+                  for(const target of candidates){
+                    const max=Math.max(0,target.scrollHeight-target.clientHeight),before=target.scrollTop;
+                    if(before>=max-4)continue;
+                    const after=Math.min(max,before+Math.max(240,innerHeight*0.72));
+                    target.scrollTop=after;
+                    const actual=target.scrollTop;
+                    if(actual>before+2)return {state:'moved',target:describe(target),before:before,after:actual,max:max};
+                  }
+                  const pending=candidates.some(e=>e.scrollTop<e.scrollHeight-e.clientHeight-4);
+                  const signature=cards.filter(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&r.bottom>0&&r.top<innerHeight;})
+                    .map(e=>(e.innerText||e.textContent||'').replace(/\\s+/g,' ').trim()).join('|')+'@'+
+                    candidates.map(e=>Math.round(e.scrollTop)).join(',');
+                  return {state:pending?'stuck':'end',signature:signature,
+                    candidates:candidates.map(e=>describe(e)+':'+Math.round(e.scrollTop)+'/'+Math.max(0,e.scrollHeight-e.clientHeight)).join(';')};
                 })();
                 """
                 webView.evaluateJavaScript(scanScript) { [weak self] result, _ in
@@ -1276,10 +1296,28 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     if state == "moved" {
                         self.lastAutomationLogIndex = nil
                         self.lastClaimScanSignature = nil
-                        self.appendLog("Đã cuộn danh sách để quét các nhiệm vụ tiếp theo")
+                        self.lastBottomScanSignature = nil
+                        self.bottomScanCount = 0
+                        let target = (result as? [String: Any])?["target"] as? String ?? "vùng cuộn"
+                        self.appendLog("Đã cuộn " + target + "; tiếp tục quét nhiệm vụ")
                     } else if state == "end" {
+                        let signature = (result as? [String: Any])?["signature"] as? String ?? "empty"
+                        if signature == self.lastBottomScanSignature {
+                            self.bottomScanCount += 1
+                        } else {
+                            self.lastBottomScanSignature = signature
+                            self.bottomScanCount = 1
+                        }
+                        if self.bottomScanCount >= 2 {
+                            self.lastAutomationLogIndex = -7
+                            self.appendLog("Đã xác nhận cuối danh sách qua 2 lần quét; không còn vùng cuộn hoặc thẻ mới")
+                        } else {
+                            self.appendLog("Đã tới đáy tạm thời; chờ Lazada tải thêm rồi kiểm tra lại")
+                        }
+                    } else if state == "stuck" {
                         self.lastAutomationLogIndex = -7
-                        self.appendLog("Đã quét đến cuối danh sách nhiệm vụ")
+                        let detail = (result as? [String: Any])?["candidates"] as? String ?? "không xác định"
+                        self.appendLog("Vùng cuộn không di chuyển; dừng để tránh báo hết danh sách sai: " + detail)
                     }
                 }
                 return
@@ -1487,12 +1525,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                   const cards=Array.from(document.querySelectorAll('.mission-item-center'));
                   const card=cards.find(e=>titleOf(e)===norm(wanted)||titleOf(e).includes(norm(wanted))||norm(wanted).includes(titleOf(e)));
                   if(!card)return {state:'card_missing'};
-                  const visible=e=>{
-                    const r=e.getBoundingClientRect(),s=getComputedStyle(e);
-                    return r.width>0&&r.height>0&&r.bottom>0&&r.top<innerHeight&&s.display!=='none'&&s.visibility!=='hidden';
-                  };
                   const claim=Array.from(card.querySelectorAll('.mission-item-btn-go,a,button,[role="button"]'))
-                    .some(e=>visible(e)&&/^nhận(?: xu)?$/.test(norm(e.innerText||e.textContent||e.getAttribute('aria-label')||e.getAttribute('title'))));
+                    .some(e=>/^nhận(?: xu)?$/.test(norm(e.innerText||e.textContent||e.getAttribute('aria-label')||e.getAttribute('title'))));
                   return {state:claim?'still_claimable':'claimed'};
                 })();
                 """
