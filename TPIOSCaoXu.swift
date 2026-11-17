@@ -630,39 +630,20 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 (/điểm danh/i.test(bodyText) && /nhận xu/i.test(bodyText));
             })(),
             hasMissionsPage: Array.from(document.querySelectorAll('.mission-item-center')).some(visible),
-            hasOpenMissionsControl: (() => {
-              return Array.from(document.querySelectorAll('body *')).some(e => {
-                const label = (e.innerText || e.textContent || '').replace(/\\s+/g, ' ').trim().toLocaleLowerCase();
-                return visible(e) && (label === 'kiếm thêm' || label === 'kiếm thêm xu');
-              });
-            })(),
+            hasOpenMissionsControl: Array.from(document.querySelectorAll('.lazcoins-check-in-date')).some(visible),
             missionEntryPoint: (() => {
-              const labels = Array.from(document.querySelectorAll('body *'))
-                .filter(e => {
-                  const label = (e.innerText || e.textContent || '').replace(/\\s+/g, ' ').trim().toLocaleLowerCase();
-                  return visible(e) && (label === 'kiếm thêm' || label === 'kiếm thêm xu');
-                })
-                .sort((a, b) => {
-                  const ar = a.getBoundingClientRect(), br = b.getBoundingClientRect();
-                  return ar.width * ar.height - br.width * br.height;
-                });
-              const entries = [];
-              for (const node of labels) {
-                const clickable = node.closest('a,button,[role="button"],[tabindex],[onclick],.lazcoins-check-in-date,[class*="button"],[class*="-btn"]') || node;
-                if (!entries.some(e => e.clickable === clickable)) entries.push({node:node, clickable:clickable});
-              }
-              if (entries.length !== 1) return {count: entries.length};
-              const labelNode = entries[0].node;
-              const r = labelNode.getBoundingClientRect();
+              const controls = Array.from(document.querySelectorAll('.lazcoins-check-in-date')).filter(visible);
+              if (controls.length !== 1) return {count: controls.length};
+              const control = controls[0];
+              const r = control.getBoundingClientRect();
               const x = r.left + r.width / 2, y = r.top + r.height / 2;
               const hit = document.elementFromPoint(x, y);
-              const clickable = entries[0].clickable;
               return {
                 count: 1, x: x, y: y,
-                labelTag: labelNode.tagName.toLowerCase(),
+                labelTag: control.tagName.toLowerCase(),
                 hitTag: hit ? hit.tagName.toLowerCase() : '',
                 hitClass: hit && typeof hit.className === 'string' ? hit.className.split(/\\s+/).slice(0, 3).join('.') : '',
-                clickableTag: clickable ? clickable.tagName.toLowerCase() : ''
+                clickableTag: control.tagName.toLowerCase()
               };
             })(),
           };
@@ -738,6 +719,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                     in: webView,
                     pageURL: pageURL,
                     hasMissionsPage: hasMissionsPage,
+                    hasCheckInCard: hasCheckInCard,
                     hasOpenMissionsControl: hasOpenMissionsControl,
                     entryPoint: payload["missionEntryPoint"] as? [String: Any]
                 )
@@ -848,10 +830,11 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     }
 
     private func tapMissionEntryIfNeeded(in webView: WKWebView, pageURL: String?,
-                                         hasMissionsPage: Bool,
+                                         hasMissionsPage: Bool, hasCheckInCard: Bool,
                                          hasOpenMissionsControl: Bool, entryPoint: [String: Any]?) {
         guard sessionActive, automationEnabled, !hasMissionsPage,
-              let pageURL, pageURL == checkInPageURL else { return }
+              let pageURL, pageURL == checkInPageURL,
+              hasCheckInCard, hasOpenMissionsControl else { return }
 
         if let notBefore = missionEntryNotBefore {
             guard Date() >= notBefore else { return }
@@ -891,16 +874,6 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         }
         guard let window = webView.window else {
             appendLog("Kiếm thêm: WebView chưa gắn với UIWindow; không thể xác định tọa độ chạm")
-            return
-        }
-        guard let hidWindow = TPIOSAutoClickEngine.appWindow() else {
-            appendLog("Kiếm thêm: Chạm không tìm thấy cửa sổ app để phát HID")
-            return
-        }
-        guard hidWindow === window else {
-            let webAddress = String(describing: Unmanaged.passUnretained(window).toOpaque())
-            let hidAddress = String(describing: Unmanaged.passUnretained(hidWindow).toOpaque())
-            appendLog("Kiếm thêm: SAI CỬA SỔ · WebView=\(webAddress) Chạm=\(hidAddress); không gửi touch")
             return
         }
         guard TPIOSAutoClickEngine.backendAvailable() else {
