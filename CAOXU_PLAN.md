@@ -19,11 +19,11 @@ Tài liệu này là sổ tiến độ chuẩn của tính năng Cào xu. Mọi 
 
 ## 2. Checkpoint hiện tại
 
-**Mốc mã nguồn:** commit `3806a6e8e5d85dd08b1e72c53ebaeb8573b72dfc`  
-**Blob `TPIOSCaoXu.swift`:** `c8c969c857f555f361b1638ab51dd025b8399e94`  
-**Trạng thái:** đã xác minh commit và file trên `main`; chưa có xác nhận build/runtime cho checkpoint này.
+**Mốc mã nguồn:** commit `2b356fe56c3d2b87de47f41cc0b1e60712f37fd5`  
+**Blob `TPIOSCaoXu.swift`:** `61b48bbca154c511ef3b62a53a24d11af3ea334c`  
+**Trạng thái:** đã fetch xác minh file trên `main`; chưa chạy build và chưa có xác nhận runtime cho các thay đổi mới.
 
-Commit này giới hạn quét/cuộn vào vùng có các thẻ `.mission-item-center`, không dùng `document.body` làm vùng cuộn mặc định và chặn cuộn trang khi nút `#lazcoins-check-in-button` còn hiển thị. Tuy nhiên, kiểm thử thực tế mới nhất vẫn báo cuộn quay về trang Điểm danh và không chạy nhiệm vụ. Vì vậy **không đánh dấu phần cuộn là hoàn thành**.
+Checkpoint này giữ nguyên selector/HID Nhận xu đã được người dùng xác nhận hoạt động; bổ sung nhận diện hộp thoại có tiêu đề chứa số xu và nút `OK`, chạm OK bằng HID rồi mới xác minh trạng thái nhận. Tìm nút `Kiếm thêm` bằng nhãn hiển thị chính xác trên toàn DOM và không còn phụ thuộc card Điểm danh phải đang hiển thị nếu URL Điểm danh đã được xác nhận. Các thay đổi này mới ở mức code, cần runtime test. Phần cuộn danh sách vẫn đang lỗi và **không đánh dấu hoàn thành**.
 
 ### Trạng thái chức năng
 
@@ -34,13 +34,13 @@ Commit này giới hạn quét/cuộn vào vùng có các thẻ `.mission-item-c
 | Tự chạm nút Nhận xu | 🟢 Người dùng xác nhận hoạt động | Xác nhận mới nhất: “Chạm nhận xu được rồi” |
 | Nhận diện nút Nhận bằng `.mission-item-btn-claim` | 🟢 Có trong mã | Được bổ sung vào các bước quét/xác minh claim |
 | Nhận diện nút Điểm danh | 🟡 Có selector trong mã | Đã thêm nhận diện và HID tap; cần xác nhận runtime sau build |
-| Tự mở Kiếm thêm từ trang Điểm danh | 🟡 Chưa ổn định | Có cơ chế tìm nút và HID tap; trước đây điều hướng chưa được xác nhận |
+| Tự mở Kiếm thêm từ trang Điểm danh | 🟡 Đã nới nhận diện | Tìm nhãn chính xác trên toàn DOM, bỏ điều kiện card Điểm danh còn hiện; cần xác nhận runtime |
 | Nhận diện danh sách nhiệm vụ `.mission-item-center` | 🟡 Có trong mã | Đã dùng để xác định trang và đồng bộ tên nhiệm vụ; cần kiểm tra khi trang tải động |
 | Đồng bộ tên nhiệm vụ vào danh sách nội bộ | 🟡 Có trong mã | Đã từng ghi nhận đồng bộ số nhiệm vụ; cần kiểm thử lại với danh sách đầy đủ |
 | Cuộn đúng vùng danh sách nhiệm vụ | 🔴 Chưa hoạt động đúng | Người dùng xác nhận vẫn cuộn ra trang Điểm danh, không thực hiện nhiệm vụ |
 | Tìm và mở từng nhiệm vụ | 🔴 Chưa xác nhận hoàn chỉnh | Cần kiểm tra từ thẻ nhiệm vụ thật đến trang chi tiết |
-| Theo dõi hoàn thành nhiệm vụ | 🔴 Chưa xác nhận | Phải có bằng chứng trạng thái hoàn thành, không suy đoán từ việc đã chạm |
-| Quay lại danh sách sau mỗi nhiệm vụ | 🔴 Chưa ổn định | Yêu cầu: quay về đúng danh sách Kiếm thêm, không quay về trang Điểm danh |
+| Xử lý hộp thoại OK sau khi nhận xu | 🟡 Đã có code | Tìm nút OK trong hộp thoại có nội dung số xu, chạm HID rồi xác minh lại; chưa runtime test |\n| Theo dõi hoàn thành nhiệm vụ | 🔴 Chưa xác nhận | Chỉ đánh dấu hoàn thành sau khi hộp thoại OK đóng và trạng thái nút Nhận đổi; cần kiểm thử |
+| Quay lại trang Kiếm thêm sau mỗi nhiệm vụ | 🔴 Chưa ổn định | Lazada có thể đưa về trang Điểm danh; cần xác nhận tự mở lại Kiếm thêm và trở lại danh sách |
 | Chọn nhiệm vụ chưa hoàn thành tiếp theo | 🔴 Chưa xác nhận | Không lặp nhiệm vụ đã hoàn tất/đã xử lý |
 | Tổng kết khi hết nhiệm vụ | 🔴 Chưa xác nhận | Chỉ kết thúc khi đã quét hết danh sách và không còn nhiệm vụ mới |
 
@@ -111,7 +111,7 @@ Mỗi lần test ghi một mục mới ở phần 5:
 
 ## 5. Nhật ký checkpoint
 
-### 2026-11-17 — CP-00: Baseline hiện tại
+### 2026-11-17 — CP-08: Bổ sung xác nhận nhận xu và mở lại Kiếm thêm\n- Commit: `2b356fe56c3d2b87de47f41cc0b1e60712f37fd5`\n- Blob `TPIOSCaoXu.swift`: `61b48bbca154c511ef3b62a53a24d11af3ea334c`\n- Giữ nguyên thao tác chạm `.mission-item-btn-claim` đã được người dùng xác nhận.\n- Bổ sung tìm nút `OK` trong hộp thoại có nội dung số xu; gửi HID DOWN/UP; chờ hộp thoại đóng rồi mới xác minh trạng thái claim.\n- Nới tìm nút `Kiếm thêm` theo nhãn chính xác trên toàn DOM; không bắt buộc card Điểm danh vẫn đang hiển thị nếu URL và lần chạm Điểm danh đã được xác nhận.\n- Trạng thái: đã cập nhật và fetch xác minh source; chưa build/runtime test.\n- Hạng mục cuộn danh sách vẫn 🔴, chưa sửa trong checkpoint này.\n\n### 2026-11-17 — CP-00: Baseline hiện tại
 - Commit: `3806a6e8e5d85dd08b1e72c53ebaeb8573b72dfc`
 - File: `TPIOSCaoXu.swift`
 - Blob: `c8c969c857f555f361b1638ab51dd025b8399e94`
