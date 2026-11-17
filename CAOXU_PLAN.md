@@ -126,3 +126,13 @@ Mỗi lần test ghi một mục mới ở phần 5:
 - Không thay đổi luồng Chạm thủ công hoặc Sale.
 - Không thay đổi selector claim đã được xác nhận hoạt động nếu không có bằng chứng lỗi.
 - Không chạy Actions/build khi chưa có sự cho phép rõ ràng.
+
+
+### 2026-11-17 — CP-09: Sửa lỗi biên dịch Swift từ Actions
+- Actions run: `44020154119` · job `133827451603` · bước `Compile Swift sources`.
+- Lỗi gốc: ba regex JavaScript dùng `\s` trong Swift multiline string tại dòng 635, 642 và 664 gây `invalid escape sequence in literal`.
+- Sửa đúng ba chỗ bằng cách escape thành `\\s` trong source Swift để JavaScript nhận lại `\s` khi chạy.
+- Không thay đổi logic nhận diện/chạm Điểm danh, Nhận xu, nút OK, Kiếm thêm hoặc cuộn nhiệm vụ.
+- Source đã được cập nhật và fetch xác minh trên `main`; blob mới: `a7f33d2968ee5ed843526bb69c1504a973878931`.
+- Commit sửa source: `ff00562402440b6db5c3fc7163e25b7c57389a29`.
+- Trạng thái: đã sửa nguyên nhân compile được log chỉ ra; **chưa chạy lại Actions**, chưa xác nhận build pass.
