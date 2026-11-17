@@ -1413,14 +1413,18 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 (function(){
                   const cards=Array.from(document.querySelectorAll('.mission-item-center'));
                   const card=cards.find(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0;});
-                  const node=card||document.body;
-                  const candidates=[];
-                  for(let p=node;p&&p!==document.body;p=p.parentElement){
-                    const st=getComputedStyle(p);
-                    if(p.scrollHeight-p.clientHeight>40&&/(auto|scroll|overlay|hidden)/.test(st.overflowY))candidates.push(p);
-                  }
+                  if(!card)return {state:'no_mission_cards'};
                   const root=document.scrollingElement||document.documentElement;
-                  if(root.scrollHeight-root.clientHeight>40&&!candidates.includes(root))candidates.push(root);
+                  const checkIn=document.querySelector('#lazcoins-check-in-button');
+                  const checkInVisible=!!(checkIn&&(()=>{const r=checkIn.getBoundingClientRect(),s=getComputedStyle(checkIn);return r.width>0&&r.height>0&&r.bottom>0&&r.top<innerHeight&&s.display!=='none'&&s.visibility!=='hidden';})());
+                  const candidates=[];
+                  for(let p=card.parentElement;p&&p!==document.body;p=p.parentElement){
+                    const st=getComputedStyle(p);
+                    const cardCount=p.querySelectorAll('.mission-item-center').length;
+                    if(cardCount>=2&&p.scrollHeight-p.clientHeight>40&&/(auto|scroll|overlay)/.test(st.overflowY))candidates.push(p);
+                  }
+                  // Only use document scrolling when the check-in control is no longer visible.
+                  if(!candidates.length&&!checkInVisible&&root.scrollHeight-root.clientHeight>40)candidates.push(root);
                   const describe=e=>e===root?'document':e.tagName.toLowerCase()+(typeof e.className==='string'&&e.className.trim()?'.'+e.className.trim().split(/\\s+/).slice(0,2).join('.'): '');
                   for(const target of candidates){
                     const max=Math.max(0,target.scrollHeight-target.clientHeight),before=target.scrollTop;
@@ -1434,8 +1438,9 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                   const signature=cards.filter(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&r.bottom>0&&r.top<innerHeight;})
                     .map(e=>(e.innerText||e.textContent||'').replace(/\\s+/g,' ').trim()).join('|')+'@'+
                     candidates.map(e=>Math.round(e.scrollTop)).join(',');
-                  return {state:pending?'stuck':'end',signature:signature,
-                    candidates:candidates.map(e=>describe(e)+':'+Math.round(e.scrollTop)+'/'+Math.max(0,e.scrollHeight-e.clientHeight)).join(';')};
+                  const detail=candidates.map(e=>describe(e)+':'+Math.round(e.scrollTop)+'/'+Math.max(0,e.scrollHeight-e.clientHeight)).join(';');
+                  if(!candidates.length)return {state:'no_mission_scroller',signature:signature,checkInVisible:checkInVisible};
+                  return {state:pending?'stuck':'end',signature:signature,candidates:detail};
                 })();
                 """
                 webView.evaluateJavaScript(scanScript) { [weak self] result, _ in
@@ -1462,6 +1467,12 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                         } else {
                             self.appendLog("Đã tới đáy tạm thời; chờ Lazada tải thêm rồi kiểm tra lại")
                         }
+                    } else if state == "no_mission_cards" || state == "no_mission_scroller" {
+                        self.lastAutomationLogIndex = -7
+                        let checkInVisible = (result as? [String: Any])?["checkInVisible"] as? Bool ?? false
+                        self.appendLog(checkInVisible
+                            ? "Chặn cuộn: nút Điểm danh vẫn hiện; không cuộn trang ngoài danh sách nhiệm vụ"
+                            : "Chặn cuộn: chưa tìm thấy vùng cuộn thuộc danh sách nhiệm vụ")
                     } else if state == "stuck" {
                         self.lastAutomationLogIndex = -7
                         let detail = (result as? [String: Any])?["candidates"] as? String ?? "không xác định"
