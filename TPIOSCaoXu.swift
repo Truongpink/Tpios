@@ -834,12 +834,12 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                                          hasOpenMissionsControl: Bool, entryPoint: [String: Any]?) {
         guard sessionActive, automationEnabled, !hasMissionsPage,
               let pageURL, pageURL == checkInPageURL,
-              hasCheckInCard, hasOpenMissionsControl else { return }
+              hasCheckInCard else { return }
 
         if let notBefore = missionEntryNotBefore {
             guard Date() >= notBefore else { return }
             missionEntryNotBefore = nil
-            appendLog("Kiếm thêm: đã chờ 2 giây sau khi bắt đầu; chuẩn bị chạm nút")
+            appendLog("Kiếm thêm: đã chờ 2 giây sau khi bắt đầu; chuẩn bị mở danh sách")
         }
 
         if lastMissionEntryTapURL == pageURL {
@@ -848,27 +848,37 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             guard missionEntryTapAttempts < 3 else {
                 if !missionEntryTapFailureLogged {
                     missionEntryTapFailureLogged = true
-                    appendLog("Kiếm thêm: Lazada chưa chuyển sang danh sách sau 3 lần thử; dừng thử tự động")
+                    appendLog("Kiếm thêm: Lazada chưa xác nhận danh sách sau 3 lần thử; dừng thử tự động")
                 }
                 return
             }
             missionEntryTapStartedAt = Date()
-            appendLog("Kiếm thêm: chưa thấy danh sách sau 20 giây; thử chạm lại lần \(missionEntryTapAttempts + 1)/3")
+            appendLog("Kiếm thêm: chưa thấy danh sách sau 20 giây; thử lần \(missionEntryTapAttempts + 1)/3")
         } else {
             missionEntryTapAttempts = 0
             missionEntryTapFailureLogged = false
         }
 
-        // The saved check-in URL and successful check-in tap identify this page,
-        // even when Lazada temporarily hides the check-in card after returning from a task.
+        // Ưu tiên chạm nút DOM như trước; nếu nút không còn được render,
+        // dùng URL đã được xác nhận từ trang có .mission-item-center.
         guard hasOpenMissionsControl, let entryPoint,
               (entryPoint["count"] as? Int) == 1,
               let x = entryPoint["x"] as? Double,
               let y = entryPoint["y"] as? Double else {
+            let count = entryPoint?["count"] as? Int ?? 0
+            if let listURL = missionsPageURL.flatMap(URL.init(string:)),
+               sanitizedPageURL(listURL) != nil,
+               sanitizedPageURL(listURL) != pageURL {
+                lastMissionEntryTapURL = pageURL
+                missionEntryTapStartedAt = Date()
+                missionEntryTapAttempts += 1
+                appendLog("Kiếm thêm: không tìm thấy nút DOM duy nhất (khớp=\(count)); mở URL danh sách đã xác nhận")
+                webView.load(URLRequest(url: listURL))
+                return
+            }
             if lastMissionEntryPromptURL != pageURL {
                 lastMissionEntryPromptURL = pageURL
-                let count = entryPoint?["count"] as? Int ?? 0
-                appendLog("Kiếm thêm: không tìm thấy duy nhất nút có nhãn chính xác; số nút khớp=\(count)")
+                appendLog("Kiếm thêm: không có nút DOM duy nhất (khớp=\(count)) và chưa có URL danh sách hợp lệ")
             }
             return
         }
@@ -916,9 +926,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         missionEntryTapStartedAt = Date()
         missionEntryTapAttempts += 1
 
-        // Mark the automated touch so the manual-touch recorder does not log it.
         webView.evaluateJavaScript("window.__tpiAutoTouchUntil = Date.now() + 1500")
-        // Use the same real HID DOWN/UP path as the working Chạm panel.
         guard TPIOSAutoClickEngine.shared.dispatchTouch(at: windowPoint, down: true) else {
             appendLog("Kiếm thêm: HID DOWN lỗi · \(TPIOSAutoClickEngine.lastDiagnostic())")
             return
