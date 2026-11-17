@@ -614,7 +614,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             missionScroll: missionScroll,
             hasCheckInCard: (() => {
               const bodyText = document.body ? document.body.innerText : '';
-              return Array.from(document.querySelectorAll('.lazcoins-checkin-card')).some(visible) ||
+              return (document.querySelector('#lazcoins-check-in-button') && visible(document.querySelector('#lazcoins-check-in-button'))) || Array.from(document.querySelectorAll('.lazcoins-checkin-card')).some(visible) ||
                 (/điểm danh/i.test(bodyText) && /nhận xu/i.test(bodyText));
             })(),
             hasMissionsPage: Array.from(document.querySelectorAll('.mission-item-center')).some(visible),
@@ -1246,12 +1246,12 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                   if(parent.querySelectorAll('.mission-item-center').length>1)break;
                   container=parent;
                 }
-                const controls=Array.from(container.querySelectorAll('.mission-item-btn-go,a,button,[role="button"],[tabindex],[onclick]'))
+                const controls=Array.from(container.querySelectorAll('.mission-item-btn-claim,.mission-item-btn-go,a,button,[role="button"],[tabindex],[onclick]'))
                   .filter(e=>!e.contains(card)&&!card.contains(e));
                 for(const control of controls){
                   const label=norm(control.innerText||control.textContent||control.getAttribute('aria-label')||control.getAttribute('title'));
                   if(label)controlLabels.push(label.slice(0,50));
-                  if(visible(control)&&/^nhận(?: xu)?$/.test(label)){
+                  if(visible(control)&&(/^nhận(?: xu)?$/.test(label)||control.matches('.mission-item-btn-claim'))){
                     const r=control.getBoundingClientRect();
                     return {status:'claim',title:title,x:r.left+r.width/2,y:r.top+r.height/2,signature:signature};
                   }
@@ -1461,7 +1461,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 container = card;
                 for (let depth = 0; container && depth < 5; depth++, container = container.parentElement) {
                   if (container.querySelectorAll('.mission-item-center').length > 1) break;
-                  const actions = Array.from(container.querySelectorAll('a,button,[role="button"],[onclick],.mission-item-btn-go'))
+                  const actions = Array.from(container.querySelectorAll('.mission-item-btn-claim,a,button,[role="button"],[onclick],.mission-item-btn-go'))
                     .filter(e => visible(e) && !e.contains(card));
                   const action = actions.find(e => /^nhận(?: xu)?$|làm ngay|thực hiện|đi ngay|xem ngay|tham gia|bắt đầu|tìm kiếm|đi xem|khám phá/i.test(norm(e.innerText || e.textContent)));
                   if (action) return center(action);
@@ -1649,7 +1649,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                   const cards=Array.from(document.querySelectorAll('.mission-item-center'));
                   const card=cards.find(e=>titleOf(e)===norm(wanted)||titleOf(e).includes(norm(wanted))||norm(wanted).includes(titleOf(e)));
                   if(!card)return {state:'card_missing'};
-                  const claim=Array.from(card.querySelectorAll('.mission-item-btn-go,a,button,[role="button"]'))
+                  const claim=Array.from(card.querySelectorAll('.mission-item-btn-claim,.mission-item-btn-go,a,button,[role="button"]'))
                     .some(e=>/^nhận(?: xu)?$/.test(norm(e.innerText||e.textContent||e.getAttribute('aria-label')||e.getAttribute('title'))));
                   return {state:claim?'still_claimable':'claimed'};
                 })();
