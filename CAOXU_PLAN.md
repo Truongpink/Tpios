@@ -136,3 +136,10 @@ Mỗi lần test ghi một mục mới ở phần 5:
 - Source đã được cập nhật và fetch xác minh trên `main`; blob mới: `a7f33d2968ee5ed843526bb69c1504a973878931`.
 - Commit sửa source: `ff00562402440b6db5c3fc7163e25b7c57389a29`.
 - Trạng thái: đã sửa nguyên nhân compile được log chỉ ra; **chưa chạy lại Actions**, chưa xác nhận build pass.
+
+
+### 2026-11-17 — CP-10: Thu nhỏ khung và tiếp tục từ trang Điểm danh
+- Thu nhỏ kích thước mở mặc định của khung Cào xu từ 320 × 520 pt xuống 220 × 300 pt; giữ nguyên khả năng kéo/resize và giới hạn resize hiện tại.
+- Sửa điều kiện mở Kiếm thêm: khi automation đang chạy và URL hiện tại trùng URL trang Điểm danh đã lưu, cho phép tìm/chạm nút Kiếm thêm mà không bắt buộc phải có thao tác Điểm danh trong chính phiên hiện tại. Điều này hỗ trợ nút Tiếp tục khi người dùng đã đứng sẵn ở trang xu.
+- Không đổi selector .mission-item-btn-claim, luồng nhận xu/OK, thao tác Điểm danh, Chạm thủ công hoặc Sale.
+- Source cập nhật trên main; chưa chạy Actions/build và chưa có xác nhận runtime.
