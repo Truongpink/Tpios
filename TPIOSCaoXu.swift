@@ -851,10 +851,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                                          hasMissionsPage: Bool,
                                          hasOpenMissionsControl: Bool, entryPoint: [String: Any]?) {
         guard sessionActive, automationEnabled, !hasMissionsPage,
-              let pageURL, pageURL == checkInPageURL,
-              lastCheckInTapURL == pageURL,
-              let checkInTapStartedAt,
-              Date().timeIntervalSince(checkInTapStartedAt) >= 2 else { return }
+              let pageURL, pageURL == checkInPageURL else { return }
 
         if let notBefore = missionEntryNotBefore {
             guard Date() >= notBefore else { return }
