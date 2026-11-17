@@ -395,8 +395,8 @@ final class TPIOSMenu: UIView, UIGestureRecognizerDelegate {
 
     @objc private func caoXuTapped() {
         guard locationView == nil, saleView == nil, buyAllView == nil, caoXuView == nil, let parent = superview else { return }
-        let width = min(320, max(280, parent.bounds.width - 20))
-        let height = min(520, max(420, parent.bounds.height - 40))
+        let width = min(220, parent.bounds.width - 20)
+        let height = min(300, parent.bounds.height - 40)
         let x = max(10, min(frame.origin.x, parent.bounds.width - width - 10))
         let y = max(10, min(frame.origin.y, parent.bounds.height - height - 10))
         let panel = TPIOSCaoXu(frame: CGRect(x: x, y: y, width: width, height: height))
