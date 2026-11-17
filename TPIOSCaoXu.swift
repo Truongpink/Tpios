@@ -41,6 +41,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     private var missionEntryTapAttempts = 0
     private var missionEntryTapFailureLogged = false
     private var missionEntryNotBefore: Date?
+    private var lastCheckInTapURL: String?
+    private var checkInTapStartedAt: Date?
     private var sessionActive = false
     private var lastObservedPageURL: String?
     private var lastObservedScreenSignature: String?
@@ -401,6 +403,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         automationScanCursor = 0
         resetAutomationPosition()
         missionEntryNotBefore = Date().addingTimeInterval(2)
+        lastCheckInTapURL = nil
+        checkInTapStartedAt = nil
         lastAutomationLogIndex = nil
         didLogObserverDiagnostics = false
         appendLog("Bật tự động Cào xu; xử lý nhiệm vụ theo danh sách Lazada")
@@ -612,6 +616,14 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             visibleMissionTitles: visibleMissionTitles,
             missionCardCount: missionCards.length,
             missionScroll: missionScroll,
+            checkInEntryPoint: (() => {
+              const button = document.querySelector('#lazcoins-check-in-button');
+              if (!button || !visible(button)) return {count: 0};
+              const r = button.getBoundingClientRect();
+              const x = r.left + r.width / 2, y = r.top + r.height / 2;
+              const hit = document.elementFromPoint(x, y);
+              return {count: 1, x: x, y: y, tag: button.tagName.toLowerCase(), hitTag: hit ? hit.tagName.toLowerCase() : ''};
+            })(),
             hasCheckInCard: (() => {
               const bodyText = document.body ? document.body.innerText : '';
               return (document.querySelector('#lazcoins-check-in-button') && visible(document.querySelector('#lazcoins-check-in-button'))) || Array.from(document.querySelectorAll('.lazcoins-checkin-card')).some(visible) ||
@@ -718,6 +730,12 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 if hasMissionsPage {
                     self.syncMissionTasks(payload["missionTitles"] as? [String] ?? [])
                 }
+                self.tapCheckInIfNeeded(
+                    in: webView,
+                    pageURL: pageURL,
+                    hasCheckInCard: hasCheckInCard,
+                    entryPoint: payload["checkInEntryPoint"] as? [String: Any]
+                )
                 self.tapMissionEntryIfNeeded(
                     in: webView,
                     pageURL: pageURL,
@@ -746,6 +764,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
 
         if hasCheckInCard, checkInPageURL != pageURL {
             checkInPageURL = pageURL
+            lastCheckInTapURL = nil
+            checkInTapStartedAt = nil
             lastMissionEntryTapURL = nil
             missionEntryTapStartedAt = nil
             missionEntryTapAttempts = 0
@@ -774,11 +794,70 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
         if changed { saveState() }
     }
 
+    private func tapCheckInIfNeeded(in webView: WKWebView, pageURL: String?,
+                                    hasCheckInCard: Bool, entryPoint: [String: Any]?) {
+        guard sessionActive, automationEnabled, hasCheckInCard,
+              let pageURL, pageURL == checkInPageURL,
+              lastCheckInTapURL != pageURL else { return }
+        guard let entryPoint, (entryPoint["count"] as? Int) == 1,
+              let x = entryPoint["x"] as? Double,
+              let y = entryPoint["y"] as? Double else {
+            if lastMissionEntryPromptURL != pageURL {
+                lastMissionEntryPromptURL = pageURL
+                appendLog("Điểm danh: không tìm thấy duy nhất #lazcoins-check-in-button; chưa tự chạm")
+            }
+            return
+        }
+        guard let window = webView.window,
+              let hidWindow = TPIOSAutoClickEngine.appWindow(),
+              hidWindow === window,
+              TPIOSAutoClickEngine.backendAvailable() else {
+            appendLog("Điểm danh: WebView/HID chưa sẵn sàng hoặc không cùng cửa sổ; chưa chạm")
+            return
+        }
+        let webPoint = CGPoint(x: x, y: y)
+        guard webView.bounds.insetBy(dx: 1, dy: 1).contains(webPoint) else {
+            appendLog("Điểm danh: tọa độ #lazcoins-check-in-button nằm ngoài WebView")
+            return
+        }
+        let windowPoint = webView.convert(webPoint, to: window)
+        guard window.bounds.insetBy(dx: 1, dy: 1).contains(windowPoint) else {
+            appendLog("Điểm danh: tọa độ sau convert nằm ngoài cửa sổ; chưa chạm")
+            return
+        }
+        lastCheckInTapURL = pageURL
+        checkInTapStartedAt = Date()
+        webView.evaluateJavaScript("window.__tpiAutoTouchUntil = Date.now() + 1500")
+        guard TPIOSAutoClickEngine.shared.dispatchTouch(at: windowPoint, down: true) else {
+            lastCheckInTapURL = nil
+            checkInTapStartedAt = nil
+            appendLog("Điểm danh: HID DOWN lỗi · " + TPIOSAutoClickEngine.lastDiagnostic())
+            return
+        }
+        appendLog("Điểm danh: đã chạm HID #lazcoins-check-in-button")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            let released = TPIOSAutoClickEngine.shared.dispatchTouch(at: windowPoint, down: false)
+            guard let self else { return }
+            guard released else {
+                self.lastCheckInTapURL = nil
+                self.checkInTapStartedAt = nil
+                self.appendLog("Điểm danh: HID UP lỗi · " + TPIOSAutoClickEngine.lastDiagnostic() + "; tạm dừng tự động")
+                self.automationEnabled = false
+                self.automationPhase = .selecting
+                return
+            }
+            self.appendLog("Điểm danh: đã gửi HID UP; chờ Lazada cập nhật")
+        }
+    }
+
     private func tapMissionEntryIfNeeded(in webView: WKWebView, pageURL: String?,
                                          hasCheckInCard: Bool, hasMissionsPage: Bool,
                                          hasOpenMissionsControl: Bool, entryPoint: [String: Any]?) {
         guard sessionActive, automationEnabled, !hasMissionsPage,
-              let pageURL, pageURL == checkInPageURL else { return }
+              let pageURL, pageURL == checkInPageURL,
+              lastCheckInTapURL == pageURL,
+              let checkInTapStartedAt,
+              Date().timeIntervalSince(checkInTapStartedAt) >= 2 else { return }
 
         if let notBefore = missionEntryNotBefore {
             guard Date() >= notBefore else { return }
