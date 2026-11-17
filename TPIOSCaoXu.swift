@@ -631,42 +631,40 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             })(),
             hasMissionsPage: Array.from(document.querySelectorAll('.mission-item-center')).some(visible),
             hasOpenMissionsControl: (() => {
-              const controls = Array.from(document.querySelectorAll('.lazcoins-check-in-date,a,button,[role="button"],[tabindex]'));
-              return controls.some(e => {
-                const label = (e.innerText || e.textContent || '').replace(/\\s+/g, ' ').trim().toLocaleLowerCase();
+              return Array.from(document.querySelectorAll('body *')).some(e => {
+                const label = (e.innerText || e.textContent || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
                 return visible(e) && (label === 'kiếm thêm' || label === 'kiếm thêm xu');
               });
             })(),
             missionEntryPoint: (() => {
-              const controls = Array.from(document.querySelectorAll('.lazcoins-check-in-date,a,button,[role="button"],[tabindex]'))
+              const labels = Array.from(document.querySelectorAll('body *'))
                 .filter(e => {
-                  const label = (e.innerText || e.textContent || '').replace(/\\s+/g, ' ').trim().toLocaleLowerCase();
-                  return visible(e) && (label === 'kiếm thêm' || label === 'kiếm thêm xu');
-                });
-              if (controls.length !== 1) return {count: controls.length};
-              const control = controls[0];
-              const exactLabels = [control, ...control.querySelectorAll('*')]
-                .filter(e => {
-                  const label = (e.innerText || e.textContent || '').replace(/\\s+/g, ' ').trim().toLocaleLowerCase();
+                  const label = (e.innerText || e.textContent || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
                   return visible(e) && (label === 'kiếm thêm' || label === 'kiếm thêm xu');
                 })
                 .sort((a, b) => {
                   const ar = a.getBoundingClientRect(), br = b.getBoundingClientRect();
                   return ar.width * ar.height - br.width * br.height;
                 });
-              const labelNode = exactLabels[0] || control;
+              const entries = [];
+              for (const node of labels) {
+                const clickable = node.closest('a,button,[role="button"],[tabindex],[onclick],.lazcoins-check-in-date,[class*="button"],[class*="-btn"]') || node;
+                if (!entries.some(e => e.clickable === clickable)) entries.push({node:node, clickable:clickable});
+              }
+              if (entries.length !== 1) return {count: entries.length};
+              const labelNode = entries[0].node;
               const r = labelNode.getBoundingClientRect();
               const x = r.left + r.width / 2, y = r.top + r.height / 2;
               const hit = document.elementFromPoint(x, y);
-              const clickable = hit && hit.closest('a,button,[role="button"],[tabindex],[onclick],.lazcoins-check-in-date');
+              const clickable = entries[0].clickable;
               return {
                 count: 1, x: x, y: y,
                 labelTag: labelNode.tagName.toLowerCase(),
                 hitTag: hit ? hit.tagName.toLowerCase() : '',
-                hitClass: hit && typeof hit.className === 'string' ? hit.className.split(/\\s+/).slice(0, 3).join('.') : '',
+                hitClass: hit && typeof hit.className === 'string' ? hit.className.split(/\s+/).slice(0, 3).join('.') : '',
                 clickableTag: clickable ? clickable.tagName.toLowerCase() : ''
               };
-            })()
+            })(),
           };
         })();
         """
@@ -882,13 +880,8 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             missionEntryTapFailureLogged = false
         }
 
-        guard hasCheckInCard else {
-            if lastMissionEntryPromptURL != pageURL {
-                lastMissionEntryPromptURL = pageURL
-                appendLog("Kiếm thêm: chưa xác nhận được màn hình Điểm danh nhận xu; không tự chạm")
-            }
-            return
-        }
+        // The saved check-in URL and successful check-in tap identify this page,
+        // even when Lazada temporarily hides the check-in card after returning from a task.
         guard hasOpenMissionsControl, let entryPoint,
               (entryPoint["count"] as? Int) == 1,
               let x = entryPoint["x"] as? Double,
@@ -1723,15 +1716,42 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             }
         case .returning:
             guard let started = automationStartedAt else { return }
-            if lastAutomationLogIndex == -2 {
-                guard Date().timeIntervalSince(started) >= 3 else { return }
+            if lastAutomationLogIndex == -8 {
+                guard Date().timeIntervalSince(started) >= 2 else { return }
+                lastAutomationLogIndex = -9
+                automationStartedAt = Date()
+                appendLog("Đã chờ hộp thoại OK đóng; chuẩn bị xác minh trạng thái nhận xu")
+                return
+            }
+            if lastAutomationLogIndex == -2 || lastAutomationLogIndex == -9 {
+                let checkingOK = lastAutomationLogIndex == -2
+                guard Date().timeIntervalSince(started) >= (checkingOK ? 3 : 2) else { return }
                 let title = taskNames[index]
-                let encoded = (try? JSONSerialization.data(withJSONObject: [title]))
+                let encoded = (try? JSONSerialization.data(withJSONObject: [title, checkingOK]))
                     .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
                 let verifyScript = """
                 (function(){
-                  const wanted=\(encoded)[0];
+                  const args=\(encoded),wanted=args[0],checkOK=args[1];
                   const norm=s=>(s||'').replace(/\\s+/g,' ').trim().normalize('NFC').toLowerCase();
+                  const visible=e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&r.bottom>0&&r.top<innerHeight&&s.display!=='none'&&s.visibility!=='hidden';};
+                  if(checkOK){
+                    const okNodes=Array.from(document.querySelectorAll('body *')).filter(e=>visible(e)&&norm(e.innerText||e.textContent)==='ok');
+                    const targets=[];
+                    for(const node of okNodes){
+                      const target=node.closest('button,a,[role="button"],[tabindex],[onclick],[class*="button"],[class*="-btn"]')||node;
+                      let parent=target,context='';
+                      for(let depth=0;parent&&depth<7;depth++,parent=parent.parentElement){
+                        const value=norm(parent.innerText||parent.textContent);
+                        if(value.length<=300&&value.includes('xu')&&/\\d/.test(value)){context=value;break;}
+                      }
+                      if(context&&!targets.some(t=>t.target===target)){
+                        const r=target.getBoundingClientRect();
+                        targets.push({target:target,x:r.left+r.width/2,y:r.top+r.height/2});
+                      }
+                    }
+                    if(targets.length===1)return {state:'ok',x:targets[0].x,y:targets[0].y};
+                    if(targets.length>1)return {state:'ok_ambiguous'};
+                  }
                   const titleOf=card=>norm(card.innerText||card.textContent)
                     .replace(/\\b\\d+\\s*\\/\\s*\\d+\\b[\\s\\S]*$/,'')
                     .replace(/\\b(làm ngay|thực hiện|đi ngay|xem ngay|bắt đầu|tham gia|tìm kiếm|nhận xu?)\\b/gi,' ')
@@ -1740,17 +1760,56 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                   const card=cards.find(e=>titleOf(e)===norm(wanted)||titleOf(e).includes(norm(wanted))||norm(wanted).includes(titleOf(e)));
                   if(!card)return {state:'card_missing'};
                   const claim=Array.from(card.querySelectorAll('.mission-item-btn-claim,.mission-item-btn-go,a,button,[role="button"]'))
-                    .some(e=>/^nhận(?: xu)?$/.test(norm(e.innerText||e.textContent||e.getAttribute('aria-label')||e.getAttribute('title'))));
+                    .some(e=>visible(e)&&(/^nhận(?: xu)?$/.test(norm(e.innerText||e.textContent||e.getAttribute('aria-label')||e.getAttribute('title')))||e.matches('.mission-item-btn-claim')));
                   return {state:claim?'still_claimable':'claimed'};
                 })();
                 """
                 webView.evaluateJavaScript(verifyScript) { [weak self] result, _ in
                     guard let self, self.sessionActive, self.automationEnabled else { return }
-                    let state=(result as? [String:Any])?["state"] as? String ?? "unknown"
+                    let payload=result as? [String:Any] ?? [:]
+                    let state=payload["state"] as? String ?? "unknown"
+                    if state == "ok", let x=payload["x"] as? Double, let y=payload["y"] as? Double,
+                       let window=webView.window, TPIOSAutoClickEngine.backendAvailable() {
+                        let point=CGPoint(x:x,y:y)
+                        guard webView.bounds.insetBy(dx:1,dy:1).contains(point) else {
+                            self.appendLog("Nút OK nhận xu nằm ngoài WebView; chưa chạm")
+                            self.lastAutomationLogIndex = -9
+                            self.automationStartedAt = Date()
+                            return
+                        }
+                        let windowPoint=webView.convert(point,to:window)
+                        guard window.bounds.insetBy(dx:1,dy:1).contains(windowPoint) else {
+                            self.appendLog("Nút OK nhận xu nằm ngoài cửa sổ; chưa chạm")
+                            self.lastAutomationLogIndex = -9
+                            self.automationStartedAt = Date()
+                            return
+                        }
+                        webView.evaluateJavaScript("window.__tpiAutoTouchUntil = Date.now() + 1500")
+                        guard TPIOSAutoClickEngine.shared.dispatchTouch(at:windowPoint,down:true) else {
+                            self.appendLog("HID DOWN lỗi khi chạm OK nhận xu")
+                            self.lastAutomationLogIndex = -9
+                            self.automationStartedAt = Date()
+                            return
+                        }
+                        DispatchQueue.main.asyncAfter(deadline:.now()+0.12) { [weak self] in
+                            let released=TPIOSAutoClickEngine.shared.dispatchTouch(at:windowPoint,down:false)
+                            guard let self else { return }
+                            guard released else {
+                                self.appendLog("HID UP lỗi khi chạm OK nhận xu; đã dừng tự động")
+                                self.automationEnabled=false
+                                self.automationPhase = .selecting
+                                return
+                            }
+                            self.lastAutomationLogIndex = -8
+                            self.automationStartedAt = Date()
+                            self.appendLog("Đã chạm HID nút OK trong hộp thoại nhận xu: " + title)
+                        }
+                        return
+                    }
                     if state == "claimed" {
                         if self.completedTasks.indices.contains(index) { self.completedTasks[index] = true }
                         self.saveObservedTasks()
-                        self.appendLog("Lazada đã đổi trạng thái nút Nhận; xác nhận nhận xu: " + title)
+                        self.appendLog("Lazada đã đóng bước nhận và đổi trạng thái nút Nhận; xác nhận nhận xu: " + title)
                     } else {
                         self.claimRetryBlockedTitles.insert(self.normalizedTaskText(title).lowercased())
                         self.attemptedTaskIndices.insert(index)
