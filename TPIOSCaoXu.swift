@@ -632,14 +632,14 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
             hasMissionsPage: Array.from(document.querySelectorAll('.mission-item-center')).some(visible),
             hasOpenMissionsControl: (() => {
               return Array.from(document.querySelectorAll('body *')).some(e => {
-                const label = (e.innerText || e.textContent || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
+                const label = (e.innerText || e.textContent || '').replace(/\\s+/g, ' ').trim().toLocaleLowerCase();
                 return visible(e) && (label === 'kiếm thêm' || label === 'kiếm thêm xu');
               });
             })(),
             missionEntryPoint: (() => {
               const labels = Array.from(document.querySelectorAll('body *'))
                 .filter(e => {
-                  const label = (e.innerText || e.textContent || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
+                  const label = (e.innerText || e.textContent || '').replace(/\\s+/g, ' ').trim().toLocaleLowerCase();
                   return visible(e) && (label === 'kiếm thêm' || label === 'kiếm thêm xu');
                 })
                 .sort((a, b) => {
@@ -661,7 +661,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 count: 1, x: x, y: y,
                 labelTag: labelNode.tagName.toLowerCase(),
                 hitTag: hit ? hit.tagName.toLowerCase() : '',
-                hitClass: hit && typeof hit.className === 'string' ? hit.className.split(/\s+/).slice(0, 3).join('.') : '',
+                hitClass: hit && typeof hit.className === 'string' ? hit.className.split(/\\s+/).slice(0, 3).join('.') : '',
                 clickableTag: clickable ? clickable.tagName.toLowerCase() : ''
               };
             })(),
