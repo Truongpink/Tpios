@@ -143,3 +143,12 @@ Mỗi lần test ghi một mục mới ở phần 5:
 - Sửa điều kiện mở Kiếm thêm: khi automation đang chạy và URL hiện tại trùng URL trang Điểm danh đã lưu, cho phép tìm/chạm nút Kiếm thêm mà không bắt buộc phải có thao tác Điểm danh trong chính phiên hiện tại. Điều này hỗ trợ nút Tiếp tục khi người dùng đã đứng sẵn ở trang xu.
 - Không đổi selector .mission-item-btn-claim, luồng nhận xu/OK, thao tác Điểm danh, Chạm thủ công hoặc Sale.
 - Source cập nhật trên main; chưa chạy Actions/build và chưa có xác nhận runtime.
+
+
+### 2026-11-17 — CP-11: Khôi phục luồng chạm Kiếm thêm đã chạy tốt
+- Đối chiếu source cũ tại ref 28a67d1: nút Kiếm thêm được tìm trực tiếp bằng selector `.lazcoins-check-in-date`, lấy tâm phần tử và gửi HID DOWN/UP.
+- Khôi phục selector DOM cụ thể thay cho quét toàn bộ `body *` theo nhãn chữ và gom ứng viên duy nhất.
+- Yêu cầu trang Điểm danh và thẻ Điểm danh hiện diện; giữ nhận diện URL đã lưu, chờ 2 giây sau khi bắt đầu và cơ chế retry 20 giây tối đa 3 lần.
+- Bỏ điều kiện so sánh `appWindow()` với `webView.window` vì luồng cũ đã gửi HID trực tiếp theo tọa độ chuyển đổi trong WebView window và không có điều kiện này.
+- Không đổi nhận xu, OK, xử lý nhiệm vụ, cuộn danh sách hoặc khung menu.
+- Chưa chạy Actions/build; cần kiểm tra runtime sau khi người dùng build.
