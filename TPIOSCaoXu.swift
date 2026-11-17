@@ -737,7 +737,6 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
                 self.tapMissionEntryIfNeeded(
                     in: webView,
                     pageURL: pageURL,
-                    hasCheckInCard: hasCheckInCard,
                     hasMissionsPage: hasMissionsPage,
                     hasOpenMissionsControl: hasOpenMissionsControl,
                     entryPoint: payload["missionEntryPoint"] as? [String: Any]
@@ -849,7 +848,7 @@ final class TPIOSCaoXu: UIView, UIGestureRecognizerDelegate {
     }
 
     private func tapMissionEntryIfNeeded(in webView: WKWebView, pageURL: String?,
-                                         hasCheckInCard: Bool, hasMissionsPage: Bool,
+                                         hasMissionsPage: Bool,
                                          hasOpenMissionsControl: Bool, entryPoint: [String: Any]?) {
         guard sessionActive, automationEnabled, !hasMissionsPage,
               let pageURL, pageURL == checkInPageURL,
